@@ -19,7 +19,7 @@ let v ~cwd ~argv ~hostname ~user ~env : Yojson.Safe.t =
   `Assoc [
     "ociVersion", `String "1.0.1-dev";
     "process", `Assoc [
-      "terminal", `Bool true;
+      "terminal", `Bool false;
       "user", user;
       "args", strings argv;
       "env", strings (List.map (fun (k, v)  -> Printf.sprintf "%s=%s" k v) env);
