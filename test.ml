@@ -143,15 +143,80 @@ let rec copy_dir ~context ~src ~dst ~user ~(items:(Manifest.t list))  =
         copy_dir ~context ~src ~dst ~user ~items
     )
 
-let do_copy ~context ~src_manifest ~dst ~user =
+module Tar_lwt_unix = struct
+  include Tar_lwt_unix
+
+  (* Copied from tar_lwt_unix.ml (ISC license). Not sure why this isn't exposed.
+
+     ## ISC License
+
+     Copyright (c) 2012-2018 The ocaml-tar contributors
+
+     Permission to use, copy, modify, and/or distribute this software for any
+     purpose with or without fee is hereby granted, provided that the above
+     copyright notice and this permission notice appear in all copies.
+
+     THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+     WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+     MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+     ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+     WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+     ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+     OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  *)
+
+  module Writer = struct
+    type out_channel = Lwt_unix.file_descr
+    type 'a t = 'a Lwt.t
+    let really_write fd = Lwt_cstruct.(complete (write fd))
+  end
+
+  module HW = Tar.HeaderWriter(Lwt)(Writer)
+
+  let write_block (header: Tar.Header.t) (body: Lwt_unix.file_descr -> unit Lwt.t) (fd : Lwt_unix.file_descr) =
+    HW.write header fd
+    >>= fun () ->
+    body fd >>= fun () ->
+    Writer.really_write fd (Tar.Header.zero_padding header)
+
+  let write_end (fd: Lwt_unix.file_descr) =
+    Writer.really_write fd Tar.Header.zero_block >>= fun () ->
+    Writer.really_write fd Tar.Header.zero_block
+end
+
+let copy_to ~dst src =
+  let len = 4096 in
+  let buf = Bytes.create len in
+  let rec aux () =
+    Lwt_io.read_into src buf 0 len >>= function
+    | 0 -> Lwt.return_unit
+    | n -> write_all dst buf 0 n >>= aux
+  in
+  aux ()
+
+let copy_file ~src ~dst ~to_untar =
+  Lwt_unix.LargeFile.stat src >>= fun stat ->
+  let hdr = Tar.Header.make
+      ~file_mode:(if stat.Lwt_unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
+      ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
+      dst stat.Lwt_unix.LargeFile.st_size (* TODO: symlinks? *)
+  in
+  Tar_lwt_unix.write_block hdr (fun ofd ->
+      Lwt_io.(with_file ~mode:input) src (copy_to ~dst:ofd)
+    ) to_untar
+
+let tar_send_files ~context ~src_manifest ~dst ~to_untar =
   src_manifest |> Lwt_list.iter_s (function
       | `File (path, _) ->
         let src = context / path in
-        let dst = dst / (Filename.basename path) in       (* Maybe don't copy Docker's bad design here? *)
-        copy_file ~src ~dst ~user
-      | `Dir (src, items) ->
-        copy_dir ~context ~src ~dst ~user ~items
+        let dst = dst / (Filename.basename path) in       (* maybe don't copy docker's bad design here? *)
+        copy_file ~src ~dst ~to_untar
+      | `Dir (_src, _items) ->
+        failwith "TODO"
+        (*         copy_dir ~context ~src ~dst ~items *)
     )
+  >>= fun () ->
+  Tar_lwt_unix.write_end to_untar
 
 let copy ~base ~workdir ~user { Dockerfile.src; dst } =
   let dst = if Filename.is_relative dst then workdir / dst else dst in
@@ -165,7 +230,40 @@ let copy ~base ~workdir ~user { Dockerfile.src; dst } =
   (* Fmt.pr "COPY: %a@." pp_copy_details details; *)
   let hash = Digest.to_hex (Digest.string (show_copy_details details)) in
   Store.build store ~base ~hash (fun result_tmp ->
-    do_copy ~context ~src_manifest ~dst:(result_tmp / "rootfs" / dst) ~user
+      let argv = ["tar"; "-xvf"; "-"] in
+      let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
+      write_config config result_tmp >>= fun () ->
+      (* do_copy ~context ~src_manifest ~dst:(result_tmp / "rootfs" / dst) ~user *)
+
+      let closed_r = ref false in
+      let closed_w = ref false in
+      let r, w = Lwt_unix.pipe_out () in
+      Lwt.finalize
+        (fun () ->
+           Lwt_unix.set_close_on_exec w;
+           let cmd = ["sudo"; "runc"; "--root"; runc_state_dir; "run"; hash] in
+           let stdin = `FD_copy r in
+           let proc = Process.exec ~cwd:result_tmp ~stdin cmd in
+           Unix.close r;
+           closed_r := true;
+           let send =
+             (* If the sending thread finishes (or fails), close the writing socket
+                immediately so that the tar process finishes too. *)
+             Lwt.finalize
+               (fun () -> tar_send_files ~context ~src_manifest ~dst ~to_untar:w)
+               (fun () ->
+                  Lwt_unix.close w >|= fun () ->
+                  closed_w := true;
+               )
+           in
+           proc >>= fun () ->
+           send
+        )
+        (fun () ->
+           if not !closed_r then Unix.close r;
+           if !closed_w then Lwt.return_unit
+           else Lwt_unix.close w
+        )
     )
 
 let rec run_steps ~workdir ~user ~env ~base = function
