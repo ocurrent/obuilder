@@ -40,12 +40,24 @@ let delete_snapshot_if_exists path =
 let path t tree =
   t.root / "result" / Tree.hash tree
 
+let cat_file path =
+  let ch = open_in path in
+  let buf = Bytes.create 4096 in
+  let rec aux () =
+    match input ch buf 0 (Bytes.length buf) with
+    | 0 -> ()
+    | n -> output stdout buf 0 n; aux ()
+  in
+  aux ()
+
 let build t ?base ~hash fn =
   let result_id = Tree.v ~hash in
   let result = path t result_id in
   match check_dir result with
   | `Present ->
     Fmt.pr "---> using cached result %S@." result;
+    let log_file = result / "log" in
+    if Sys.file_exists log_file then cat_file log_file;
     Lwt.return result_id
   | `Missing ->
     let result_tmp = result ^ ".part" in

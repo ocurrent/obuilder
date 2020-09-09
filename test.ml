@@ -12,6 +12,32 @@ let write_config config dir =
   Lwt_io.(with_file ~mode:output) (dir / "config.json") @@ fun ch ->
   Lwt_io.write ch (Yojson.Safe.pretty_to_string config ^ "\n")
 
+let with_open_out path fn =
+  Lwt_unix.openfile path Unix.[O_RDWR; O_CREAT] 0o644 >>= fun fd ->
+  Lwt.finalize
+    (fun () -> fn fd)
+    (fun () -> Lwt_unix.close fd)
+
+let rec write_all fd buf ofs len =
+  assert (len >= 0);
+  if len = 0 then Lwt.return_unit
+  else (
+    Lwt_unix.write fd buf ofs len >>= fun n ->
+    write_all fd buf (ofs + n) (len - n)
+  )
+
+let tee ~src ~dst =
+  let buf = Bytes.create 4096 in
+  let rec aux () =
+    Lwt_unix.read src buf 0 (Bytes.length buf) >>= function
+    | 0 -> Lwt.return_unit
+    | n ->
+      output stdout buf 0 n;
+      flush stdout;
+      write_all dst buf 0 n >>= aux
+  in
+  aux ()
+
 let run ~base ~workdir ~user ~env cmd =
   let hash =
     Digest.string
@@ -23,7 +49,28 @@ let run ~base ~workdir ~user ~env cmd =
       let argv = [ "bash"; "-c"; cmd ] in
       let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env in
       write_config config result_tmp >>= fun () ->
-      Process.exec ~cwd:result_tmp ["sudo"; "runc"; "--root"; runc_state_dir; "run"; hash]
+      let log_file = result_tmp / "log" in
+      with_open_out log_file (fun log ->
+          let out_r, out_w = Lwt_unix.pipe () in
+          let out_w_closed = ref false in
+          Lwt.finalize
+            (fun () ->
+               let cmd = ["sudo"; "runc"; "--root"; runc_state_dir; "run"; hash] in
+               let stdout = `FD_copy (Lwt_unix.unix_file_descr out_w) in
+               let stderr = stdout in
+               let copy_log = tee ~src:out_r ~dst:log in
+               let proc = Process.exec ~cwd:result_tmp ~stdout ~stderr cmd in
+               Lwt_unix.close out_w >>= fun () ->
+               out_w_closed := true;
+               proc >>= fun () ->
+               copy_log
+            )
+            (fun () ->
+               Lwt_unix.close out_r >>= fun () ->
+               if !out_w_closed then Lwt.return_unit
+               else Lwt_unix.close out_w
+            )
+        )
     )
 
 module Manifest = struct
