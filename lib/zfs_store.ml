@@ -1,0 +1,61 @@
+open Lwt.Infix
+
+let strf = Printf.sprintf
+
+let ( >>!= ) = Lwt_result.bind
+
+type t = {
+  pool : string;
+}
+
+module ID = struct
+  type t = {
+    pool : string;
+    dataset : string;
+  } [@@deriving show]
+
+  let v ~pool dataset = { pool; dataset }
+
+  let path { pool; dataset } =
+    strf "/%s/%s/.zfs/snapshot/snap" pool dataset
+end
+
+let ( / ) = Filename.concat
+
+let check_dir x =
+  match Unix.lstat x with
+  | Unix.{ st_kind = S_DIR; _ } -> `Present
+  | _ -> Fmt.failwith "Exists, but is not a directory: %S" x
+  | exception Unix.Unix_error(Unix.ENOENT, _, _) -> `Missing
+
+let create ~pool =
+  { pool }
+
+let delete_clone_if_exists ~pool id =
+  match check_dir (strf "/%s/%s" pool id) with
+  | `Missing -> Lwt.return_unit
+  | `Present -> Os.exec ["sudo"; "zfs"; "destroy"; strf "%s/%s" pool id]
+
+let build t ?base ~id ~log fn =
+  let result_id = ID.v ~pool:t.pool id in
+  let result = ID.path result_id in
+  match check_dir result with
+  | `Present ->
+    Fmt.pr "---> using cached result %S@." result;
+    let log_file = result / "log" in
+    if Sys.file_exists log_file then Os.cat_file log_file ~dst:log;
+    Lwt_result.return result_id
+  | `Missing ->
+    delete_clone_if_exists ~pool:t.pool id >>= fun () ->
+    begin match base with
+      | None -> Os.exec ["sudo"; "zfs"; "create"; "--"; strf "%s/%s" t.pool id]
+      | Some base -> Os.exec ["sudo"; "zfs"; "clone"; "--"; strf "%s/%s@snap" t.pool base.ID.dataset; strf "%s/%s" t.pool id]
+    end
+    >>= fun () ->
+    let clone = strf "/%s/%s" t.pool id in
+    Os.exec ["sudo"; "chown"; string_of_int (Unix.getuid ()); clone] >>= fun () ->
+    fn clone >>!= fun () ->
+    Os.exec ["sudo"; "zfs"; "snapshot"; "--"; strf "%s/%s@snap" t.pool id] >>= fun () ->
+    (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
+       keep it around? *)
+    Lwt_result.return result_id

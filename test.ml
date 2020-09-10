@@ -1,9 +1,15 @@
 open Lwt.Infix
 
+(*
 module Store = Obuilder.Btrfs_store
+let store = Store.create "/var/lib/docker/tal/"
+*)
+
+module Store = Obuilder.Zfs_store
+let store = Store.create ~pool:"tank"
+
 module Builder = Obuilder.Builder(Store)
 
-let store = Store.create "/var/lib/docker/tal/"
 let runc_state_dir = "/var/lib/docker/tal/state"
 let context = "/var/lib/docker/tal/context"
 

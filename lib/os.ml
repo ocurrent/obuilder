@@ -42,3 +42,13 @@ let tee ~src ~dst =
       write_all dst buf 0 n >>= aux
   in
   aux ()
+
+let cat_file path ~dst =
+  let ch = open_in path in
+  let buf = Bytes.create 4096 in
+  let rec aux () =
+    match input ch buf 0 (Bytes.length buf) with
+    | 0 -> ()
+    | n -> output dst buf 0 n; aux ()
+  in
+  aux ()
