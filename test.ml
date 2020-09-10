@@ -1,6 +1,7 @@
 open Lwt.Infix
 
 let ( / ) = Filename.concat
+let ( >>!= ) = Lwt_result.bind
 
 let store = Store.create "/var/lib/docker/tal/"
 let runc_state_dir = "/var/lib/docker/tal/state"
@@ -39,13 +40,13 @@ let tee ~src ~dst =
   aux ()
 
 let run ~base ~workdir ~user ~env cmd =
-  let hash =
+  let id =
     Digest.string
       ([%derive.show: string * string * (string * string) list * string]
-         (Store.Tree.hash base, workdir, env, cmd))
+         (Store.ID.show base, workdir, env, cmd))
     |> Digest.to_hex
   in
-  Store.build store ~base ~hash (fun result_tmp ->
+  Store.build store ~base ~id ~log:stdout (fun result_tmp ->
       let argv = [ "bash"; "-c"; cmd ] in
       let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env in
       write_config config result_tmp >>= fun () ->
@@ -55,7 +56,7 @@ let run ~base ~workdir ~user ~env cmd =
           let out_w_closed = ref false in
           Lwt.finalize
             (fun () ->
-               let cmd = ["sudo"; "runc"; "--root"; runc_state_dir; "run"; hash] in
+               let cmd = ["sudo"; "runc"; "--root"; runc_state_dir; "run"; id] in
                let stdout = `FD_copy (Lwt_unix.unix_file_descr out_w) in
                let stderr = stdout in
                let copy_log = tee ~src:out_r ~dst:log in
@@ -70,7 +71,8 @@ let run ~base ~workdir ~user ~env cmd =
                if !out_w_closed then Lwt.return_unit
                else Lwt_unix.close out_w
             )
-        )
+        ) >|= fun () ->
+      Ok ()
     )
 
 module Manifest = struct
@@ -97,13 +99,10 @@ module Manifest = struct
     | _ -> Fmt.failwith "Unsupported file type for %S" src
     | exception Unix.Unix_error(Unix.ENOENT, _, _) ->
       Fmt.failwith "File %S not found in context" src
-
-  let digest t =
-    Digest.to_hex (Digest.string (show t))
 end
 
 type copy_details = {
-  base : Store.Tree.t;
+  base : Store.ID.t;
   src_manifest : Manifest.t list;
   user : Dockerfile.user;
   dst : string;
@@ -142,6 +141,8 @@ let rec copy_dir ~context ~src ~dst ~user ~(items:(Manifest.t list))  =
         let dst = dst / Filename.basename src in
         copy_dir ~context ~src ~dst ~user ~items
     )
+
+let _ = copy_dir
 
 module Tar_lwt_unix = struct
   include Tar_lwt_unix
@@ -228,8 +229,8 @@ let copy ~base ~workdir ~user { Dockerfile.src; dst } =
     dst;
   } in
   (* Fmt.pr "COPY: %a@." pp_copy_details details; *)
-  let hash = Digest.to_hex (Digest.string (show_copy_details details)) in
-  Store.build store ~base ~hash (fun result_tmp ->
+  let id = Digest.to_hex (Digest.string (show_copy_details details)) in
+  Store.build store ~base ~id ~log:stdout (fun result_tmp ->
       let argv = ["tar"; "-xvf"; "-"] in
       let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
       write_config config result_tmp >>= fun () ->
@@ -241,7 +242,7 @@ let copy ~base ~workdir ~user { Dockerfile.src; dst } =
       Lwt.finalize
         (fun () ->
            Lwt_unix.set_close_on_exec w;
-           let cmd = ["sudo"; "runc"; "--root"; runc_state_dir; "run"; hash] in
+           let cmd = ["sudo"; "runc"; "--root"; runc_state_dir; "run"; id] in
            let stdin = `FD_copy r in
            let proc = Process.exec ~cwd:result_tmp ~stdin cmd in
            Unix.close r;
@@ -264,10 +265,11 @@ let copy ~base ~workdir ~user { Dockerfile.src; dst } =
            if !closed_w then Lwt.return_unit
            else Lwt_unix.close w
         )
+      >|= Result.ok
     )
 
 let rec run_steps ~workdir ~user ~env ~base = function
-  | [] -> Lwt.return base
+  | [] -> Lwt_result.return base
   | op :: ops ->
     Fmt.pr "%s: %a@." workdir Dockerfile.pp_op op;
     let k = run_steps ops in
@@ -276,17 +278,17 @@ let rec run_steps ~workdir ~user ~env ~base = function
     | `Workdir workdir -> k ~base ~workdir ~user ~env
     | `User user -> k ~base ~workdir ~user ~env
     | `Run cmd ->
-      run ~base ~workdir ~user ~env cmd >>= fun base ->
+      run ~base ~workdir ~user ~env cmd >>!= fun base ->
       k ~base ~workdir ~user ~env
     | `Copy x ->
-      copy ~base ~workdir ~user x >>= fun base ->
+      copy ~base ~workdir ~user x >>!= fun base ->
       k ~base ~workdir ~user ~env
     | `Env e ->
       k ~base ~workdir ~user ~env:(e :: env)
 
 let get_base base =
-  let hash = Digest.to_hex (Digest.string base) in
-  Store.build store ~hash (fun tmp ->
+  let id = Digest.to_hex (Digest.string base) in
+  Store.build store ~id ~log:stdout (fun tmp ->
       Fmt.pr "Base image not present; importing %S...@." base;
       let rootfs = tmp / "rootfs" in
       Unix.mkdir rootfs 0o755;
@@ -298,7 +300,7 @@ let get_base base =
       let tar = Lwt_process.open_process_none ~stdin:(`FD_move r) ("", [| "sudo"; "tar"; "-C"; rootfs; "-xf"; "-" |]) in
       exporter#status >>= fun _ ->
       tar#status >>= fun _ ->
-      Process.exec ["docker"; "rm"; "--"; cid]
+      Process.exec ["docker"; "rm"; "--"; cid] >|= Result.ok
     )
 
 let env = [
@@ -308,12 +310,14 @@ let env = [
 ]
 
 let build { Dockerfile.from = base; ops } =
-  get_base base >>= fun template_dir ->
+  get_base base >>!= fun template_dir ->
   run_steps ~base:template_dir ~workdir:"/" ~user:Dockerfile.root ~env ops
 
 let () =
   Lwt_main.run begin
-    build Example.dockerfile >>= fun x ->
-    Fmt.pr "Got: %a@." Store.Tree.pp x;
-    Lwt.return_unit
+    build Example.dockerfile >>= function
+    | Ok x ->
+      Fmt.pr "Got: %a@." Store.ID.pp x;
+      Lwt.return_unit
+    | Error `Cant_happen -> assert false
   end

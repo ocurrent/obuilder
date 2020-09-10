@@ -1,0 +1,23 @@
+module type STORE = sig
+  type t
+
+  module ID : sig
+    type t [@@deriving show]
+  end
+
+  val build :
+    t -> ?base:ID.t ->
+    id:string ->
+    log:out_channel ->
+    (string -> (unit, 'e) Lwt_result.t) ->
+    (ID.t, 'e) Lwt_result.t
+  (** [build t ~id ~log fn] displays the log for build [id] on [log].
+      If it doesn't exist yet in the store, it runs [fn tmpdir] to create
+      it first. On success, [tmpdir] is saved as [id], which can be used
+      as the [base] for further builds, until it is expired from the cache.
+      On failure, nothing is recorded and calling [build] again will make
+      another attempt at building it.
+      @param base Initialise [tmpdir] as a clone of [base]. *)
+
+  (* val path : t -> ID.t -> string *)
+end

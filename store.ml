@@ -1,19 +1,14 @@
 open Lwt.Infix
 
+let ( >>!= ) = Lwt_result.bind
+
 type t = {
   root : string;
 }
 
-module Tree : sig
-  type t [@@deriving show]
-
-  val v : hash:string -> t
-  val hash : t -> string
-end = struct
+module ID = struct
   type t = string [@@deriving show]
-
-  let v ~hash = hash
-  let hash t = t
+  let v x = x
 end
 
 let ( / ) = Filename.concat
@@ -37,28 +32,28 @@ let delete_snapshot_if_exists path =
   | `Missing -> Lwt.return_unit
   | `Present -> Process.exec ["sudo"; "btrfs"; "subvolume"; "delete"; path]
 
-let path t tree =
-  t.root / "result" / Tree.hash tree
+let path t id =
+  t.root / "result" / id
 
-let cat_file path =
+let cat_file path ~dst =
   let ch = open_in path in
   let buf = Bytes.create 4096 in
   let rec aux () =
     match input ch buf 0 (Bytes.length buf) with
     | 0 -> ()
-    | n -> output stdout buf 0 n; aux ()
+    | n -> output dst buf 0 n; aux ()
   in
   aux ()
 
-let build t ?base ~hash fn =
-  let result_id = Tree.v ~hash in
+let build t ?base ~id ~log fn =
+  let result_id = ID.v id in
   let result = path t result_id in
   match check_dir result with
   | `Present ->
     Fmt.pr "---> using cached result %S@." result;
     let log_file = result / "log" in
-    if Sys.file_exists log_file then cat_file log_file;
-    Lwt.return result_id
+    if Sys.file_exists log_file then cat_file log_file ~dst:log;
+    Lwt_result.return result_id
   | `Missing ->
     let result_tmp = result ^ ".part" in
     delete_snapshot_if_exists result_tmp >>= fun () ->
@@ -67,8 +62,8 @@ let build t ?base ~hash fn =
       | Some base -> Process.exec ["btrfs"; "subvolume"; "snapshot"; path t base; result_tmp]
     end
     >>= fun () ->
-    fn result_tmp >>= fun () ->
+    fn result_tmp >>!= fun () ->
     (* delete_snapshot_if_exists result >>= fun () -> *) (* XXX: just for testing *)
     Process.exec ["btrfs"; "subvolume"; "snapshot"; "-r"; result_tmp; result] >>= fun () ->
     Process.exec ["sudo"; "btrfs"; "subvolume"; "delete"; result_tmp] >>= fun () ->
-    Lwt.return result_id
+    Lwt_result.return result_id
