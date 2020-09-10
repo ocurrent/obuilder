@@ -77,32 +77,6 @@ let run ~base ~workdir ~user ~env cmd =
       Ok ()
     )
 
-module Manifest = struct
-  type t = [
-    | `File of (string * string)
-    | `Dir of (string * t list)
-  ] [@@deriving show]
-
-  let rec generate src : t =
-    (* TODO: sanitise src *)
-    let path = context / src in
-    match Unix.lstat path with
-    | Unix.{ st_kind = S_DIR; _ } ->
-      let items =
-        Sys.readdir path
-        |> Array.to_list
-        |> List.filter (( <> ) ".git")   (* TODO: .dockerignore *)
-        |> List.map (fun item -> generate (src / item))
-      in
-      `Dir (src, items)
-    | Unix.{ st_kind = S_REG; _ } ->
-      let hash = Digest.file path in
-      `File (src, hash)
-    | _ -> Fmt.failwith "Unsupported file type for %S" src
-    | exception Unix.Unix_error(Unix.ENOENT, _, _) ->
-      Fmt.failwith "File %S not found in context" src
-end
-
 type copy_details = {
   base : Store.ID.t;
   src_manifest : Manifest.t list;
@@ -207,7 +181,7 @@ let tar_send_files ~context ~src_manifest ~dst ~to_untar =
 
 let copy ~base ~workdir ~user { Dockerfile.src; dst } =
   let dst = if Filename.is_relative dst then workdir / dst else dst in
-  let src_manifest = List.map Manifest.generate src in
+  let src_manifest = List.map (Manifest.generate ~context) src in
   let details = {
     base;
     src_manifest;
