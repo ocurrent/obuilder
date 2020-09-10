@@ -64,9 +64,9 @@ let copy_file ~src ~dst ~to_untar =
       Lwt_io.(with_file ~mode:input) src (copy_to ~dst:ofd)
     ) to_untar
 
-let rec copy_dir ~context ~src ~dst ~(items:(Manifest.t list)) ~to_untar =
+let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar =
   Fmt.pr "Copy dir %S -> %S@." src dst;
-  Lwt_unix.LargeFile.lstat (context / src) >>= fun stat ->
+  Lwt_unix.LargeFile.lstat (src_dir / src) >>= fun stat ->
   begin 
     let hdr = Tar.Header.make
         ~file_mode:0o755
@@ -77,22 +77,22 @@ let rec copy_dir ~context ~src ~dst ~(items:(Manifest.t list)) ~to_untar =
   end >>= fun () ->
   items |> Lwt_list.iter_s (function
       | `File (src, _) ->
-        let src = context / src in
+        let src = src_dir / src in
         let dst = dst / Filename.basename src in
         copy_file ~src ~dst ~to_untar
       | `Dir (src, items) ->
         let dst = dst / Filename.basename src in
-        copy_dir ~context ~src ~dst ~items ~to_untar
+        copy_dir ~src_dir ~src ~dst ~items ~to_untar
     )
 
-let send_files ~context ~src_manifest ~dst ~to_untar =
+let send_files ~src_dir ~src_manifest ~dst ~to_untar =
   src_manifest |> Lwt_list.iter_s (function
       | `File (path, _) ->
-        let src = context / path in
+        let src = src_dir / path in
         let dst = dst / (Filename.basename path) in       (* maybe don't copy docker's bad design here? *)
         copy_file ~src ~dst ~to_untar
       | `Dir (src, items) ->
-        copy_dir ~context ~src ~dst ~items ~to_untar
+        copy_dir ~src_dir ~src ~dst ~items ~to_untar
     )
   >>= fun () ->
   Tar_lwt_unix.write_end to_untar

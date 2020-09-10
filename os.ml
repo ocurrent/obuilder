@@ -1,5 +1,7 @@
 open Lwt.Infix
 
+type env = (string * string) list
+
 let pp_signal f x =
   let open Sys in
   if x = sigkill then Fmt.string f "kill"
