@@ -3,6 +3,8 @@ open Lwt.Infix
 let ( / ) = Filename.concat
 let ( >>!= ) = Lwt_result.bind
 
+module Store = Btrfs_store
+
 let store = Store.create "/var/lib/docker/tal/"
 let runc_state_dir = "/var/lib/docker/tal/state"
 let context = "/var/lib/docker/tal/context"
