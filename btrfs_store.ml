@@ -30,7 +30,7 @@ let create root =
 let delete_snapshot_if_exists path =
   match check_dir path with
   | `Missing -> Lwt.return_unit
-  | `Present -> Process.exec ["sudo"; "btrfs"; "subvolume"; "delete"; path]
+  | `Present -> Os.exec ["sudo"; "btrfs"; "subvolume"; "delete"; path]
 
 let path t id =
   t.root / "result" / id
@@ -58,12 +58,12 @@ let build t ?base ~id ~log fn =
     let result_tmp = result ^ ".part" in
     delete_snapshot_if_exists result_tmp >>= fun () ->
     begin match base with
-      | None -> Process.exec ["btrfs"; "subvolume"; "create"; "--"; result_tmp]
-      | Some base -> Process.exec ["btrfs"; "subvolume"; "snapshot"; path t base; result_tmp]
+      | None -> Os.exec ["btrfs"; "subvolume"; "create"; "--"; result_tmp]
+      | Some base -> Os.exec ["btrfs"; "subvolume"; "snapshot"; path t base; result_tmp]
     end
     >>= fun () ->
     fn result_tmp >>!= fun () ->
     (* delete_snapshot_if_exists result >>= fun () -> *) (* XXX: just for testing *)
-    Process.exec ["btrfs"; "subvolume"; "snapshot"; "-r"; result_tmp; result] >>= fun () ->
-    Process.exec ["sudo"; "btrfs"; "subvolume"; "delete"; result_tmp] >>= fun () ->
+    Os.exec ["btrfs"; "subvolume"; "snapshot"; "-r"; result_tmp; result] >>= fun () ->
+    Os.exec ["sudo"; "btrfs"; "subvolume"; "delete"; result_tmp] >>= fun () ->
     Lwt_result.return result_id
