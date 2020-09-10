@@ -108,42 +108,6 @@ type copy_details = {
   dst : string;
 } [@@deriving show]
 
-let copy_file ~src ~dst ~user =
-  Fmt.pr "Copy %S -> %S as %d@." src dst user.Dockerfile.uid;
-  match Unix.lstat dst with
-  | _ ->
-    Fmt.pr "WARNING: Destination already exists: %S" dst; (* TODO: overwrite if safe *)
-    Lwt.return_unit
-  | exception Unix.Unix_error(Unix.ENOENT, _, _) ->
-    (* TODO: just run as root *)
-    let { Dockerfile.uid; gid } = user in
-    Process.exec ["sudo"; "cp"; "--"; src; dst] >>= fun () ->
-    Process.exec ["sudo"; "chown"; Printf.sprintf "%d:%d" uid gid; dst]
-
-let rec copy_dir ~context ~src ~dst ~user ~(items:(Manifest.t list))  =
-  Fmt.pr "Copy dir %S -> %S as %d@." src dst user.Dockerfile.uid;
-  begin 
-    match Unix.lstat dst with
-    | Unix.{ st_kind = S_DIR; _ } -> Lwt.return_unit
-    | _ -> Fmt.failwith "Exists, but is not a directory: %S" dst
-    | exception Unix.Unix_error(Unix.ENOENT, _, _) ->
-      (* TODO: just run as root *)
-      let { Dockerfile.uid; gid } = user in
-      Process.exec ["sudo"; "mkdir"; "--"; dst] >>= fun () ->
-      Process.exec ["sudo"; "chown"; Printf.sprintf "%d:%d" uid gid; dst]
-  end >>= fun () ->
-  items |> Lwt_list.iter_s (function
-      | `File (src, _) ->
-        let src = context / src in
-        let dst = dst / Filename.basename src in
-        copy_file ~src ~dst ~user
-      | `Dir (src, items) ->
-        let dst = dst / Filename.basename src in
-        copy_dir ~context ~src ~dst ~user ~items
-    )
-
-let _ = copy_dir
-
 module Tar_lwt_unix = struct
   include Tar_lwt_unix
 
@@ -196,7 +160,7 @@ let copy_to ~dst src =
   aux ()
 
 let copy_file ~src ~dst ~to_untar =
-  Lwt_unix.LargeFile.stat src >>= fun stat ->
+  Lwt_unix.LargeFile.lstat src >>= fun stat ->
   let hdr = Tar.Header.make
       ~file_mode:(if stat.Lwt_unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
       ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
@@ -206,15 +170,35 @@ let copy_file ~src ~dst ~to_untar =
       Lwt_io.(with_file ~mode:input) src (copy_to ~dst:ofd)
     ) to_untar
 
+let rec copy_dir ~context ~src ~dst ~(items:(Manifest.t list)) ~to_untar =
+  Fmt.pr "Copy dir %S -> %S@." src dst;
+  Lwt_unix.LargeFile.lstat (context / src) >>= fun stat ->
+  begin 
+    let hdr = Tar.Header.make
+        ~file_mode:0o755
+        ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
+        (dst ^ "/") 0L
+    in
+    Tar_lwt_unix.write_block hdr (fun _ -> Lwt.return_unit) to_untar
+  end >>= fun () ->
+  items |> Lwt_list.iter_s (function
+      | `File (src, _) ->
+        let src = context / src in
+        let dst = dst / Filename.basename src in
+        copy_file ~src ~dst ~to_untar
+      | `Dir (src, items) ->
+        let dst = dst / Filename.basename src in
+        copy_dir ~context ~src ~dst ~items ~to_untar
+    )
+
 let tar_send_files ~context ~src_manifest ~dst ~to_untar =
   src_manifest |> Lwt_list.iter_s (function
       | `File (path, _) ->
         let src = context / path in
         let dst = dst / (Filename.basename path) in       (* maybe don't copy docker's bad design here? *)
         copy_file ~src ~dst ~to_untar
-      | `Dir (_src, _items) ->
-        failwith "TODO"
-        (*         copy_dir ~context ~src ~dst ~items *)
+      | `Dir (src, items) ->
+        copy_dir ~context ~src ~dst ~items ~to_untar
     )
   >>= fun () ->
   Tar_lwt_unix.write_end to_untar
