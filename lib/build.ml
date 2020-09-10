@@ -13,7 +13,7 @@ module Context = struct
   type t = {
     env : (string * string) list;       (* Environment in which to run commands. *)
     src_dir : string;                   (* Directory with files for copying. *)
-    user : Dockerfile.user;             (* Container user to run as. *)
+    user : Spec.user;                   (* Container user to run as. *)
     workdir : string;                   (* Directory in the container namespace for cwd. *)
   }
 
@@ -22,7 +22,7 @@ module Context = struct
     "TERM", "xterm";
   ]
 
-  let v ?(env=default_env) ?(user=Dockerfile.root) ?(workdir="/") ~src_dir () =
+  let v ?(env=default_env) ?(user=Spec.root) ?(workdir="/") ~src_dir () =
     { env; src_dir; user; workdir }
 end
 
@@ -72,11 +72,11 @@ module Make (Store : S.STORE) = struct
   type copy_details = {
     base : Store.ID.t;
     src_manifest : Manifest.t list;
-    user : Dockerfile.user;
+    user : Spec.user;
     dst : string;
   } [@@deriving show]
 
-  let copy t ~context ~base { Dockerfile.src; dst } =
+  let copy t ~context ~base { Spec.src; dst } =
     let { Context.src_dir; workdir; user; env = _ } = context in
     let dst = if Filename.is_relative dst then workdir / dst else dst in
     let src_manifest = List.map (Manifest.generate ~src_dir) src in
@@ -127,7 +127,7 @@ module Make (Store : S.STORE) = struct
   let rec run_steps t ~(context:Context.t) ~base = function
     | [] -> Lwt_result.return base
     | op :: ops ->
-      Fmt.pr "%s: %a@." context.workdir Dockerfile.pp_op op;
+      Fmt.pr "%s: %a@." context.workdir Spec.pp_op op;
       let k = run_steps t ops in
       match op with
       | `Comment _ -> k ~base ~context
@@ -160,7 +160,7 @@ module Make (Store : S.STORE) = struct
         Os.exec ["docker"; "rm"; "--"; cid] >|= Result.ok
       )
 
-  let build t context { Dockerfile.from = base; ops } =
+  let build t context { Spec.from = base; ops } =
     get_base t base >>!= fun template_dir ->
     run_steps t ~context ~base:template_dir ops
 

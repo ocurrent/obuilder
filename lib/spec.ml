@@ -1,6 +1,6 @@
-type copy = { src : string list; dst : string } [@@deriving show]
+type copy = { src : string list; dst : string } [@@deriving show { with_path = false }]
 
-type user = { uid : int; gid : int } [@@deriving show]
+type user = { uid : int; gid : int } [@@deriving show { with_path = false }]
 
 type op = [
   | `Comment of string

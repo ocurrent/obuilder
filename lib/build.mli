@@ -5,7 +5,7 @@ module Context : sig
 
   val v :
     ?env:Os.env ->
-    ?user:Dockerfile.user ->
+    ?user:Spec.user ->
     ?workdir:string ->
     src_dir:string ->
     unit -> t
@@ -24,6 +24,6 @@ module Make (Store : S.STORE) : sig
   val build :
     t ->
     Context.t ->
-    Dockerfile.stage ->
+    Spec.stage ->
     (Store.ID.t, [> ]) Lwt_result.t
 end

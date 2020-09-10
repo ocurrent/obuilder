@@ -1,5 +1,5 @@
 let dockerfile =
-  let open Dockerfile in
+  let open Obuilder.Spec in
   {
     from = "ocurrent/opam@sha256:27504372f75c847ac82eecc4f21599ba81647d377f844bde25325d6852a65760";
     ops =

@@ -10,7 +10,7 @@ let strings xs = `List ( List.map (fun x -> `String x) xs)
 
 let v ~cwd ~argv ~hostname ~user ~env : Yojson.Safe.t =
   let user =
-    let { Dockerfile.uid; gid } = user in
+    let { Spec.uid; gid } = user in
     `Assoc [
       "uid", `Int uid;
       "gid", `Int gid;

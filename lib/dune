@@ -1,0 +1,5 @@
+(library
+  (name obuilder)
+  (public_name obuilder)
+  (preprocess (pps ppx_deriving.show))
+  (libraries lwt lwt.unix fmt yojson tar-unix))
