@@ -21,3 +21,23 @@ module type STORE = sig
 
   (* val path : t -> ID.t -> string *)
 end
+
+module type SANDBOX = sig
+  type t
+
+  module Config : sig
+    type t
+
+    val v :
+      cwd:string ->
+      argv:string list ->
+      hostname:string ->
+      user:Spec.user ->
+      env:Os.env ->
+      t
+  end
+
+  val run : ?stdin:Os.unix_fd -> t -> Config.t -> string -> (unit, 'a) Lwt_result.t
+  (** [run t config dir] runs the operation [config] in a sandbox with root
+      filesystem [rootfs]. *)
+end

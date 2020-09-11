@@ -5,10 +5,6 @@ let ( >>!= ) = Lwt_result.bind
 
 let hostname = "builder"
 
-let write_config config dir =
-  Lwt_io.(with_file ~mode:output) (dir / "config.json") @@ fun ch ->
-  Lwt_io.write ch (Yojson.Safe.pretty_to_string config ^ "\n")
-
 module Context = struct
   type t = {
     env : (string * string) list;       (* Environment in which to run commands. *)
@@ -26,10 +22,10 @@ module Context = struct
     { env; src_dir; user; workdir }
 end
 
-module Make (Store : S.STORE) = struct
+module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
   type t = {
     store : Store.t;
-    runc_state_dir : string;
+    sandbox : Sandbox.t;
   }
 
   let run t ~base ~context cmd =
@@ -42,31 +38,8 @@ module Make (Store : S.STORE) = struct
     in
     Store.build t.store ~base ~id ~log:stdout (fun result_tmp ->
         let argv = [ "bash"; "-c"; cmd ] in
-        let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env in
-        write_config config result_tmp >>= fun () ->
-        let log_file = result_tmp / "log" in
-        Os.with_open_out log_file (fun log ->
-            let out_r, out_w = Lwt_unix.pipe () in
-            let out_w_closed = ref false in
-            Lwt.finalize
-              (fun () ->
-                 let cmd = ["sudo"; "runc"; "--root"; t.runc_state_dir; "run"; id] in
-                 let stdout = `FD_copy (Lwt_unix.unix_file_descr out_w) in
-                 let stderr = stdout in
-                 let copy_log = Os.tee ~src:out_r ~dst:log in
-                 let proc = Os.exec ~cwd:result_tmp ~stdout ~stderr cmd in
-                 Lwt_unix.close out_w >>= fun () ->
-                 out_w_closed := true;
-                 proc >>= fun () ->
-                 copy_log
-              )
-              (fun () ->
-                 Lwt_unix.close out_r >>= fun () ->
-                 if !out_w_closed then Lwt.return_unit
-                 else Lwt_unix.close out_w
-              )
-          ) >|= fun () ->
-        Ok ()
+        let config = Sandbox.Config.v ~cwd:workdir ~argv ~hostname ~user ~env in
+        Sandbox.run t.sandbox config result_tmp
       )
 
   type copy_details = {
@@ -90,38 +63,19 @@ module Make (Store : S.STORE) = struct
     let id = Digest.to_hex (Digest.string (show_copy_details details)) in
     Store.build t.store ~base ~id ~log:stdout (fun result_tmp ->
         let argv = ["tar"; "-xvf"; "-"] in
-        let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
-        write_config config result_tmp >>= fun () ->
-        let closed_r = ref false in
-        let closed_w = ref false in
-        let r, w = Lwt_unix.pipe_out () in
-        Lwt.finalize
-          (fun () ->
-             Lwt_unix.set_close_on_exec w;
-             let cmd = ["sudo"; "runc"; "--root"; t.runc_state_dir; "run"; id] in
-             let stdin = `FD_copy r in
-             let proc = Os.exec ~cwd:result_tmp ~stdin cmd in
-             Unix.close r;
-             closed_r := true;
-             let send =
-               (* If the sending thread finishes (or fails), close the writing socket
-                  immediately so that the tar process finishes too. *)
-               Lwt.finalize
-                 (fun () -> Tar_transfer.send_files ~src_dir ~src_manifest ~dst ~to_untar:w)
-                 (fun () ->
-                    Lwt_unix.close w >|= fun () ->
-                    closed_w := true;
-                 )
-             in
-             proc >>= fun () ->
-             send
-          )
-          (fun () ->
-             if not !closed_r then Unix.close r;
-             if !closed_w then Lwt.return_unit
-             else Lwt_unix.close w
-          )
-        >|= Result.ok
+        let config = Sandbox.Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
+        Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
+        let proc = Sandbox.run ~stdin:from_us t.sandbox config result_tmp in
+        let send =
+          (* If the sending thread finishes (or fails), close the writing socket
+             immediately so that the tar process finishes too. *)
+          Lwt.finalize
+            (fun () -> Tar_transfer.send_files ~src_dir ~src_manifest ~dst ~to_untar)
+            (fun () -> Lwt_unix.close to_untar)
+        in
+        proc >>= fun result ->
+        send >>= fun () ->
+        Lwt.return result
       )
 
   let rec run_steps t ~(context:Context.t) ~base = function
@@ -164,6 +118,6 @@ module Make (Store : S.STORE) = struct
     get_base t base >>!= fun template_dir ->
     run_steps t ~context ~base:template_dir ops
 
-  let v ~store ~runc_state_dir =
-    { store; runc_state_dir }
+  let v ~store ~sandbox =
+    { store; sandbox }
 end

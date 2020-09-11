@@ -16,10 +16,10 @@ module Context : sig
     *)
 end
 
-module Make (Store : S.STORE) : sig
+module Make (Store : S.STORE) (Sandbox : S.SANDBOX) : sig
   type t
 
-  val v : store:Store.t -> runc_state_dir:string -> t
+  val v : store:Store.t -> sandbox:Sandbox.t -> t
 
   val build :
     t ->

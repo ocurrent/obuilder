@@ -18,7 +18,7 @@ let exec ?cwd ?stdin ?stdout ?stderr argv =
   | Unix.WSTOPPED x -> Fmt.failwith "%a stopped with signal %a" pp_cmd argv pp_signal x
 
 let with_open_out path fn =
-  Lwt_unix.openfile path Unix.[O_RDWR; O_CREAT] 0o644 >>= fun fd ->
+  Lwt_unix.openfile path Unix.[O_RDWR; O_CREAT; O_TRUNC] 0o644 >>= fun fd ->
   Lwt.finalize
     (fun () -> fn fd)
     (fun () -> Lwt_unix.close fd)
@@ -45,10 +45,57 @@ let tee ~src ~dst =
 
 let cat_file path ~dst =
   let ch = open_in path in
-  let buf = Bytes.create 4096 in
-  let rec aux () =
-    match input ch buf 0 (Bytes.length buf) with
-    | 0 -> ()
-    | n -> output dst buf 0 n; aux ()
-  in
-  aux ()
+  Fun.protect ~finally:(fun () -> close_in ch)
+    (fun () ->
+       let buf = Bytes.create 4096 in
+       let rec aux () =
+         match input ch buf 0 (Bytes.length buf) with
+         | 0 -> ()
+         | n -> output dst buf 0 n; aux ()
+       in
+       aux ();
+       flush dst
+    )
+
+type unix_fd = {
+  raw : Unix.file_descr;
+  mutable needs_close : bool;
+}
+
+let close fd =
+  assert (fd.needs_close);
+  Unix.close fd.raw;
+  fd.needs_close <- false
+
+let ensure_closed_unix fd =
+  if fd.needs_close then close fd
+
+let ensure_closed_lwt fd =
+  if Lwt_unix.state fd = Lwt_unix.Closed then Lwt.return_unit
+  else Lwt_unix.close fd
+
+let with_pipe_from_child fn =
+  let r, w = Lwt_unix.pipe_in () in
+  let w = { raw = w; needs_close = true } in
+  Lwt.finalize
+    (fun () ->
+       Lwt_unix.set_close_on_exec r;
+       fn ~r ~w
+    )
+    (fun () ->
+       ensure_closed_unix w;
+       ensure_closed_lwt r
+    )
+
+let with_pipe_to_child fn =
+  let r, w = Lwt_unix.pipe_out () in
+  let r = { raw = r; needs_close = true } in
+  Lwt.finalize
+    (fun () ->
+       Lwt_unix.set_close_on_exec w;
+       fn ~r ~w
+    )
+    (fun () ->
+       ensure_closed_unix r;
+       ensure_closed_lwt w
+    )
