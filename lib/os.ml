@@ -18,7 +18,7 @@ let exec ?cwd ?stdin ?stdout ?stderr argv =
   | Unix.WSTOPPED x -> Fmt.failwith "%a stopped with signal %a" pp_cmd argv pp_signal x
 
 let with_open_out path fn =
-  Lwt_unix.openfile path Unix.[O_RDWR; O_CREAT; O_TRUNC] 0o644 >>= fun fd ->
+  Lwt_unix.openfile path Unix.[O_RDWR; O_CREAT; O_EXCL] 0o666 >>= fun fd ->
   Lwt.finalize
     (fun () -> fn fd)
     (fun () -> Lwt_unix.close fd)

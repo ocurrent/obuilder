@@ -58,12 +58,16 @@ let build t ?base ~id ~log fn =
     Lwt_result.return result_id
   | `Missing ->
     delete_clone_if_exists ~pool:t.pool id >>= fun () ->
+    let clone = strf "/%s/%s" t.pool id in
     begin match base with
       | None -> Os.exec ["sudo"; "zfs"; "create"; "--"; strf "%s/%s" t.pool id]
-      | Some base -> Os.exec ["sudo"; "zfs"; "clone"; "--"; strf "%s/%s@snap" t.pool base.ID.dataset; strf "%s/%s" t.pool id]
+      | Some base ->
+        let base = strf "%s/%s@snap" t.pool base.ID.dataset in
+        Os.exec ["sudo"; "zfs"; "clone"; "--"; base; strf "%s/%s" t.pool id] >|= fun () ->
+        let log_file = clone / "log" in
+        if Sys.file_exists log_file then Unix.unlink log_file
     end
     >>= fun () ->
-    let clone = strf "/%s/%s" t.pool id in
     Os.exec ["sudo"; "chown"; string_of_int (Unix.getuid ()); clone] >>= fun () ->
     fn clone >>!= fun () ->
     Os.exec ["sudo"; "zfs"; "snapshot"; "--"; strf "%s/%s@snap" t.pool id] >>= fun () ->

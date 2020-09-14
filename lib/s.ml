@@ -17,7 +17,7 @@ module type STORE = sig
       as the [base] for further builds, until it is expired from the cache.
       On failure, nothing is recorded and calling [build] again will make
       another attempt at building it.
-      @param base Initialise [tmpdir] as a clone of [base]. *)
+      @param base Initialise [tmpdir] as a clone of [base] (with any log removed). *)
 
   (* val path : t -> ID.t -> string *)
 

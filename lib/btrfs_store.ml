@@ -43,7 +43,10 @@ let build t ?base ~id ~log fn =
     delete_snapshot_if_exists result_tmp >>= fun () ->
     begin match base with
       | None -> Os.exec ["btrfs"; "subvolume"; "create"; "--"; result_tmp]
-      | Some base -> Os.exec ["btrfs"; "subvolume"; "snapshot"; path t base; result_tmp]
+      | Some base ->
+        Os.exec ["btrfs"; "subvolume"; "snapshot"; path t base; result_tmp] >|= fun () ->
+        let log_file = result_tmp / "log" in
+        if Sys.file_exists log_file then Unix.unlink log_file
     end
     >>= fun () ->
     fn result_tmp >>!= fun () ->
