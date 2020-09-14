@@ -22,6 +22,7 @@ let env =
   Obuilder.Context.default_env
 
 let () =
+  Fmt_tty.setup_std_outputs ();
   Lwt_main.run begin
     let builder = Builder.v ~store ~sandbox in
     let context = Obuilder.Context.v ~env ~src_dir:context () in

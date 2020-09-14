@@ -62,7 +62,7 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
     (* Fmt.pr "COPY: %a@." pp_copy_details details; *)
     let id = Digest.to_hex (Digest.string (show_copy_details details)) in
     Store.build t.store ~base ~id ~log:stdout (fun result_tmp ->
-        let argv = ["tar"; "-xvf"; "-"] in
+        let argv = ["tar"; "-xf"; "-"] in
         let config = Sandbox.Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
         Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
         let proc = Sandbox.run ~stdin:from_us t.sandbox config result_tmp in
@@ -78,10 +78,13 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
         Lwt.return result
       )
 
+  let pp_op ~(context:Context.t) f op =
+    Fmt.pf f "%s: %a" context.workdir Spec.pp_op op
+
   let rec run_steps t ~(context:Context.t) ~base = function
     | [] -> Lwt_result.return base
     | op :: ops ->
-      Fmt.pr "%s: %a@." context.workdir Spec.pp_op op;
+      Fmt.pr "%a@." (Fmt.styled (`Fg (`Hi `Blue)) (pp_op ~context)) op;
       let k = run_steps t ops in
       match op with
       | `Comment _ -> k ~base ~context
@@ -115,6 +118,7 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
       )
 
   let build t context { Spec.from = base; ops } =
+    Fmt.pr "%a@." (Fmt.styled (`Fg (`Hi `Blue)) (Fmt.fmt "FROM %S")) base;
     get_base t base >>!= fun template_dir ->
     run_steps t ~context ~base:template_dir ops
 

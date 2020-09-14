@@ -34,7 +34,7 @@ let build t ?base ~id ~log fn =
   let result = path t result_id in
   match Os.check_dir result with
   | `Present ->
-    Fmt.pr "---> using cached result %S@." result;
+    Fmt.pr "%a@." (Fmt.styled (`Fg (`Yellow)) (Fmt.fmt "---> using cached result %S")) result;
     let log_file = result / "log" in
     if Sys.file_exists log_file then Os.cat_file log_file ~dst:log;
     Lwt_result.return result_id
