@@ -7,7 +7,7 @@ let hostname = "builder"
 
 module Context = struct
   type t = {
-    env : (string * string) list;       (* Environment in which to run commands. *)
+    env : Os.env;                       (* Environment in which to run commands. *)
     src_dir : string;                   (* Directory with files for copying. *)
     user : Spec.user;                   (* Container user to run as. *)
     workdir : string;                   (* Directory in the container namespace for cwd. *)
