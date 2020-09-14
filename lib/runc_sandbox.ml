@@ -266,4 +266,6 @@ let run ?stdin:stdin t config result_tmp =
   >|= fun () ->
   Ok ()
 
-let create ~runc_state_dir = { runc_state_dir }
+let create ~runc_state_dir =
+  Os.ensure_dir runc_state_dir;
+  { runc_state_dir }

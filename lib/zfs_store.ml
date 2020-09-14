@@ -28,8 +28,19 @@ let check_dir x =
   | _ -> Fmt.failwith "Exists, but is not a directory: %S" x
   | exception Unix.Unix_error(Unix.ENOENT, _, _) -> `Missing
 
+let state_dir t = strf "/%s/state" t.pool
+
 let create ~pool =
-  { pool }
+  let t = { pool } in
+  let state = state_dir t in
+  begin match Os.check_dir state with
+    | `Present -> Lwt.return_unit
+    | `Missing ->
+      let ds = strf "%s/state" t.pool in
+      Os.exec ["sudo"; "zfs"; "create"; "--"; ds] >>= fun () ->
+      Os.exec ["sudo"; "chown"; string_of_int (Unix.getuid ()); "/" ^ ds]
+  end >|= fun () ->
+  t
 
 let delete_clone_if_exists ~pool id =
   match check_dir (strf "/%s/%s" pool id) with

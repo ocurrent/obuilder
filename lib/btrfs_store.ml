@@ -13,32 +13,26 @@ end
 
 let ( / ) = Filename.concat
 
-let check_dir x =
-  match Unix.lstat x with
-  | Unix.{ st_kind = S_DIR; _ } -> `Present
-  | _ -> Fmt.failwith "Exists, but is not a directory: %S" x
-  | exception Unix.Unix_error(Unix.ENOENT, _, _) -> `Missing
-
 let create root =
-  let results = root / "result" in
-  begin match check_dir results with
-    | `Present -> ()
-    | `Missing -> Unix.mkdir results 0o755
-  end;
+  Os.ensure_dir (root / "result");
+  Os.ensure_dir (root / "state");
   { root }
 
 let delete_snapshot_if_exists path =
-  match check_dir path with
+  match Os.check_dir path with
   | `Missing -> Lwt.return_unit
   | `Present -> Os.exec ["sudo"; "btrfs"; "subvolume"; "delete"; path]
 
 let path t id =
   t.root / "result" / id
 
+let state_dir t =
+  t.root / "state"
+
 let build t ?base ~id ~log fn =
   let result_id = ID.v id in
   let result = path t result_id in
-  match check_dir result with
+  match Os.check_dir result with
   | `Present ->
     Fmt.pr "---> using cached result %S@." result;
     let log_file = result / "log" in

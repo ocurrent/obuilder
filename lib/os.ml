@@ -99,3 +99,14 @@ let with_pipe_to_child fn =
        ensure_closed_unix r;
        ensure_closed_lwt w
     )
+
+let check_dir x =
+  match Unix.lstat x with
+  | Unix.{ st_kind = S_DIR; _ } -> `Present
+  | _ -> Fmt.failwith "Exists, but is not a directory: %S" x
+  | exception Unix.Unix_error(Unix.ENOENT, _, _) -> `Missing
+
+let ensure_dir path =
+  match check_dir path with
+  | `Present -> ()
+  | `Missing -> Unix.mkdir path 0o777

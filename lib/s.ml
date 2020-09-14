@@ -20,6 +20,10 @@ module type STORE = sig
       @param base Initialise [tmpdir] as a clone of [base]. *)
 
   (* val path : t -> ID.t -> string *)
+
+  val state_dir : t -> string
+  (** [state_dir] is the path of a directory which can be used to store mutable
+      state related to this store (e.g. an sqlite3 database). *)
 end
 
 module type SANDBOX = sig
