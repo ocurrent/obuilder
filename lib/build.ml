@@ -90,7 +90,7 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Comment _ -> k ~base ~context
       | `Workdir workdir -> k ~base ~context:{context with workdir}
       | `User user -> k ~base ~context:{context with user}
-      | `Run cmd ->
+      | `Run { shell = cmd } ->
         run t ~base ~context cmd >>!= fun base ->
         k ~base ~context
       | `Copy x ->
