@@ -39,7 +39,9 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
     Store.build t.store ~base ~id ~log:stdout (fun result_tmp ->
         let argv = [ "bash"; "-c"; cmd ] in
         let config = Sandbox.Config.v ~cwd:workdir ~argv ~hostname ~user ~env in
-        Sandbox.run t.sandbox config result_tmp
+        Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
+        Lwt_unix.close close_me >>= fun () ->
+        Sandbox.run ~stdin t.sandbox config result_tmp
       )
 
   type copy_details = {
