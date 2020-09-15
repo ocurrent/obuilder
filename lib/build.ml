@@ -81,7 +81,8 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
       )
 
   let pp_op ~(context:Context.t) f op =
-    Fmt.pf f "%s: %a" context.workdir Spec.pp_op op
+    let sexp = Spec.sexp_of_op op in
+    Fmt.pf f "@[<v2>%s: %a@]" context.workdir Sexplib.Sexp.pp_hum sexp
 
   let rec run_steps t ~(context:Context.t) ~base = function
     | [] -> Lwt_result.return base
