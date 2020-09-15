@@ -10,8 +10,10 @@ let rec generate ~src_dir src : t =
   let path = src_dir / src in
   match Unix.lstat path with
   | Unix.{ st_kind = S_DIR; _ } ->
+    let items = Sys.readdir path in
+    Array.sort String.compare items;
     let items =
-      Sys.readdir path
+      items
       |> Array.to_list
       |> List.filter (( <> ) ".git")   (* TODO: .dockerignore *)
       |> List.map (fun item -> generate ~src_dir (src / item))
