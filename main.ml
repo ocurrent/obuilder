@@ -15,19 +15,17 @@ let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc")
 
 module Builder = Obuilder.Builder(Store)(Sandbox)
 
-let context = "/var/lib/docker/tal/context"
-
 let env =
   ("OPAMYES", "true") ::
   Obuilder.Context.default_env
 
-let build spec =
+let build spec src_dir =
   Fmt_tty.setup_std_outputs ();
   let spec = Obuilder.Spec.stage_of_sexp (Sexplib.Sexp.load_sexp spec) in
   (* assert (spec = Obuilder.Spec.stage_of_sexp (Obuilder.Spec.sexp_of_stage spec)); *)
   Lwt_main.run begin
     let builder = Builder.v ~store ~sandbox in
-    let context = Obuilder.Context.v ~env ~src_dir:context () in
+    let context = Obuilder.Context.v ~env ~src_dir () in
     Builder.build builder context spec >>= function
     | Ok x ->
       Fmt.pr "Got: %a@." Store.ID.pp x;
@@ -39,15 +37,23 @@ open Cmdliner
 
 let spec_file =
   Arg.required @@
-  Arg.pos 0 Arg.(some file) None @@
+  Arg.opt Arg.(some file) None @@
   Arg.info
     ~doc:"Path of build spec file"
     ~docv:"FILE"
+    ["f"]
+
+let src_dir =
+  Arg.required @@
+  Arg.pos 0 Arg.(some dir) None @@
+  Arg.info
+    ~doc:"Directory containing the source files"
+    ~docv:"DIR"
     []
 
 let build =
   let doc = "Build a spec file." in
-  Term.(const build $ spec_file),
+  Term.(const build $ spec_file $ src_dir),
   Term.info "build" ~doc
 
 let cmds = [build]

@@ -1,4 +1,5 @@
 (executable
+  (public_name obuilder)
   (name main)
   (preprocess (pps ppx_deriving.show))
   (libraries lwt lwt.unix fmt yojson tar-unix obuilder fmt.tty cmdliner))
