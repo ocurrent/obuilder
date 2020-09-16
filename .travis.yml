@@ -1,0 +1,16 @@
+language: c
+dist: focal
+sudo: required
+addons:
+  apt:
+    packages:
+    - opam
+    - btrfs-progs
+    - zfs-dkms
+    - zfsutils-linux
+services:
+  - docker
+cache:
+  directories:
+    - /home/travis/.opam
+script: ./.run-travis-tests.sh

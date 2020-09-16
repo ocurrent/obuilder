@@ -1,0 +1,12 @@
+((from busybox@sha256:d366a4665ab44f0648d7a00ae3fae139d55e32f9712c67accd604bb55df9d05a)
+ (comment busybox)
+ (shell /bin/sh -c)
+ (env TEST /test)
+ (run (shell "mkdir /test && chown 1:1 /test"))
+ (user (uid 1) (gid 1))
+ (run (shell "whoami"))
+ (copy
+  (src test-file test-dir test-link)
+  (dst /test/))
+ (workdir /test)
+ (run (shell "ls -lR $TEST")))

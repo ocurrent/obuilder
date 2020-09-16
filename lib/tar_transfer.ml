@@ -58,11 +58,22 @@ let copy_file ~src ~dst ~to_untar =
   let hdr = Tar.Header.make
       ~file_mode:(if stat.Lwt_unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
       ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
-      dst stat.Lwt_unix.LargeFile.st_size (* TODO: symlinks? *)
+      dst stat.Lwt_unix.LargeFile.st_size
   in
   Tar_lwt_unix.write_block hdr (fun ofd ->
       Lwt_io.(with_file ~mode:input) src (copy_to ~dst:ofd)
     ) to_untar
+
+let copy_symlink ~src ~target ~dst ~to_untar =
+  Lwt_unix.LargeFile.lstat src >>= fun stat ->
+  let hdr = Tar.Header.make
+      ~file_mode:0o777
+      ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
+      ~link_indicator:Tar.Header.Link.Symbolic
+      ~link_name:target
+      dst 0L
+  in
+  Tar_lwt_unix.write_block hdr (fun _ -> Lwt.return_unit) to_untar
 
 let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar =
   Fmt.pr "Copy dir %S -> %S@." src dst;
@@ -80,6 +91,10 @@ let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar =
         let src = src_dir / src in
         let dst = dst / Filename.basename src in
         copy_file ~src ~dst ~to_untar
+      | `Symlink (src, target) ->
+        let src = src_dir / src in
+        let dst = dst / Filename.basename src in
+        copy_symlink ~src ~target ~dst ~to_untar
       | `Dir (src, items) ->
         let dst = dst / Filename.basename src in
         copy_dir ~src_dir ~src ~dst ~items ~to_untar
@@ -91,7 +106,15 @@ let send_files ~src_dir ~src_manifest ~dst ~to_untar =
         let src = src_dir / path in
         let dst = dst / (Filename.basename path) in       (* maybe don't copy docker's bad design here? *)
         copy_file ~src ~dst ~to_untar
+      | `Symlink (src, target) ->
+        let src = src_dir / src in
+        let dst = dst / Filename.basename src in
+        copy_symlink ~src ~target ~dst ~to_untar
       | `Dir (src, items) ->
+        let dst =
+          if dst.[String.length dst - 1] = '/' then dst / Filename.basename src
+          else dst
+        in
         copy_dir ~src_dir ~src ~dst ~items ~to_untar
     )
   >>= fun () ->
