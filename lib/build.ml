@@ -11,6 +11,7 @@ module Context = struct
     src_dir : string;                   (* Directory with files for copying. *)
     user : Spec.user;                   (* Container user to run as. *)
     workdir : string;                   (* Directory in the container namespace for cwd. *)
+    shell : string list;
   }
 
   let default_env = [
@@ -18,8 +19,8 @@ module Context = struct
     "TERM", "xterm";
   ]
 
-  let v ?(env=default_env) ?(user=Spec.root) ?(workdir="/") ~src_dir () =
-    { env; src_dir; user; workdir }
+  let v ?(env=default_env) ?(user=Spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ~src_dir () =
+    { env; src_dir; user; workdir; shell }
 end
 
 module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
@@ -29,7 +30,7 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
   }
 
   let run t ~base ~context cmd =
-    let { Context.workdir; user; env; src_dir = _ } = context in
+    let { Context.workdir; user; env; shell; src_dir = _ } = context in
     let id =
       Digest.string
         ([%derive.show: string * string * (string * string) list * string]
@@ -37,7 +38,7 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
       |> Digest.to_hex
     in
     Store.build t.store ~base ~id ~log:stdout (fun result_tmp ->
-        let argv = [ "bash"; "-c"; cmd ] in
+        let argv = shell @ [cmd] in
         let config = Sandbox.Config.v ~cwd:workdir ~argv ~hostname ~user ~env in
         Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
         Lwt_unix.close close_me >>= fun () ->
@@ -52,7 +53,7 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
   } [@@deriving show]
 
   let copy t ~context ~base { Spec.src; dst } =
-    let { Context.src_dir; workdir; user; env = _ } = context in
+    let { Context.src_dir; workdir; user; shell = _; env = _ } = context in
     let dst = if Filename.is_relative dst then workdir / dst else dst in
     let src_manifest = List.map (Manifest.generate ~src_dir) src in
     let details = {
@@ -102,6 +103,8 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Env ((key, _) as e) ->
         let env = e :: (List.remove_assoc key context.env) in
         k ~base ~context:{context with env}
+      | `Shell shell ->
+        k ~base ~context:{context with shell}
 
   let get_base t base =
     let id = Digest.to_hex (Digest.string base) in

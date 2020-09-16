@@ -21,52 +21,44 @@ type user = { uid : int; gid : int }
 type run = { shell : string }
 [@@deriving show { with_path = false }, sexp]
 
-(* Note: we remove the extra () in the sexp string format,
-   formatting them as if they were in-line records. e.g.
-
-   (copy ((src ...) (dst ...))) becomes (copy (src ...) (dst ...)).
-
-   (comment ATOM) stays as it is.
-
-   But if we had a constructor that would normally serialise as (foo (ATOM))
-   then we'd convert it to (foo ATOM) and then it would look like the same as
-   if it had been (foo ATOM) to start with. Records are fine because the first
-   argument is always a list (not an atom). Tuples are fine because they don't
-   give a single atom. But a list of strings would be a problem, if there was
-   only one string.
-*)
 type op = [
   | `Comment of string
   | `Workdir of string
+  | `Shell of string list [@sexp.list]
   | `Run of run
   | `Copy of copy
   | `User of user
   | `Env of (string * string)
 ] [@@deriving show, sexp]
 
+(* For some ops, we remove the extra () in the sexp string format,
+   formatting them as if they were in-line records. e.g.
+   (copy ((src ...) (dst ...))) becomes (copy (src ...) (dst ...)). *)
+let inline = function
+  | "run" | "copy" | "user" | "env" -> true
+  | _ -> false
+
 let sexp_of_op x : Sexplib.Sexp.t =
   match sexp_of_op x with
-  | List [Atom name; args] ->
-    let name = Sexplib.Sexp.Atom (String.lowercase_ascii name) in
+  | List (Atom name :: args) ->
+    let name = String.lowercase_ascii name in
     let args =
-      match args with
-      | List [Atom _] as x -> Fmt.failwith "Invalid args: %a" Sexplib.Sexp.pp_hum x
-      | List args -> args       (* Result is not an atom *)
-      | Atom _ as x -> [x]      (* Result is an atom *)
+      if inline name then
+        match args with
+        | [List args] -> args
+        | _ -> failwith "Inline op must be a record!"
+      else args
     in
-    Sexplib.Sexp.List (name :: args)
+    Sexplib.Sexp.List (Sexplib.Sexp.Atom name :: args)
   | x -> Fmt.failwith "Invalid op: %a" Sexplib.Sexp.pp_hum x
 
-let op_of_sexp =
+let op_of_sexp x =
   let open Sexplib.Sexp in
-  function
+  (* Fmt.pr "sexp_of_op: %a@." Sexplib.Sexp.pp_hum x; *)
+  match x with
   | List (Atom name :: args) ->
+    let args = if inline name then [List args] else args in
     let name = String.capitalize_ascii name in
-    let args = 
-      match args with
-      | [Atom _] as x -> x
-      | args -> [List args]
-    in
     op_of_sexp (List (Atom name :: args))
   | x -> Fmt.failwith "Invalid op: %a" Sexplib.Sexp.pp_hum x
 
