@@ -3,7 +3,7 @@ set -eux
 export OPAMYES=true
 
 ZFS_LOOP=$(sudo losetup -f)
-dd if=/dev/zero of=/tmp/zfs.img bs=100M count=10
+dd if=/dev/zero of=/tmp/zfs.img bs=100M count=50
 sudo losetup -P $ZFS_LOOP /tmp/zfs.img
 sudo zpool create zfs $ZFS_LOOP
 
@@ -20,3 +20,4 @@ opam install --deps-only -t .
 opam exec -- make
 opam exec -- dune exec -- obuilder build -f test/test1.spec test/test1 --store=btrfs:/btrfs
 opam exec -- dune exec -- obuilder build -f test/test1.spec test/test1 --store=zfs:zfs
+opam exec -- dune exec -- obuilder build -f example.spec . --store=zfs:zfs

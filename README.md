@@ -19,10 +19,8 @@ As present, the initial base image is fetched from Docker Hub using `docker pull
 
 OBuilder is intended to be used as a library, but at the moment there is just a command-line interface.
 
-To build `example.spec`, using `dir` as the source directory and the ZFS pool `tank` to cache the build results:
+To build `example.spec` (which builds OBuilder itself) using the ZFS pool `tank` to cache the build results:
 
-    $ obuilder build -f example.spec dir --store=zfs:tank
+    $ obuilder build -f example.spec . --store=zfs:tank
 
-To use Btrfs directory `/mnt/btrfs` for the build cache:
-
-    $ obuilder build -f example.spec dir --store=btrfs:/mnt/btrfs
+To use Btrfs directory `/mnt/btrfs` for the build cache, use `--store=btrfs:/mnt/btrfs`.
