@@ -7,7 +7,7 @@ type t = {
 }
 
 module Config = struct
-  type t = Yojson.Safe.t
+  type t = config_dir:string -> results_dir:string -> Yojson.Safe.t
 
   let mount ?(options=[]) ~ty ~src dst =
     `Assoc [
@@ -19,7 +19,7 @@ module Config = struct
 
   let strings xs = `List ( List.map (fun x -> `String x) xs)
 
-  let v ~cwd ~argv ~hostname ~user ~env : t =
+  let v ~cwd ~argv ~hostname ~user ~env ~config_dir ~results_dir : Yojson.Safe.t =
     let user =
       let { Spec.uid; gid } = user in
       `Assoc [
@@ -111,7 +111,7 @@ module Config = struct
         "noNewPrivileges", `Bool false;
       ];
       "root", `Assoc [
-        "path", `String "rootfs";
+        "path", `String (results_dir / "rootfs");
         "readonly", `Bool false;
       ];
       "hostname", `String hostname;
@@ -173,7 +173,7 @@ module Config = struct
           ];
         mount "/etc/hosts"
           ~ty:"bind"
-          ~src:"/var/lib/docker/tal/hosts"  (* XXX *)
+          ~src:(config_dir / "hosts")
           ~options:[
             "rbind";
             "rprivate"
@@ -240,15 +240,14 @@ end
 
 let next_id = ref 0
 
-let write_config config dir =
-  Lwt_io.(with_file ~mode:output) (dir / "config.json") @@ fun ch ->
-  Lwt_io.write ch (Yojson.Safe.pretty_to_string config ^ "\n")
-
-let run ?stdin:stdin t config result_tmp =
-  write_config config result_tmp >>= fun () ->
+let run ?stdin:stdin t config results_dir =
+  Lwt_io.with_temp_dir ~prefix:"obuilder-runc-" @@ fun tmp ->
+  let config = config ~config_dir:tmp ~results_dir in
+  Os.write_file ~path:(tmp / "config.json") (Yojson.Safe.pretty_to_string config ^ "\n") >>= fun () ->
+  Os.write_file ~path:(tmp / "hosts") "127.0.0.1 localhost builder" >>= fun () ->
   let id = string_of_int !next_id in
   incr next_id;
-  let log_file = result_tmp / "log" in
+  let log_file = results_dir / "log" in
   Os.with_open_out log_file (fun log ->
       Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
       let cmd = ["sudo"; "runc"; "--root"; t.runc_state_dir; "run"; id] in
@@ -257,7 +256,7 @@ let run ?stdin:stdin t config result_tmp =
       let copy_log = Os.tee ~src:out_r ~dst:log in
       let proc =
         let stdin = Option.map (fun x -> `FD_copy x.Os.raw) stdin in
-        Os.exec ~cwd:result_tmp ?stdin ~stdout ~stderr cmd in
+        Os.exec ~cwd:tmp ?stdin ~stdout ~stderr cmd in
       Os.close out_w;
       Option.iter Os.close stdin;
       proc >>= fun () ->

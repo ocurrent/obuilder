@@ -57,6 +57,10 @@ let cat_file path ~dst =
        flush dst
     )
 
+let write_file ~path contents =
+  Lwt_io.(with_file ~mode:output) path @@ fun ch ->
+  Lwt_io.write ch contents
+
 type unix_fd = {
   raw : Unix.file_descr;
   mutable needs_close : bool;
