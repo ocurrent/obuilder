@@ -23,7 +23,7 @@ let build_in (type s) (module Store : Obuilder.S.STORE with type t = s) (store :
   let context = Obuilder.Context.v ~env ~src_dir () in
   Builder.build builder context spec >>= function
   | Ok x ->
-    Fmt.pr "Got: %a@." Store.ID.pp x;
+    Fmt.pr "Got: %S@." (x :> string);
     Lwt.return_unit
   | Error `Cant_happen -> assert false
 

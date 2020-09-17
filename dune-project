@@ -21,5 +21,6 @@
   sexplib
   ppx_deriving
   ppx_sexp_conv
+  sqlite3
   (ocaml (>= 4.10.0))
 ))
