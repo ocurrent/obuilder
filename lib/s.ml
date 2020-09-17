@@ -1,14 +1,14 @@
+type id = string
+
 module type STORE = sig
   type t
-
-  type id = private string
 
   val build :
     t -> ?base:id ->
     id:string ->
     log:out_channel ->
     (string -> (unit, 'e) Lwt_result.t) ->
-    (id, 'e) Lwt_result.t
+    (unit, 'e) Lwt_result.t
   (** [build t ~id ~log fn] displays the log for build [id] on [log].
       If it doesn't exist yet in the store, it runs [fn tmpdir] to create
       it first. On success, [tmpdir] is saved as [id], which can be used

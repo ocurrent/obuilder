@@ -1,0 +1,6 @@
+(test
+  (name test)
+  (deps base.tar)
+  (libraries alcotest-lwt obuilder))
+
+(dirs :standard \ test1)

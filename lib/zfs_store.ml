@@ -8,8 +8,6 @@ type t = {
   pool : string;
 }
 
-type id = string
-
 let path t id =
   strf "/%s/%s/.zfs/snapshot/snap" t.pool id
 
@@ -47,7 +45,7 @@ let build t ?base ~id ~log fn =
     Fmt.pr "%a@." (Fmt.styled (`Fg (`Yellow)) (Fmt.fmt "---> using cached result %S")) result;
     let log_file = result / "log" in
     if Sys.file_exists log_file then Os.cat_file log_file ~dst:log;
-    Lwt_result.return id
+    Lwt_result.return ()
   | `Missing ->
     delete_clone_if_exists ~pool:t.pool id >>= fun () ->
     let clone = strf "/%s/%s" t.pool id in
@@ -65,4 +63,4 @@ let build t ?base ~id ~log fn =
     Os.exec ["sudo"; "zfs"; "snapshot"; "--"; strf "%s/%s@snap" t.pool id] >>= fun () ->
     (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
        keep it around? *)
-    Lwt_result.return id
+    Lwt_result.return () 

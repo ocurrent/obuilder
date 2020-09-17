@@ -8,8 +8,6 @@ module Make (Raw : S.STORE) = struct
     dao : Dao.t;
   }
 
-  type id = Raw.id
-
   let build t ?base ~id ~log fn =
     let build_needed = ref false in
     Raw.build t.raw ?base ~id ~log (fun dir ->
