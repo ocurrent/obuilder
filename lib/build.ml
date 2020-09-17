@@ -23,7 +23,9 @@ module Context = struct
     { env; src_dir; user; workdir; shell }
 end
 
-module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
+module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
+  module Store = Db_store.Make(Raw_store)
+
   type t = {
     store : Store.t;
     sandbox : Sandbox.t;
@@ -34,7 +36,7 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
     let id =
       Digest.string
         ([%derive.show: string * string * (string * string) list * string]
-           (Store.ID.show base, workdir, env, cmd))
+           ((base : Store.id :> string), workdir, env, cmd))
       |> Digest.to_hex
     in
     Store.build t.store ~base ~id ~log:stdout (fun result_tmp ->
@@ -46,7 +48,7 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
       )
 
   type copy_details = {
-    base : Store.ID.t;
+    base : Store.id [@printer fun f x -> Fmt.string f (x : Store.id :> string)];
     src_manifest : Manifest.t list;
     user : Spec.user;
     dst : string;
@@ -129,5 +131,6 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) = struct
     run_steps t ~context ~base:template_dir ops
 
   let v ~store ~sandbox =
+    let store = Store.wrap store in
     { store; sandbox }
 end

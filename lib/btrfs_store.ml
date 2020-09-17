@@ -6,10 +6,7 @@ type t = {
   root : string;
 }
 
-module ID = struct
-  type t = string [@@deriving show]
-  let v x = x
-end
+type id = string
 
 let ( / ) = Filename.concat
 
@@ -30,14 +27,13 @@ let state_dir t =
   t.root / "state"
 
 let build t ?base ~id ~log fn =
-  let result_id = ID.v id in
-  let result = path t result_id in
+  let result = path t id in
   match Os.check_dir result with
   | `Present ->
     Fmt.pr "%a@." (Fmt.styled (`Fg (`Yellow)) (Fmt.fmt "---> using cached result %S")) result;
     let log_file = result / "log" in
     if Sys.file_exists log_file then Os.cat_file log_file ~dst:log;
-    Lwt_result.return result_id
+    Lwt_result.return id
   | `Missing ->
     let result_tmp = result ^ ".part" in
     delete_snapshot_if_exists result_tmp >>= fun () ->
@@ -53,4 +49,4 @@ let build t ?base ~id ~log fn =
     (* delete_snapshot_if_exists result >>= fun () -> *) (* XXX: just for testing *)
     Os.exec ["btrfs"; "subvolume"; "snapshot"; "-r"; result_tmp; result] >>= fun () ->
     Os.exec ["sudo"; "btrfs"; "subvolume"; "delete"; result_tmp] >>= fun () ->
-    Lwt_result.return result_id
+    Lwt_result.return id

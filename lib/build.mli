@@ -27,5 +27,5 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) : sig
     t ->
     Context.t ->
     Spec.stage ->
-    (Store.ID.t, [> ]) Lwt_result.t
+    (Store.id, [> ]) Lwt_result.t
 end
