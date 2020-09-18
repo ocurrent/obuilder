@@ -1,19 +1,39 @@
 open Sexplib.Std
 
-type copy = { src : string list; dst : string }
-[@@deriving show { with_path = false }, of_sexp]
-
-let copy_of_sexp =
+(* Convert fields matched by [p] from (name v1 v2 ...) to (name (v1 v2 ...)) *)
+let inflate_record p =
   let open Sexplib.Sexp in function
-    | List (List (Atom "src" :: src) :: rest) ->
-      copy_of_sexp (List (List [Atom "src"; List src] :: rest))
-    | x -> Fmt.failwith "Invalid copy spec: %a" Sexplib.Sexp.pp_hum x
+  | Atom _ as x -> Fmt.failwith "Invalid record field: %a" Sexplib.Sexp.pp_hum x
+  | List xs ->
+    let expand = function
+      | List (Atom name :: vs) when p name -> List [Atom name; List vs]
+      | x -> x
+    in
+    List (List.map expand xs)
 
-let sexp_of_copy { src; dst } =
-  let open Sexplib.Sexp in
-  let src = List.map (fun x -> Atom x) src in
-  List [List (Atom "src" :: src);
-        List [Atom "dst"; Atom dst]]
+(* Convert fields matched by [p] from (name (v1 v2 ...)) to (name v1 v2 ...) *)
+let deflate_record p =
+  let open Sexplib.Sexp in function
+  | Atom _ as x -> Fmt.failwith "Invalid record field: %a" Sexplib.Sexp.pp_hum x
+  | List xs ->
+    let deflate = function
+      | List [Atom name; List vs] when p name -> List (Atom name :: vs)
+      | x -> x
+    in
+    List (List.map deflate xs)
+
+type copy = {
+  src : string list;
+  dst : string;
+  exclude : string list [@sexp.list];
+} [@@deriving show { with_path = false }, sexp]
+
+let copy_inlined = function
+  | "src" | "exclude" -> true
+  | _ -> false
+
+let copy_of_sexp x = copy_of_sexp (inflate_record copy_inlined x)
+let sexp_of_copy x = deflate_record copy_inlined (sexp_of_copy x)
 
 type user = { uid : int; gid : int }
 [@@deriving show { with_path = false }, sexp]
@@ -79,7 +99,7 @@ let stage_of_sexp = function
 let comment c = `Comment c
 let workdir x = `Workdir x
 let run x = `Run { shell = x }
-let copy src dst = `Copy { src; dst }
+let copy ?(exclude=[]) src dst = `Copy { src; dst; exclude }
 let env k v = `Env (k, v)
 let user ~uid ~gid = `User { uid; gid }
 

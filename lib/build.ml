@@ -54,10 +54,10 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     dst : string;
   } [@@deriving show]
 
-  let copy t ~context ~base { Spec.src; dst } =
+  let copy t ~context ~base { Spec.src; dst; exclude } =
     let { Context.src_dir; workdir; user; shell = _; env = _ } = context in
     let dst = if Filename.is_relative dst then workdir / dst else dst in
-    let src_manifest = List.map (Manifest.generate ~src_dir) src in
+    let src_manifest = List.map (Manifest.generate ~exclude ~src_dir) src in
     let details = {
       base;
       src_manifest;

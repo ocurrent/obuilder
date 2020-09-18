@@ -6,7 +6,7 @@ type t = [
   | `Dir of (string * t list)
 ] [@@deriving show]
 
-let rec generate ~src_dir src : t =
+let rec generate ~exclude ~src_dir src : t =
   (* TODO: sanitise src *)
   let path = src_dir / src in
   match Unix.lstat path with
@@ -16,8 +16,8 @@ let rec generate ~src_dir src : t =
     let items =
       items
       |> Array.to_list
-      |> List.filter (( <> ) ".git")   (* TODO: .dockerignore *)
-      |> List.map (fun item -> generate ~src_dir (src / item))
+      |> List.filter (fun x -> not (List.mem x exclude))
+      |> List.map (fun item -> generate ~exclude ~src_dir (src / item))
     in
     `Dir (src, items)
   | Unix.{ st_kind = S_REG; _ } ->
