@@ -11,7 +11,14 @@ let pp_signal f x =
   else if x = sigterm then Fmt.string f "term"
   else Fmt.int f x
 
-let pp_cmd = Fmt.(Dump.list Dump.string)
+let pp_cmd = Fmt.box Fmt.(list ~sep:sp (quote string))
+
+let exec_result ?cwd ?stdin ?stdout ?stderr ~pp argv =
+  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ("", Array.of_list argv) >|= function
+  | Unix.WEXITED 0 -> Ok ()
+  | Unix.WEXITED n -> Fmt.error_msg "%t failed with exit status %d" pp n
+  | Unix.WSIGNALED x -> Fmt.failwith "%t failed with signal %d" pp x
+  | Unix.WSTOPPED x -> Fmt.failwith "%t stopped with signal %a" pp pp_signal x
 
 let exec ?cwd ?stdin ?stdout ?stderr argv =
   !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ("", Array.of_list argv) >|= function
