@@ -59,7 +59,7 @@ let build t ?base ~id ~log fn =
     end
     >>= fun () ->
     Os.exec ["sudo"; "chown"; string_of_int (Unix.getuid ()); clone] >>= fun () ->
-    fn clone >>!= fun () ->
+    Build_log.with_log (clone / "log") (fun log -> fn ~log clone) >>!= fun () ->
     Os.exec ["sudo"; "zfs"; "snapshot"; "--"; strf "%s/%s@snap" t.pool id] >>= fun () ->
     (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
        keep it around? *)

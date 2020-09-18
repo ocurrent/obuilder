@@ -43,7 +43,7 @@ let build t ?base ~id ~log fn =
         if Sys.file_exists log_file then Unix.unlink log_file
     end
     >>= fun () ->
-    fn result_tmp >>!= fun () ->
+    Build_log.with_log (result_tmp / "log") (fun log -> fn ~log result_tmp) >>!= fun () ->
     (* delete_snapshot_if_exists result >>= fun () -> *) (* XXX: just for testing *)
     Os.exec ["btrfs"; "subvolume"; "snapshot"; "-r"; result_tmp; result] >>= fun () ->
     Os.exec ["sudo"; "btrfs"; "subvolume"; "delete"; result_tmp] >>= fun () ->

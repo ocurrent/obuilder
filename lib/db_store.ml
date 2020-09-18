@@ -10,9 +10,9 @@ module Make (Raw : S.STORE) = struct
 
   let build t ?base ~id ~log fn =
     let build_needed = ref false in
-    Raw.build t.raw ?base ~id ~log (fun dir ->
+    Raw.build t.raw ?base ~id ~log (fun ~log dir ->
         build_needed := true;
-        fn dir
+        fn ~log dir
       )
     >|= function
     | Error _ as e -> e

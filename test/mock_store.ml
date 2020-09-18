@@ -21,7 +21,7 @@ let build t ?base ~id ~log fn =
         | Unix.WEXITED 0 -> Lwt.return_unit
         | _ -> failwith "cp failed!"
     end >>= fun () ->
-    fn dir
+    Obuilder.Build_log.with_log (dir / "log") (fun log -> fn ~log dir)
 
 let state_dir t = t.dir / "state"
 

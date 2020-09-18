@@ -242,31 +242,37 @@ end
 
 let next_id = ref 0
 
-let run ?stdin:stdin t config results_dir =
+let copy_to_log ~src ~dst =
+  let buf = Bytes.create 4096 in
+  let rec aux () =
+    Lwt_unix.read src buf 0 (Bytes.length buf) >>= function
+    | 0 -> Lwt.return_unit
+    | n -> Build_log.write dst buf 0 n >>= aux
+  in
+  aux ()
+
+let run ?stdin:stdin ~log t config results_dir =
   Lwt_io.with_temp_dir ~prefix:"obuilder-runc-" @@ fun tmp ->
   let json_config = Json_config.make config ~config_dir:tmp ~results_dir in
   Os.write_file ~path:(tmp / "config.json") (Yojson.Safe.pretty_to_string json_config ^ "\n") >>= fun () ->
   Os.write_file ~path:(tmp / "hosts") "127.0.0.1 localhost builder" >>= fun () ->
   let id = string_of_int !next_id in
   incr next_id;
-  let log_file = results_dir / "log" in
-  Os.with_open_out log_file (fun log ->
-      Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
-      let cmd = ["sudo"; "runc"; "--root"; t.runc_state_dir; "run"; id] in
-      let stdout = `FD_copy out_w.raw in
-      let stderr = stdout in
-      let copy_log = Os.tee ~src:out_r ~dst:log in
-      let proc =
-        let stdin = Option.map (fun x -> `FD_copy x.Os.raw) stdin in
-        let pp f = Os.pp_cmd f config.argv in
-        Os.exec_result ~cwd:tmp ?stdin ~stdout ~stderr ~pp cmd
-      in
-      Os.close out_w;
-      Option.iter Os.close stdin;
-      proc >>= fun r ->
-      copy_log >>= fun () ->
-      Lwt.return r
-    )
+  Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
+  let cmd = ["sudo"; "runc"; "--root"; t.runc_state_dir; "run"; id] in
+  let stdout = `FD_copy out_w.raw in
+  let stderr = stdout in
+  let copy_log = copy_to_log ~src:out_r ~dst:log in
+  let proc =
+    let stdin = Option.map (fun x -> `FD_copy x.Os.raw) stdin in
+    let pp f = Os.pp_cmd f config.argv in
+    Os.exec_result ~cwd:tmp ?stdin ~stdout ~stderr ~pp cmd
+  in
+  Os.close out_w;
+  Option.iter Os.close stdin;
+  proc >>= fun r ->
+  copy_log >>= fun () ->
+  Lwt.return r
 
 let create ~runc_state_dir =
   Os.ensure_dir runc_state_dir;

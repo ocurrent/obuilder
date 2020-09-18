@@ -41,18 +41,6 @@ let rec write_all fd buf ofs len =
     write_all fd buf (ofs + n) (len - n)
   )
 
-let tee ~src ~dst =
-  let buf = Bytes.create 4096 in
-  let rec aux () =
-    Lwt_unix.read src buf 0 (Bytes.length buf) >>= function
-    | 0 -> Lwt.return_unit
-    | n ->
-      output stdout buf 0 n;
-      flush stdout;
-      write_all dst buf 0 n >>= aux
-  in
-  aux ()
-
 let cat_file path ~dst =
   let ch = open_in path in
   Fun.protect ~finally:(fun () -> close_in ch)

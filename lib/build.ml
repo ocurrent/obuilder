@@ -39,12 +39,12 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
            (base, workdir, env, cmd))
       |> Digest.to_hex
     in
-    Store.build t.store ~base ~id ~log:stdout (fun result_tmp ->
+    Store.build t.store ~base ~id ~log:stdout (fun ~log result_tmp ->
         let argv = shell @ [cmd] in
         let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env in
         Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
         Lwt_unix.close close_me >>= fun () ->
-        Sandbox.run ~stdin t.sandbox config result_tmp
+        Sandbox.run ~stdin ~log t.sandbox config result_tmp
       )
     >>!= fun () ->
     Lwt_result.return id
@@ -68,11 +68,11 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     } in
     (* Fmt.pr "COPY: %a@." pp_copy_details details; *)
     let id = Digest.to_hex (Digest.string (show_copy_details details)) in
-    Store.build t.store ~base ~id ~log:stdout (fun result_tmp ->
+    Store.build t.store ~base ~id ~log:stdout (fun ~log result_tmp ->
         let argv = ["tar"; "-xf"; "-"] in
         let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
         Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
-        let proc = Sandbox.run ~stdin:from_us t.sandbox config result_tmp in
+        let proc = Sandbox.run ~stdin:from_us ~log t.sandbox config result_tmp in
         let send =
           (* If the sending thread finishes (or fails), close the writing socket
              immediately so that the tar process finishes too. *)
@@ -126,7 +126,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
 
   let get_base t base =
     let id = Digest.to_hex (Digest.string base) in
-    Store.build t.store ~id ~log:stdout (fun tmp ->
+    Store.build t.store ~id ~log:stdout (fun ~log:_ tmp ->
         Fmt.pr "Base image not present; importing %S...@." base;
         let rootfs = tmp / "rootfs" in
         Unix.mkdir rootfs 0o755;
