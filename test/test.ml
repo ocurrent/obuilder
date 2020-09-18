@@ -4,9 +4,20 @@ module Builder = Obuilder.Builder(Mock_store)(Mock_sandbox)
 module Os = Obuilder.Os
 
 let ( / ) = Filename.concat
+let ( >>!= ) = Lwt_result.bind
 
 let () =
   Os.lwt_process_exec := Mock_exec.exec
+
+let build_result =
+  Alcotest.of_pp @@ fun f x ->
+  match x with
+  | Error (`Exn ex) -> Fmt.exn f ex
+  | Ok id -> Fmt.string f id
+
+let get store path id =
+  let result = Mock_store.path store id in
+  Lwt_io.(with_file ~mode:input) (result / "rootfs" / path) Lwt_io.read >|= Result.ok
 
 let test_simple _switch () =
   Mock_store.with_store @@ fun store ->
@@ -28,13 +39,9 @@ let test_simple _switch () =
       Lwt_io.(with_file ~mode:input) (rootfs / "base-id") Lwt_io.read >>= fun orig ->
       Lwt_io.(with_file ~mode:output) (rootfs / "appended") (fun ch -> Lwt_io.write ch (orig ^ "runner"))
     );
-  Builder.build builder context spec >>= function
-  | Error (`Exn ex) -> raise ex
-  | Ok id ->
-    let result = Mock_store.path store id in
-    Lwt_io.(with_file ~mode:input) (result / "rootfs" / "appended") Lwt_io.read >>= fun text ->
-    Alcotest.(check string) "Final result" "base-distro\nrunner" text;
-    Lwt.return ()
+  Builder.build builder context spec >>!= get store "appended" >>= fun result ->
+  Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
+  Lwt.return_unit
 
 let sexp = Alcotest.of_pp Sexplib.Sexp.pp_hum
 
@@ -65,7 +72,7 @@ let () =
         test_case_sync "Sexp" `Quick test_sexp;
       ];
       "build", [
-        test_case "Simple" `Quick test_simple;
+        test_case "Simple"     `Quick test_simple;
       ];
     ]
   end
