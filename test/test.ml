@@ -29,7 +29,7 @@ let test_simple _switch () =
       Lwt_io.(with_file ~mode:output) (rootfs / "appended") (fun ch -> Lwt_io.write ch (orig ^ "runner"))
     );
   Builder.build builder context spec >>= function
-  | Error `Cant_happen -> assert false
+  | Error (`Exn ex) -> raise ex
   | Ok id ->
     let result = Mock_store.path store id in
     Lwt_io.(with_file ~mode:input) (result / "rootfs" / "appended") Lwt_io.read >>= fun text ->

@@ -25,7 +25,9 @@ let build_in (type s) (module Store : Obuilder.S.STORE with type t = s) (store :
   | Ok x ->
     Fmt.pr "Got: %S@." (x :> string);
     Lwt.return_unit
-  | Error `Cant_happen -> assert false
+  | Error e ->
+    Fmt.epr "Build step failed: %a@." Sandbox.pp_error e;
+    exit 1
 
 let build store spec src_dir =
   Lwt_main.run @@ begin

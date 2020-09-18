@@ -1,5 +1,6 @@
 module S = S
 module Spec = Spec
+module Config = Config
 module Context = Build.Context
 module Builder = Build.Make
 

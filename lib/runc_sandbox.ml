@@ -6,9 +6,11 @@ type t = {
   runc_state_dir : string;
 }
 
-module Config = struct
-  type t = config_dir:string -> results_dir:string -> Yojson.Safe.t
+type error = [`Msg of string]
 
+let pp_error f (`Msg msg) = Fmt.string f msg
+
+module Json_config = struct
   let mount ?(options=[]) ~ty ~src dst =
     `Assoc [
       "destination", `String dst;
@@ -19,7 +21,7 @@ module Config = struct
 
   let strings xs = `List ( List.map (fun x -> `String x) xs)
 
-  let v ~cwd ~argv ~hostname ~user ~env ~config_dir ~results_dir : Yojson.Safe.t =
+  let make {Config.cwd; argv; hostname; user; env} ~config_dir ~results_dir : Yojson.Safe.t =
     let user =
       let { Spec.uid; gid } = user in
       `Assoc [
@@ -242,8 +244,8 @@ let next_id = ref 0
 
 let run ?stdin:stdin t config results_dir =
   Lwt_io.with_temp_dir ~prefix:"obuilder-runc-" @@ fun tmp ->
-  let config = config ~config_dir:tmp ~results_dir in
-  Os.write_file ~path:(tmp / "config.json") (Yojson.Safe.pretty_to_string config ^ "\n") >>= fun () ->
+  let json_config = Json_config.make config ~config_dir:tmp ~results_dir in
+  Os.write_file ~path:(tmp / "config.json") (Yojson.Safe.pretty_to_string json_config ^ "\n") >>= fun () ->
   Os.write_file ~path:(tmp / "hosts") "127.0.0.1 localhost builder" >>= fun () ->
   let id = string_of_int !next_id in
   incr next_id;
@@ -256,14 +258,15 @@ let run ?stdin:stdin t config results_dir =
       let copy_log = Os.tee ~src:out_r ~dst:log in
       let proc =
         let stdin = Option.map (fun x -> `FD_copy x.Os.raw) stdin in
-        Os.exec ~cwd:tmp ?stdin ~stdout ~stderr cmd in
+        let pp f = Os.pp_cmd f config.argv in
+        Os.exec_result ~cwd:tmp ?stdin ~stdout ~stderr ~pp cmd
+      in
       Os.close out_w;
       Option.iter Os.close stdin;
-      proc >>= fun () ->
-      copy_log
+      proc >>= fun r ->
+      copy_log >>= fun () ->
+      Lwt.return r
     )
-  >|= fun () ->
-  Ok ()
 
 let create ~runc_state_dir =
   Os.ensure_dir runc_state_dir;
