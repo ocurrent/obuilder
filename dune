@@ -3,5 +3,3 @@
   (name main)
   (preprocess (pps ppx_deriving.show))
   (libraries lwt lwt.unix fmt tar-unix obuilder fmt.tty cmdliner))
-
-(dirs :standard \ test)

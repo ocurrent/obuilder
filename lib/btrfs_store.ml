@@ -6,8 +6,6 @@ type t = {
   root : string;
 }
 
-type id = string
-
 let ( / ) = Filename.concat
 
 let create root =
@@ -33,7 +31,7 @@ let build t ?base ~id ~log fn =
     Fmt.pr "%a@." (Fmt.styled (`Fg (`Yellow)) (Fmt.fmt "---> using cached result %S")) result;
     let log_file = result / "log" in
     if Sys.file_exists log_file then Os.cat_file log_file ~dst:log;
-    Lwt_result.return id
+    Lwt_result.return ()
   | `Missing ->
     let result_tmp = result ^ ".part" in
     delete_snapshot_if_exists result_tmp >>= fun () ->
@@ -49,4 +47,4 @@ let build t ?base ~id ~log fn =
     (* delete_snapshot_if_exists result >>= fun () -> *) (* XXX: just for testing *)
     Os.exec ["btrfs"; "subvolume"; "snapshot"; "-r"; result_tmp; result] >>= fun () ->
     Os.exec ["sudo"; "btrfs"; "subvolume"; "delete"; result_tmp] >>= fun () ->
-    Lwt_result.return id
+    Lwt_result.return ()

@@ -36,7 +36,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     let id =
       Digest.string
         ([%derive.show: string * string * (string * string) list * string]
-           ((base : Store.id :> string), workdir, env, cmd))
+           (base, workdir, env, cmd))
       |> Digest.to_hex
     in
     Store.build t.store ~base ~id ~log:stdout (fun result_tmp ->
@@ -46,9 +46,11 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         Lwt_unix.close close_me >>= fun () ->
         Sandbox.run ~stdin t.sandbox config result_tmp
       )
+    >>!= fun () ->
+    Lwt_result.return id
 
   type copy_details = {
-    base : Store.id [@printer fun f x -> Fmt.string f (x : Store.id :> string)];
+    base : S.id [@printer Fmt.string];
     src_manifest : Manifest.t list;
     user : Spec.user;
     dst : string;
@@ -82,6 +84,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         send >>= fun () ->
         Lwt.return result
       )
+    >>!= fun () ->
+    Lwt_result.return id
 
   let pp_op ~(context:Context.t) f op =
     let sexp = Spec.sexp_of_op op in
@@ -108,6 +112,18 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Shell shell ->
         k ~base ~context:{context with shell}
 
+  let pread_line argv =
+    Os.with_pipe_from_child @@ fun ~r ~w ->
+    let child = Os.exec ~stdout:(`FD_copy w.raw) argv in
+    Os.close w;
+    let r = Lwt_io.(of_fd ~mode:input) r in
+    Lwt.finalize
+      (fun () -> Lwt_io.read_line r)
+      (fun () -> Lwt_io.close r)
+    >>= fun line ->
+    child >>= fun () ->
+    Lwt.return line
+
   let get_base t base =
     let id = Digest.to_hex (Digest.string base) in
     Store.build t.store ~id ~log:stdout (fun tmp ->
@@ -115,15 +131,27 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         let rootfs = tmp / "rootfs" in
         Unix.mkdir rootfs 0o755;
         (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
-        Lwt_process.pread_line ("", [| "docker"; "create"; "--"; base |]) >>= fun cid ->
+        pread_line ["docker"; "create"; "--"; base] >>= fun cid ->
         Fmt.pr "FROM %S -> %s@." base cid;
-        let r, w = Unix.pipe () in
-        let exporter = Lwt_process.open_process_none ~stdout:(`FD_move w) ("", [| "docker"; "export"; "--"; cid |]) in
-        let tar = Lwt_process.open_process_none ~stdin:(`FD_move r) ("", [| "sudo"; "tar"; "-C"; rootfs; "-xf"; "-" |]) in
-        exporter#status >>= fun _ ->
-        tar#status >>= fun _ ->
+        let r, w = Unix.pipe ~cloexec:true () in
+        let exporter, tar =
+          Fun.protect
+            (fun () ->
+               let exporter = Os.exec ~stdout:(`FD_copy w) ["docker"; "export"; "--"; cid] in
+               let tar = Os.exec ~stdin:(`FD_copy r) ["sudo"; "tar"; "-C"; rootfs; "-xf"; "-"] in
+               exporter, tar
+            )
+            ~finally:(fun () ->
+                Unix.close r;
+                Unix.close w
+              )
+        in
+        exporter >>= fun () ->
+        tar >>= fun () ->
         Os.exec ["docker"; "rm"; "--"; cid] >|= Result.ok
       )
+    >>!= fun () ->
+    Lwt_result.return id
 
   let build t context { Spec.from = base; ops } =
     Fmt.pr "%a@." (Fmt.styled (`Fg (`Hi `Blue)) (Fmt.fmt "FROM %S")) base;
