@@ -8,8 +8,7 @@ type t = {
   dir : string;
 }
 
-let build t ?base ~id ~log fn =
-  ignore log;
+let build t ?base ~id fn =
   let dir = t.dir / id in
   match Os.check_dir dir with
   | `Present -> Lwt_result.return ()
@@ -21,7 +20,7 @@ let build t ?base ~id ~log fn =
         | Unix.WEXITED 0 -> Lwt.return_unit
         | _ -> failwith "cp failed!"
     end >>= fun () ->
-    Obuilder.Build_log.with_log (dir / "log") (fun log -> fn ~log dir)
+    fn dir
 
 let state_dir t = t.dir / "state"
 
@@ -40,3 +39,9 @@ let add t id fn =
     fn dir
 
 let path t id = t.dir / id
+
+let result t id =
+  let dir = path t id in
+  match Os.check_dir dir with
+  | `Present -> Some dir
+  | `Missing -> None
