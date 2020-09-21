@@ -37,27 +37,21 @@ let delete_clone_if_exists ~pool id =
   | `Present -> Os.exec ["sudo"; "zfs"; "destroy"; strf "%s/%s" pool id]
 
 let build t ?base ~id fn =
-  let result = path t id in
-  match check_dir result with
-  | `Present ->
-    Fmt.pr "%a@." (Fmt.styled (`Fg (`Yellow)) (Fmt.fmt "---> using cached result %S")) result;
-    Lwt_result.return ()
-  | `Missing ->
-    delete_clone_if_exists ~pool:t.pool id >>= fun () ->
-    let clone = strf "/%s/%s" t.pool id in
-    begin match base with
-      | None -> Os.exec ["sudo"; "zfs"; "create"; "--"; strf "%s/%s" t.pool id]
-      | Some base ->
-        let base = strf "%s/%s@snap" t.pool base in
-        Os.exec ["sudo"; "zfs"; "clone"; "--"; base; strf "%s/%s" t.pool id]
-    end
-    >>= fun () ->
-    Os.exec ["sudo"; "chown"; string_of_int (Unix.getuid ()); clone] >>= fun () ->
-    fn clone >>!= fun () ->
-    Os.exec ["sudo"; "zfs"; "snapshot"; "--"; strf "%s/%s@snap" t.pool id] >>= fun () ->
-    (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
-       keep it around? *)
-    Lwt_result.return () 
+  delete_clone_if_exists ~pool:t.pool id >>= fun () ->
+  let clone = strf "/%s/%s" t.pool id in
+  begin match base with
+    | None -> Os.exec ["sudo"; "zfs"; "create"; "--"; strf "%s/%s" t.pool id]
+    | Some base ->
+      let base = strf "%s/%s@snap" t.pool base in
+      Os.exec ["sudo"; "zfs"; "clone"; "--"; base; strf "%s/%s" t.pool id]
+  end
+  >>= fun () ->
+  Os.exec ["sudo"; "chown"; string_of_int (Unix.getuid ()); clone] >>= fun () ->
+  fn clone >>!= fun () ->
+  Os.exec ["sudo"; "zfs"; "snapshot"; "--"; strf "%s/%s@snap" t.pool id] >>= fun () ->
+  (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
+     keep it around? *)
+  Lwt_result.return ()
 
 let result t id =
   let dir = path t id in

@@ -1,11 +1,19 @@
 type id = string
 
+type tag = [
+  | `Heading    (** Introduces a new build step *)
+  | `Note       (** Informational output from OBuilder *)
+  | `Output     (** Raw output from the build command *)
+]
+
+type logger = tag -> string -> unit
+
 module type STORE = sig
   type t
 
   val build :
     t -> ?base:id ->
-    id:string ->
+    id:id ->
     (string -> (unit, 'e) Lwt_result.t) ->
     (unit, 'e) Lwt_result.t
   (** [build t ~id fn] runs [fn tmpdir] to add a new item to the store under
@@ -26,11 +34,7 @@ end
 module type SANDBOX = sig
   type t
 
-  type error = private [> ]
-
-  val pp_error : error Fmt.t
-
-  val run : ?stdin:Os.unix_fd -> log:Build_log.t -> t -> Config.t -> string -> (unit, error) Lwt_result.t
+  val run : ?stdin:Os.unix_fd -> log:Build_log.t -> t -> Config.t -> string -> (unit, [`Msg of string]) Lwt_result.t
   (** [run t config dir] runs the operation [config] in a sandbox with root
       filesystem [rootfs].
       @param stdin Passed to child as its standard input.

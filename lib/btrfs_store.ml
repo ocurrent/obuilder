@@ -26,24 +26,19 @@ let state_dir t =
 
 let build t ?base ~id fn =
   let result = path t id in
-  match Os.check_dir result with
-  | `Present ->
-    Fmt.pr "%a@." (Fmt.styled (`Fg (`Yellow)) (Fmt.fmt "---> using cached result %S")) result;
-    Lwt_result.return ()
-  | `Missing ->
-    let result_tmp = result ^ ".part" in
-    delete_snapshot_if_exists result_tmp >>= fun () ->
-    begin match base with
-      | None -> Os.exec ["btrfs"; "subvolume"; "create"; "--"; result_tmp]
-      | Some base ->
-        Os.exec ["btrfs"; "subvolume"; "snapshot"; path t base; result_tmp]
-    end
-    >>= fun () ->
-    fn result_tmp >>!= fun () ->
-    (* delete_snapshot_if_exists result >>= fun () -> *) (* XXX: just for testing *)
-    Os.exec ["btrfs"; "subvolume"; "snapshot"; "-r"; result_tmp; result] >>= fun () ->
-    Os.exec ["sudo"; "btrfs"; "subvolume"; "delete"; result_tmp] >>= fun () ->
-    Lwt_result.return ()
+  let result_tmp = result ^ ".part" in
+  delete_snapshot_if_exists result_tmp >>= fun () ->
+  begin match base with
+    | None -> Os.exec ["btrfs"; "subvolume"; "create"; "--"; result_tmp]
+    | Some base ->
+      Os.exec ["btrfs"; "subvolume"; "snapshot"; path t base; result_tmp]
+  end
+  >>= fun () ->
+  fn result_tmp >>!= fun () ->
+  (* delete_snapshot_if_exists result >>= fun () -> *) (* XXX: just for testing *)
+  Os.exec ["btrfs"; "subvolume"; "snapshot"; "-r"; result_tmp; result] >>= fun () ->
+  Os.exec ["sudo"; "btrfs"; "subvolume"; "delete"; result_tmp] >>= fun () ->
+  Lwt_result.return ()
 
 let result t id =
   let dir = path t id in

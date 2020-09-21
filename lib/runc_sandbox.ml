@@ -6,10 +6,6 @@ type t = {
   runc_state_dir : string;
 }
 
-type error = [`Msg of string]
-
-let pp_error f (`Msg msg) = Fmt.string f msg
-
 module Json_config = struct
   let mount ?(options=[]) ~ty ~src dst =
     `Assoc [
@@ -247,7 +243,7 @@ let copy_to_log ~src ~dst =
   let rec aux () =
     Lwt_unix.read src buf 0 (Bytes.length buf) >>= function
     | 0 -> Lwt.return_unit
-    | n -> Build_log.write dst buf 0 n >>= aux
+    | n -> Build_log.write dst (Bytes.sub_string buf 0 n) >>= aux
   in
   aux ()
 

@@ -1,6 +1,6 @@
 (test
   (name test)
   (deps base.tar)
-  (libraries alcotest-lwt obuilder))
+  (libraries alcotest-lwt obuilder str))
 
 (dirs :standard \ test1)

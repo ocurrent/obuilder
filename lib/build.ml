@@ -12,6 +12,7 @@ module Context = struct
     user : Spec.user;                   (* Container user to run as. *)
     workdir : string;                   (* Directory in the container namespace for cwd. *)
     shell : string list;
+    log : S.logger;
   }
 
   let default_env = [
@@ -19,8 +20,8 @@ module Context = struct
     "TERM", "xterm";
   ]
 
-  let v ?(env=default_env) ?(user=Spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ~src_dir () =
-    { env; src_dir; user; workdir; shell }
+  let v ?(env=default_env) ?(user=Spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ~log ~src_dir () =
+    { env; src_dir; user; workdir; shell; log }
 end
 
 module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
@@ -32,22 +33,20 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
   }
 
   let run t ~base ~context cmd =
-    let { Context.workdir; user; env; shell; src_dir = _ } = context in
+    let { Context.workdir; user; env; shell; log; src_dir = _ } = context in
     let id =
       Digest.string
         ([%derive.show: string * string * (string * string) list * string]
            (base, workdir, env, cmd))
       |> Digest.to_hex
     in
-    Store.build t.store ~base ~id ~log:stdout (fun ~log result_tmp ->
+    Store.build t.store ~base ~id ~log (fun ~log result_tmp ->
         let argv = shell @ [cmd] in
         let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env in
         Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
         Lwt_unix.close close_me >>= fun () ->
         Sandbox.run ~stdin ~log t.sandbox config result_tmp
       )
-    >>!= fun () ->
-    Lwt_result.return id
 
   type copy_details = {
     base : S.id [@printer Fmt.string];
@@ -57,7 +56,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
   } [@@deriving show]
 
   let copy t ~context ~base { Spec.src; dst; exclude } =
-    let { Context.src_dir; workdir; user; shell = _; env = _ } = context in
+    let { Context.src_dir; workdir; user; log; shell = _; env = _ } = context in
     let dst = if Filename.is_relative dst then workdir / dst else dst in
     let src_manifest = List.map (Manifest.generate ~exclude ~src_dir) src in
     let details = {
@@ -68,7 +67,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     } in
     (* Fmt.pr "COPY: %a@." pp_copy_details details; *)
     let id = Digest.to_hex (Digest.string (show_copy_details details)) in
-    Store.build t.store ~base ~id ~log:stdout (fun ~log result_tmp ->
+    Store.build t.store ~base ~id ~log (fun ~log result_tmp ->
         let argv = ["tar"; "-xf"; "-"] in
         let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
         Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
@@ -84,8 +83,6 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         send >>= fun () ->
         Lwt.return result
       )
-    >>!= fun () ->
-    Lwt_result.return id
 
   let pp_op ~(context:Context.t) f op =
     let sexp = Spec.sexp_of_op op in
@@ -94,7 +91,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
   let rec run_steps t ~(context:Context.t) ~base = function
     | [] -> Lwt_result.return base
     | op :: ops ->
-      Fmt.pr "%a@." (Fmt.styled (`Fg (`Hi `Blue)) (pp_op ~context)) op;
+      context.log `Heading Fmt.(strf "%a" (pp_op ~context) op);
       let k = run_steps t ops in
       match op with
       | `Comment _ -> k ~base ~context
@@ -124,15 +121,15 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     child >>= fun () ->
     Lwt.return line
 
-  let get_base t base =
+  let get_base t ~log base =
+    log `Heading (Fmt.strf "FROM %s" base);
     let id = Digest.to_hex (Digest.string base) in
-    Store.build t.store ~id ~log:stdout (fun ~log:_ tmp ->
+    Store.build t.store ~id ~log (fun ~log:_ tmp ->
         Fmt.pr "Base image not present; importing %S...@." base;
         let rootfs = tmp / "rootfs" in
         Unix.mkdir rootfs 0o755;
         (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
         pread_line ["docker"; "create"; "--"; base] >>= fun cid ->
-        Fmt.pr "FROM %S -> %s@." base cid;
         let r, w = Unix.pipe ~cloexec:true () in
         let exporter, tar =
           Fun.protect
@@ -150,12 +147,10 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         tar >>= fun () ->
         Os.exec ["docker"; "rm"; "--"; cid] >|= Result.ok
       )
-    >>!= fun () ->
-    Lwt_result.return id
 
   let build t context { Spec.from = base; ops } =
     Fmt.pr "%a@." (Fmt.styled (`Fg (`Hi `Blue)) (Fmt.fmt "FROM %S")) base;
-    get_base t base >>!= fun template_dir ->
+    get_base t ~log:context.Context.log base >>!= fun template_dir ->
     run_steps t ~context ~base:template_dir ops
 
   let v ~store ~sandbox =
