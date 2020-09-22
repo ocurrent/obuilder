@@ -11,8 +11,6 @@ type t = {
 let path t id =
   strf "/%s/%s/.zfs/snapshot/snap" t.pool id
 
-let ( / ) = Filename.concat
-
 let check_dir x =
   match Unix.lstat x with
   | Unix.{ st_kind = S_DIR; _ } -> `Present
@@ -38,29 +36,25 @@ let delete_clone_if_exists ~pool id =
   | `Missing -> Lwt.return_unit
   | `Present -> Os.exec ["sudo"; "zfs"; "destroy"; strf "%s/%s" pool id]
 
-let build t ?base ~id ~log fn =
-  let result = path t id in
-  match check_dir result with
-  | `Present ->
-    Fmt.pr "%a@." (Fmt.styled (`Fg (`Yellow)) (Fmt.fmt "---> using cached result %S")) result;
-    let log_file = result / "log" in
-    if Sys.file_exists log_file then Os.cat_file log_file ~dst:log;
-    Lwt_result.return ()
-  | `Missing ->
-    delete_clone_if_exists ~pool:t.pool id >>= fun () ->
-    let clone = strf "/%s/%s" t.pool id in
-    begin match base with
-      | None -> Os.exec ["sudo"; "zfs"; "create"; "--"; strf "%s/%s" t.pool id]
-      | Some base ->
-        let base = strf "%s/%s@snap" t.pool base in
-        Os.exec ["sudo"; "zfs"; "clone"; "--"; base; strf "%s/%s" t.pool id] >|= fun () ->
-        let log_file = clone / "log" in
-        if Sys.file_exists log_file then Unix.unlink log_file
-    end
-    >>= fun () ->
-    Os.exec ["sudo"; "chown"; string_of_int (Unix.getuid ()); clone] >>= fun () ->
-    fn clone >>!= fun () ->
-    Os.exec ["sudo"; "zfs"; "snapshot"; "--"; strf "%s/%s@snap" t.pool id] >>= fun () ->
-    (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
-       keep it around? *)
-    Lwt_result.return () 
+let build t ?base ~id fn =
+  delete_clone_if_exists ~pool:t.pool id >>= fun () ->
+  let clone = strf "/%s/%s" t.pool id in
+  begin match base with
+    | None -> Os.exec ["sudo"; "zfs"; "create"; "--"; strf "%s/%s" t.pool id]
+    | Some base ->
+      let base = strf "%s/%s@snap" t.pool base in
+      Os.exec ["sudo"; "zfs"; "clone"; "--"; base; strf "%s/%s" t.pool id]
+  end
+  >>= fun () ->
+  Os.exec ["sudo"; "chown"; string_of_int (Unix.getuid ()); clone] >>= fun () ->
+  fn clone >>!= fun () ->
+  Os.exec ["sudo"; "zfs"; "snapshot"; "--"; strf "%s/%s@snap" t.pool id] >>= fun () ->
+  (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
+     keep it around? *)
+  Lwt_result.return ()
+
+let result t id =
+  let dir = path t id in
+  match Os.check_dir dir with
+  | `Present -> Some dir
+  | `Missing -> None

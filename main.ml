@@ -13,6 +13,12 @@ let env =
   ("OPAMYES", "true") ::
   Obuilder.Context.default_env
 
+let log tag msg =
+  match tag with
+  | `Heading -> Fmt.pr "%a@." Fmt.(styled (`Fg (`Hi `Blue)) string) msg
+  | `Note -> Fmt.pr "%a@." Fmt.(styled (`Fg `Yellow) string) msg
+  | `Output -> output_string stdout msg; flush stdout
+
 let build_in (type s) (module Store : Obuilder.S.STORE with type t = s) (store : s) spec src_dir =
   let module Builder = Obuilder.Builder(Store)(Sandbox) in
   let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") in
@@ -20,13 +26,13 @@ let build_in (type s) (module Store : Obuilder.S.STORE with type t = s) (store :
   let spec = Obuilder.Spec.stage_of_sexp (Sexplib.Sexp.load_sexp spec) in
   (* assert (spec = Obuilder.Spec.stage_of_sexp (Obuilder.Spec.sexp_of_stage spec)); *)
   let builder = Builder.v ~store ~sandbox in
-  let context = Obuilder.Context.v ~env ~src_dir () in
+  let context = Obuilder.Context.v ~env ~log ~src_dir () in
   Builder.build builder context spec >>= function
   | Ok x ->
     Fmt.pr "Got: %S@." (x :> string);
     Lwt.return_unit
-  | Error e ->
-    Fmt.epr "Build step failed: %a@." Sandbox.pp_error e;
+  | Error (`Msg m) ->
+    Fmt.epr "Build step failed: %s@." m;
     exit 1
 
 let build store spec src_dir =
