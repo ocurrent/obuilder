@@ -16,11 +16,10 @@ module Make (Raw : S.STORE) = struct
     mutable in_progress : build Builds.t;
   }
 
-  let finish_log ~tail_log ~set_log log =
+  let finish_log ~set_log log =
     match Lwt.state log with
     | Lwt.Return log ->
-      Build_log.finish log >>= fun () ->
-      tail_log
+      Build_log.finish log
     | Lwt.Fail _ ->
       Lwt.return_unit
     | Lwt.Sleep ->
@@ -51,14 +50,15 @@ module Make (Raw : S.STORE) = struct
              (fun r ->
                 t.in_progress <- Builds.remove id t.in_progress;
                 Lwt.wakeup_later set_result r;
-                finish_log ~tail_log ~set_log log
+                finish_log ~set_log log
              )
              (fun ex ->
                 t.in_progress <- Builds.remove id t.in_progress;
                 Lwt.wakeup_later_exn set_result ex;
-                finish_log ~tail_log ~set_log log
+                finish_log ~set_log log
              )
         );
+      tail_log >>= fun () ->
       result
 
   let build t ?base ~id ~log fn =

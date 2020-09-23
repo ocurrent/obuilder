@@ -64,9 +64,11 @@ let finish t =
     t.state <- `Finished;
     Lwt_unix.close fd >|= fun () ->
     Lwt_condition.broadcast cond ()
-  | `Readonly _ | `Empty ->
+  | `Readonly _ ->
     t.state <- `Finished;
     Lwt.return_unit
+  | `Empty ->
+    Lwt.return_unit (* Empty can be reused *)
 
 let write t data =
   match t.state with
