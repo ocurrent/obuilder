@@ -149,7 +149,6 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       )
 
   let build t context { Spec.from = base; ops } =
-    Fmt.pr "%a@." (Fmt.styled (`Fg (`Hi `Blue)) (Fmt.fmt "FROM %S")) base;
     get_base t ~log:context.Context.log base >>!= fun template_dir ->
     run_steps t ~context ~base:template_dir ops
 
