@@ -15,13 +15,14 @@ module Context = struct
     log : S.logger;
   }
 
-  let default_env = [
-    "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
-    "TERM", "xterm";
-  ]
-
-  let v ?(env=default_env) ?(user=Spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ~log ~src_dir () =
+  let v ?(env=[]) ?(user=Spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ~log ~src_dir () =
     { env; src_dir; user; workdir; shell; log }
+end
+
+module Saved_context = struct
+  type t = {
+    env : Os.env;
+  } [@@deriving sexp]
 end
 
 module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
@@ -109,17 +110,30 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Shell shell ->
         k ~base ~context:{context with shell}
 
-  let pread_line argv =
+  let pread argv =
     Os.with_pipe_from_child @@ fun ~r ~w ->
     let child = Os.exec ~stdout:(`FD_copy w.raw) argv in
     Os.close w;
     let r = Lwt_io.(of_fd ~mode:input) r in
     Lwt.finalize
-      (fun () -> Lwt_io.read_line r)
+      (fun () -> Lwt_io.read r)
       (fun () -> Lwt_io.close r)
     >>= fun line ->
     child >>= fun () ->
     Lwt.return line
+
+  let export_env base : Os.env Lwt.t =
+    pread ["docker"; "image"; "inspect";
+           "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|};
+           "--"; base] >|= fun env ->
+    String.split_on_char '\x00' env
+    |> List.filter_map (function
+        | "\n" -> None
+        | kv ->
+          match Astring.String.cut ~sep:"=" kv with
+          | None -> Fmt.failwith "Invalid environment in Docker image %S (should be 'K=V')" kv
+          | Some _ as pair -> pair
+      )
 
   let get_base t ~log base =
     log `Heading (Fmt.strf "FROM %s" base);
@@ -129,7 +143,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         let rootfs = tmp / "rootfs" in
         Unix.mkdir rootfs 0o755;
         (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
-        pread_line ["docker"; "create"; "--"; base] >>= fun cid ->
+        pread ["docker"; "create"; "--"; base] >>= fun cid ->
+        let cid = String.trim cid in
         let r, w = Unix.pipe ~cloexec:true () in
         let exporter, tar =
           Fun.protect
@@ -145,12 +160,21 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         in
         exporter >>= fun () ->
         tar >>= fun () ->
-        Os.exec ["docker"; "rm"; "--"; cid] >|= Result.ok
+        Os.exec ["docker"; "rm"; "--"; cid] >>= fun () ->
+        export_env base >>= fun env ->
+        Os.write_file ~path:(tmp / "env")
+          (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
+        Lwt_result.return ()
       )
+    >>!= fun id ->
+    let path = Option.get (Store.result t.store id) in
+    let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
+    Lwt_result.return (id, env)
 
   let build t context { Spec.from = base; ops } =
-    get_base t ~log:context.Context.log base >>!= fun template_dir ->
-    run_steps t ~context ~base:template_dir ops
+    get_base t ~log:context.Context.log base >>!= fun (id, env) ->
+    let context = { context with env = context.env @ env } in
+    run_steps t ~context ~base:id ops
 
   let v ~store ~sandbox =
     let store = Store.wrap store in
