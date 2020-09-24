@@ -1,6 +1,7 @@
 open Lwt.Infix
+open Sexplib.Std
 
-type env = (string * string) list
+type env = (string * string) list [@@deriving sexp]
 
 (* Overridden in unit-tests *)
 let lwt_process_exec = ref Lwt_process.exec

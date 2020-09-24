@@ -14,6 +14,7 @@
  (synopsis "Run build scripts for CI")
  (depends
   lwt
+  astring
   fmt
   cmdliner
   tar-unix

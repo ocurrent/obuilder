@@ -42,9 +42,17 @@ let docker_export ?stdout _id =
   Os.write_all stdout base_tar 0 (Bytes.length base_tar) >|= fun () ->
   Unix.WEXITED 0
 
+let docker_inspect ?stdout _id =
+  with_fd (Option.get stdout) @@ fun stdout ->
+  let stdout = Lwt_unix.of_unix_file_descr stdout in
+  let msg = Bytes.of_string "PATH=/usr/bin:/usr/local/bin" in
+  Os.write_all stdout msg 0 (Bytes.length msg) >|= fun () ->
+  Unix.WEXITED 0
+
 let exec_docker ?stdout = function
   | ["create"; "--"; base] -> docker_create ?stdout base
   | ["export"; "--"; id] -> docker_export ?stdout id
+  | ["image"; "inspect"; "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|}; "--"; base] -> docker_inspect ?stdout base
   | ["rm"; "--"; id] -> Fmt.pr "docker rm %S@." id; Lwt.return (Unix.WEXITED 0)
   | x -> Fmt.failwith "Unknown mock docker command %a" Fmt.(Dump.list string) x
 

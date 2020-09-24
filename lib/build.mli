@@ -1,8 +1,6 @@
 module Context : sig
   type t
 
-  val default_env : Os.env
-
   val v :
     ?env:Os.env ->
     ?user:Spec.user ->

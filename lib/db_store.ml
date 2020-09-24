@@ -91,6 +91,8 @@ module Make (Raw : S.STORE) = struct
       | Error _ as e ->
         Lwt.return e
 
+  let result t id = Raw.result t.raw id
+
   let wrap raw =
     let db_dir = Raw.state_dir raw / "db" in
     Os.ensure_dir db_dir;
