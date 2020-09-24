@@ -7,6 +7,7 @@ let hostname = "builder"
 
 module Context = struct
   type t = {
+    switch : Lwt_switch.t option;
     env : Os.env;                       (* Environment in which to run commands. *)
     src_dir : string;                   (* Directory with files for copying. *)
     user : Spec.user;                   (* Container user to run as. *)
@@ -15,8 +16,8 @@ module Context = struct
     log : S.logger;
   }
 
-  let v ?(env=[]) ?(user=Spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ~log ~src_dir () =
-    { env; src_dir; user; workdir; shell; log }
+  let v ?switch ?(env=[]) ?(user=Spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ~log ~src_dir () =
+    { switch; env; src_dir; user; workdir; shell; log }
 end
 
 module Saved_context = struct
@@ -34,19 +35,19 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
   }
 
   let run t ~base ~context cmd =
-    let { Context.workdir; user; env; shell; log; src_dir = _ } = context in
+    let { Context.switch; workdir; user; env; shell; log; src_dir = _ } = context in
     let id =
       Digest.string
         ([%derive.show: string * string * (string * string) list * string]
            (base, workdir, env, cmd))
       |> Digest.to_hex
     in
-    Store.build t.store ~base ~id ~log (fun ~log result_tmp ->
+    Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
         let argv = shell @ [cmd] in
         let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env in
         Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
         Lwt_unix.close close_me >>= fun () ->
-        Sandbox.run ~stdin ~log t.sandbox config result_tmp
+        Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp
       )
 
   type copy_details = {
@@ -57,7 +58,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
   } [@@deriving show]
 
   let copy t ~context ~base { Spec.src; dst; exclude } =
-    let { Context.src_dir; workdir; user; log; shell = _; env = _ } = context in
+    let { Context.switch; src_dir; workdir; user; log; shell = _; env = _ } = context in
     let dst = if Filename.is_relative dst then workdir / dst else dst in
     let src_manifest = List.map (Manifest.generate ~exclude ~src_dir) src in
     let details = {
@@ -68,11 +69,11 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     } in
     (* Fmt.pr "COPY: %a@." pp_copy_details details; *)
     let id = Digest.to_hex (Digest.string (show_copy_details details)) in
-    Store.build t.store ~base ~id ~log (fun ~log result_tmp ->
+    Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
         let argv = ["tar"; "-xf"; "-"] in
         let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
         Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
-        let proc = Sandbox.run ~stdin:from_us ~log t.sandbox config result_tmp in
+        let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
         let send =
           (* If the sending thread finishes (or fails), close the writing socket
              immediately so that the tar process finishes too. *)
@@ -138,7 +139,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
   let get_base t ~log base =
     log `Heading (Fmt.strf "FROM %s" base);
     let id = Digest.to_hex (Digest.string base) in
-    Store.build t.store ~id ~log (fun ~log:_ tmp ->
+    Store.build t.store ~id ~log (fun ~cancelled:_ ~log:_ tmp ->
         Fmt.pr "Base image not present; importing %S...@." base;
         let rootfs = tmp / "rootfs" in
         Unix.mkdir rootfs 0o755;

@@ -1,5 +1,8 @@
 open Lwt.Infix
 
+let () =
+  Logs.set_reporter (Logs_fmt.reporter ())
+
 let ( / ) = Filename.concat
 
 (*
@@ -27,6 +30,9 @@ let build_in (type s) (module Store : Obuilder.S.STORE with type t = s) (store :
   | Ok x ->
     Fmt.pr "Got: %S@." (x :> string);
     Lwt.return_unit
+  | Error `Cancelled ->
+    Fmt.epr "Cancelled at user's request@.";
+    exit 1
   | Error (`Msg m) ->
     Fmt.epr "Build step failed: %s@." m;
     exit 1

@@ -3,8 +3,7 @@ open Sexplib.Std
 
 type env = (string * string) list [@@deriving sexp]
 
-(* Overridden in unit-tests *)
-let lwt_process_exec = ref Lwt_process.exec
+let ( >>!= ) = Lwt_result.bind
 
 let pp_signal f x =
   let open Sys in
@@ -14,19 +13,28 @@ let pp_signal f x =
 
 let pp_cmd = Fmt.box Fmt.(list ~sep:sp (quote string))
 
+let default_exec ?cwd ?stdin ?stdout ?stderr ~pp argv =
+  Lwt_process.exec ?cwd ?stdin ?stdout ?stderr argv >|= function
+  | Unix.WEXITED n -> Ok n
+  | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %d" pp x
+  | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp pp_signal x
+
+(* Overridden in unit-tests *)
+let lwt_process_exec = ref default_exec
+
 let exec_result ?cwd ?stdin ?stdout ?stderr ~pp argv =
-  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ("", Array.of_list argv) >|= function
-  | Unix.WEXITED 0 -> Ok ()
-  | Unix.WEXITED n -> Fmt.error_msg "%t failed with exit status %d" pp n
-  | Unix.WSIGNALED x -> Fmt.failwith "%t failed with signal %d" pp x
-  | Unix.WSTOPPED x -> Fmt.failwith "%t stopped with signal %a" pp pp_signal x
+  Logs.info (fun f -> f "Exec %a" pp_cmd argv);
+  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>!= function
+  | 0 -> Lwt_result.return ()
+  | n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
 
 let exec ?cwd ?stdin ?stdout ?stderr argv =
-  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ("", Array.of_list argv) >|= function
-  | Unix.WEXITED 0 -> ()
-  | Unix.WEXITED n -> Fmt.failwith "%a failed with exit status %d" pp_cmd argv n
-  | Unix.WSIGNALED x -> Fmt.failwith "%a failed with signal %d" pp_cmd argv x
-  | Unix.WSTOPPED x -> Fmt.failwith "%a stopped with signal %a" pp_cmd argv pp_signal x
+  Logs.info (fun f -> f "Exec %a" pp_cmd argv);
+  let pp f = pp_cmd f argv in
+  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>= function
+  | Ok 0 -> Lwt.return_unit
+  | Ok n -> Lwt.fail_with (Fmt.strf "%t failed with exit status %d" pp n)
+  | Error (`Msg m) -> Lwt.fail (Failure m)
 
 let with_open_out path fn =
   Lwt_unix.openfile path Unix.[O_RDWR; O_CREAT; O_EXCL] 0o666 >>= fun fd ->

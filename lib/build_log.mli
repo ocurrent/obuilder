@@ -27,6 +27,7 @@ val empty : t
 val of_saved : string -> t Lwt.t
 (** [of_saved path] is a read-only log which reads from [path]. *)
 
-val tail : t -> (string -> unit) -> unit Lwt.t
+val tail : ?switch:Lwt_switch.t -> t -> (string -> unit) -> (unit, [> `Cancelled]) Lwt_result.t
 (** [tail t dst] streams data from the log to [dst].
-    This can be called at any time in the lifecycle of the log. *)
+    This can be called at any time before [finish] is called.
+    @param switch Abort if this is turned off. *)
