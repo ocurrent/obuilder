@@ -47,7 +47,9 @@ module Log = struct
   let rec await t expect =
     let got = Buffer.contents t.buf in
     if got = expect then Lwt.return_unit
-    else (
+    else if String.length got > String.length expect then (
+        Fmt.failwith "Log expected %S but got %S" expect got
+    ) else (
       let common = min (String.length expect) (String.length got) in
       if String.sub got 0 common = String.sub expect 0 common then (
         Lwt_condition.wait t.cond >>= fun () ->
@@ -238,7 +240,7 @@ let test_concurrent_failure_2 _switch () =
   let b1 = B.build builder context1 spec1 in
   Log.await log1 "FROM base\n/: (run (shell A))\nRunning A\n" >>= fun () ->
   let b2 = B.build builder context2 spec2 in
-  Log.await log2 "FROM base\n/: (run (shell A))\n" >>= fun () ->
+  Log.await log2 "FROM base\n/: (run (shell A))\nRunning A\n" >>= fun () ->
   Lwt.wakeup a_done ();
   b1 >>!= get store "output" >>= fun b1 ->
   b2 >>!= get store "output" >>= fun b2 ->
