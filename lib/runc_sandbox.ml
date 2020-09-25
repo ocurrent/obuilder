@@ -247,7 +247,7 @@ let copy_to_log ~src ~dst =
   in
   aux ()
 
-let run ?stdin:stdin ~log t config results_dir =
+let run ~cancelled ?stdin:stdin ~log t config results_dir =
   Lwt_io.with_temp_dir ~prefix:"obuilder-runc-" @@ fun tmp ->
   let json_config = Json_config.make config ~config_dir:tmp ~results_dir in
   Os.write_file ~path:(tmp / "config.json") (Yojson.Safe.pretty_to_string json_config ^ "\n") >>= fun () ->
@@ -266,9 +266,24 @@ let run ?stdin:stdin ~log t config results_dir =
   in
   Os.close out_w;
   Option.iter Os.close stdin;
+  Lwt.on_termination cancelled (fun () ->
+      let rec aux () =
+        if Lwt.is_sleeping proc then (
+          let pp f = Fmt.pf f "runc kill %S" id in
+          Os.exec_result ~cwd:tmp ["sudo"; "runc"; "--root"; t.runc_state_dir; "kill"; id; "KILL"] ~pp >>= function
+          | Ok () -> Lwt.return_unit
+          | Error (`Msg m) ->
+            (* This might be because it hasn't been created yet, so retry. *)
+            Log.warn (fun f -> f "kill failed: %s (will retry in 10s)" m);
+            Lwt_unix.sleep 10.0 >>= aux
+        ) else Lwt.return_unit  (* Process has already finished *)
+      in
+      Lwt.async aux
+    );
   proc >>= fun r ->
   copy_log >>= fun () ->
-  Lwt.return r
+  if Lwt.is_sleeping cancelled then Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
+  else Lwt_result.fail `Cancelled
 
 let create ~runc_state_dir =
   Os.ensure_dir runc_state_dir;

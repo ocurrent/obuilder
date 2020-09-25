@@ -1,11 +1,15 @@
 open Lwt.Infix
 
 let ( / ) = Filename.concat
+let ( >>!= ) = Lwt_result.bind
 
 module Make (Raw : S.STORE) = struct
   type build = {
+    mutable users : int;
+    cancelled : unit Lwt.t;
+    set_cancelled : unit Lwt.u;         (* Resolve this to cancel (when [users = 0]). *)
     log : Build_log.t Lwt.t;
-    result : (S.id, [`Msg of string]) Lwt_result.t;
+    result : (S.id, [`Cancelled | `Msg of string]) Lwt_result.t;
   }
 
   module Builds = Map.Make(String)
@@ -13,6 +17,9 @@ module Make (Raw : S.STORE) = struct
   type t = {
     raw : Raw.t;
     dao : Dao.t;
+    (* Invariant: builds in [in_progress] have [users > 0], a [log] that isn't
+       finished (i.e. can be tailed), a [cancelled] that is still pending, and a
+       [result] that is still pending. *)
     mutable in_progress : build Builds.t;
   }
 
@@ -26,43 +33,59 @@ module Make (Raw : S.STORE) = struct
       Lwt.wakeup_exn set_log (Failure "Build ended without setting a log!");
       Lwt.return_unit
 
+  let dec_ref t ~id build =
+    build.users <- build.users - 1;
+    Log.info (fun f -> f "User cancelled job (users now = %d)" build.users);
+    if build.users = 0 then (
+      (* Remove it immediately, so that no other user can try to attach to it. *)
+      t.in_progress <- Builds.remove id t.in_progress;
+      Lwt.wakeup_later build.set_cancelled ()
+    )
+
   (* Check to see if we're in the process of building [id].
      If so, just tail the log from that.
      If not, call [fn set_log] to start a new build.
      [fn] should set the log being used as soon as it knows it
      (this can't happen until we've created the temporary directory
      in the underlying store). *)
-  let share_build t ~log:client_log id fn =
+  let share_build ?switch t ~log:client_log id fn =
     match Builds.find_opt id t.in_progress with
-    | Some { log; result } ->
-      log >>= fun log ->
-      Build_log.tail log (client_log `Output) >>= fun () ->
-      result
+    | Some existing ->
+      existing.users <- existing.users + 1;
+      existing.log >>= fun log ->
+      Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref t ~id existing; Lwt.return_unit) >>= fun () ->
+      Build_log.tail ?switch log (client_log `Output) >>!= fun () ->
+      existing.result
     | None ->
       let result, set_result = Lwt.wait () in
       let log, set_log = Lwt.wait () in
-      let tail_log = log >>= fun log -> Build_log.tail log (client_log `Output) in
-      t.in_progress <- Builds.add id { log; result } t.in_progress;
+      let tail_log = log >>= fun log -> Build_log.tail ?switch log (client_log `Output) in
+      let cancelled, set_cancelled = Lwt.wait () in
+      let build = { users = 1; cancelled; set_cancelled; log; result } in
+      Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref t ~id build; Lwt.return_unit) >>= fun () ->
+      t.in_progress <- Builds.add id build t.in_progress;
       Lwt.async
         (fun () ->
            Lwt.try_bind
-             (fun () -> fn set_log)
+             (fun () -> fn ~cancelled set_log)
              (fun r ->
-                t.in_progress <- Builds.remove id t.in_progress;
+                if build.users > 0 then
+                  t.in_progress <- Builds.remove id t.in_progress;
                 Lwt.wakeup_later set_result r;
                 finish_log ~set_log log
              )
              (fun ex ->
-                t.in_progress <- Builds.remove id t.in_progress;
+                if build.users > 0 then
+                  t.in_progress <- Builds.remove id t.in_progress;
                 Lwt.wakeup_later_exn set_result ex;
                 finish_log ~set_log log
              )
         );
-      tail_log >>= fun () ->
+      tail_log >>!= fun () ->
       result
 
-  let build t ?base ~id ~log fn =
-    share_build t id ~log @@ fun set_log ->
+  let build ?switch t ?base ~id ~log fn =
+    share_build ?switch t id ~log @@ fun ~cancelled set_log ->
     match Raw.result t.raw id with
     | Some dir ->
       log `Note (Fmt.strf "---> using cached result %S" dir);
@@ -81,7 +104,7 @@ module Make (Raw : S.STORE) = struct
           if Sys.file_exists log_file then Unix.unlink log_file;
           Build_log.create log_file >>= fun log ->
           Lwt.wakeup set_log log;
-          fn ~log dir
+          fn ~cancelled ~log dir
         )
       >>= function
       | Ok () ->

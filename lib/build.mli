@@ -2,6 +2,7 @@ module Context : sig
   type t
 
   val v :
+    ?switch:Lwt_switch.t ->
     ?env:Os.env ->
     ?user:Spec.user ->
     ?workdir:string ->
@@ -10,6 +11,7 @@ module Context : sig
     src_dir:string ->
     unit -> t
     (** [context ~log ~src_dir] is a build context where copy operations read from the (host) directory [src_dir].
+        @param switch Turn this off to cancel the build.
         @param env Environment in which to run commands.
         @param user Container user to run as.
         @param workdir Directory in the container namespace for cwd.
@@ -27,5 +29,5 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) : sig
     t ->
     Context.t ->
     Spec.stage ->
-    (S.id, [`Msg of string]) Lwt_result.t
+    (S.id, [`Cancelled | `Msg of string]) Lwt_result.t
 end

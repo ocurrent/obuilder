@@ -18,7 +18,14 @@ let with_dup fd fn =
     (fun () -> fn fd)
     (fun () -> Lwt_unix.close fd)
 
-let tail t dst =
+let catch_cancel fn =
+  Lwt.catch fn
+    (function
+      | Lwt.Canceled -> Lwt_result.fail `Cancelled
+      | ex -> Lwt.fail ex
+    )
+
+let tail ?switch t dst =
   match t.state with
   | `Finished -> invalid_arg "tail: log is finished!"
   | `Readonly path ->
@@ -26,28 +33,37 @@ let tail t dst =
     let buf = Bytes.create max_chunk_size in
     let rec aux () =
       Lwt_io.read_into ch buf 0 max_chunk_size >>= function
-      | 0 -> Lwt.return_unit
+      | 0 -> Lwt_result.return ()
       | n -> dst (Bytes.sub_string buf 0 n); aux ()
     in
-    aux ()
-  | `Empty -> Lwt.return_unit
+    catch_cancel @@ fun () ->
+    let th = aux () in
+    Lwt_switch.add_hook_or_exec switch (fun () -> Lwt.cancel th; Lwt.return_unit) >>= fun () ->
+    th
+  | `Empty -> Lwt_result.return ()
   | `Open (fd, cond) ->
     (* Dup [fd], which can still work after [fd] is closed. *)
     with_dup fd @@ fun fd ->
     let buf = Bytes.create max_chunk_size in
     let rec aux i =
-      let avail = min (t.len - i) max_chunk_size in
-      if avail > 0 then (
-        Lwt_unix.pread fd ~file_offset:i buf 0 avail >>= fun n ->
-        dst (Bytes.sub_string buf 0 n);
-        aux (i + avail)
-      ) else (
-        match t.state with
-        | `Open _ -> Lwt_condition.wait cond >>= fun () -> aux i
-        | _ -> Lwt.return_unit
-      )
+      match switch with
+      | Some sw when not (Lwt_switch.is_on sw) -> Lwt_result.fail `Cancelled
+      | _ ->
+        let avail = min (t.len - i) max_chunk_size in
+        if avail > 0 then (
+          Lwt_unix.pread fd ~file_offset:i buf 0 avail >>= fun n ->
+          dst (Bytes.sub_string buf 0 n);
+          aux (i + avail)
+        ) else (
+          match t.state with
+          | `Open _ -> Lwt_condition.wait cond >>= fun () -> aux i
+          | _ -> Lwt_result.return ()
+        )
     in
-    aux 0
+    catch_cancel @@ fun () ->
+    let th = aux 0 in
+    Lwt_switch.add_hook_or_exec switch (fun () -> Lwt.cancel th; Lwt.return_unit) >>= fun () ->
+    th
 
 let create path =
   Lwt_unix.openfile path Lwt_unix.[O_CREAT; O_TRUNC; O_RDWR] 0o666 >|= fun fd ->
