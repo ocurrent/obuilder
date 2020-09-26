@@ -35,14 +35,13 @@ module Make (Raw : S.STORE) = struct
 
   let dec_ref t ~id build =
     build.users <- build.users - 1;
-    Log.info (fun f ->
-        if Lwt.is_sleeping build.result then
-          f "User cancelled job (users now = %d)" build.users
-      );
-    if build.users = 0 then (
-      (* Remove it immediately, so that no other user can try to attach to it. *)
-      t.in_progress <- Builds.remove id t.in_progress;
-      Lwt.wakeup_later build.set_cancelled ()
+    if Lwt.is_sleeping build.result then (
+      Log.info (fun f -> f "User cancelled job (users now = %d)" build.users);
+      if build.users = 0 then (
+        (* Remove it immediately, so that no other user can try to attach to it. *)
+        t.in_progress <- Builds.remove id t.in_progress;
+        Lwt.wakeup_later build.set_cancelled ()
+      )
     )
 
   (* Check to see if we're in the process of building [id].

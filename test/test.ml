@@ -20,17 +20,18 @@ let build_result =
 
 module Log = struct
   type t = {
+    label : string;
     buf : Buffer.t;
     cond : unit Lwt_condition.t;
   }
 
-  let create () =
+  let create label =
     let buf = Buffer.create 1024 in
     let cond = Lwt_condition.create () in
-    { buf; cond }
+    { label; buf; cond }
 
   let add t tag x =
-    Logs.info (fun f -> f "Job log: %S" x);
+    Logs.info (fun f -> f "%s: %S" t.label x);
     begin match tag with
       | `Heading -> Buffer.add_string t.buf (x ^ "\n")
       | `Output -> Buffer.add_string t.buf x
@@ -77,7 +78,7 @@ let test_simple _switch () =
   let builder = B.v ~store ~sandbox in
   let src_dir = Mock_store.state_dir store / "src" in
   Os.ensure_dir src_dir;
-  let log = Log.create () in
+  let log = Log.create "b" in
   let context = Context.v ~src_dir ~log:(Log.add log) () in
   let spec = Spec.{
       from = "base";
@@ -120,8 +121,8 @@ let test_concurrent _switch () =
   let builder = B.v ~store ~sandbox in
   let src_dir = Mock_store.state_dir store / "src" in
   Obuilder.Os.ensure_dir src_dir;
-  let log1 = Log.create () in
-  let log2 = Log.create () in
+  let log1 = Log.create "b1" in
+  let log2 = Log.create "b2" in
   let context1 = Obuilder.Context.v ~log:(Log.add log1) ~src_dir () in
   let context2 = Obuilder.Context.v ~log:(Log.add log2) ~src_dir () in
   let spec1 = Obuilder.Spec.{ from = "base"; ops = [ run "A"; run "B" ] } in
@@ -180,8 +181,8 @@ let test_concurrent_failure _switch () =
   let builder = B.v ~store ~sandbox in
   let src_dir = Mock_store.state_dir store / "src" in
   Obuilder.Os.ensure_dir src_dir;
-  let log1 = Log.create () in
-  let log2 = Log.create () in
+  let log1 = Log.create "b1" in
+  let log2 = Log.create "b2" in
   let context1 = Obuilder.Context.v ~log:(Log.add log1) ~src_dir () in
   let context2 = Obuilder.Context.v ~log:(Log.add log2) ~src_dir () in
   let spec1 = Obuilder.Spec.{ from = "base"; ops = [ run "A"; run "B" ] } in
@@ -224,8 +225,8 @@ let test_concurrent_failure_2 _switch () =
   let builder = B.v ~store ~sandbox in
   let src_dir = Mock_store.state_dir store / "src" in
   Obuilder.Os.ensure_dir src_dir;
-  let log1 = Log.create () in
-  let log2 = Log.create () in
+  let log1 = Log.create "b1" in
+  let log2 = Log.create "b2" in
   let context1 = Obuilder.Context.v ~log:(Log.add log1) ~src_dir () in
   let context2 = Obuilder.Context.v ~log:(Log.add log2) ~src_dir () in
   let spec1 = Obuilder.Spec.{ from = "base"; ops = [ run "A"; run "B" ] } in
@@ -266,7 +267,7 @@ let test_cancel _switch () =
   let builder = B.v ~store ~sandbox in
   let src_dir = Mock_store.state_dir store / "src" in
   Os.ensure_dir src_dir;
-  let log = Log.create () in
+  let log = Log.create "b" in
   let switch = Lwt_switch.create () in
   let context = Context.v ~switch ~src_dir ~log:(Log.add log) () in
   let spec = Spec.{ from = "base"; ops = [ run "wait" ] } in
@@ -304,8 +305,8 @@ let test_cancel_2 _switch () =
       Lwt_io.(with_file ~mode:output) (rootfs / "output") (fun ch -> Lwt_io.write ch "ok") >>= fun () ->
       r
     );
-  let log1 = Log.create () in
-  let log2 = Log.create () in
+  let log1 = Log.create "b1" in
+  let log2 = Log.create "b2" in
   let switch1 = Lwt_switch.create () in
   let switch2 = Lwt_switch.create () in
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
@@ -346,8 +347,8 @@ let test_cancel_3 _switch () =
       Lwt.on_termination cancelled (fun () -> Lwt.wakeup set_r (Error `Cancelled));
       r
     );
-  let log1 = Log.create () in
-  let log2 = Log.create () in
+  let log1 = Log.create "b1" in
+  let log2 = Log.create "b2" in
   let switch1 = Lwt_switch.create () in
   let switch2 = Lwt_switch.create () in
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
@@ -375,6 +376,57 @@ let test_cancel_3 _switch () =
   r >>= fun r ->
   let r = Result.map (fun () -> "-") r in
   Alcotest.(check build_result) "Build cancelled" (Error `Cancelled) r;
+  Lwt.return_unit
+
+(* One user cancels a failed build after its replacement has started. *)
+let test_cancel_4 _switch () =
+  Mock_store.with_store @@ fun store ->
+  let sandbox = Mock_sandbox.create (Mock_store.state_dir store / "sandbox") in
+  let builder = B.v ~store ~sandbox in
+  let src_dir = Mock_store.state_dir store / "src" in
+  Os.ensure_dir src_dir;
+  let spec = Spec.{ from = "base"; ops = [ run "wait" ] } in
+  let r, set_r = Lwt.wait () in
+  Mock_sandbox.expect sandbox (fun ~cancelled ?stdin:_ ~log _config _dir ->
+      Build_log.printf log "Wait@." >>= fun () ->
+      Lwt.on_termination cancelled (fun () -> Lwt.wakeup set_r (Error `Cancelled));
+      r
+    );
+  let log1 = Log.create "b1" in
+  let log2 = Log.create "b2" in
+  let switch1 = Lwt_switch.create () in
+  let switch2 = Lwt_switch.create () in
+  let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
+  let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
+  let b1 = B.build builder context1 spec in
+  Log.await log1 "FROM base\n/: (run (shell wait))\nWait\n" >>= fun () ->
+  Lwt.wakeup set_r (Error (`Msg "Build failed"));
+  (* Begin a new build. *)
+  let r2, set_r2 = Lwt.wait () in
+  Mock_sandbox.expect sandbox (fun ~cancelled ?stdin:_ ~log _config dir ->
+      Build_log.printf log "Wait@." >>= fun () ->
+      Lwt.on_termination cancelled (fun () -> Lwt.wakeup set_r (Error `Cancelled));
+      let rootfs = dir / "rootfs" in
+      Lwt_io.(with_file ~mode:output) (rootfs / "output") (fun ch -> Lwt_io.write ch "ok") >>= fun () ->
+      r2
+    );
+  let b2 = B.build builder context2 spec in
+  Log.await log2 "FROM base\n/: (run (shell wait))\nWait\n" >>= fun () ->
+  (* Cancel the original build. *)
+  Lwt_switch.turn_off switch1 >>= fun () ->
+  b1 >>= fun result1 ->
+  Alcotest.(check build_result) "User 1 result" (Error (`Msg "Build failed")) result1;
+  (* Start a third build. It should attach to the second build. *)
+  let log3 = Log.create "b3" in
+  let switch3 = Lwt_switch.create () in
+  let context3 = Context.v ~switch:switch3 ~src_dir ~log:(Log.add log3) () in
+  let b3 = B.build builder context3 spec in
+  Log.await log3 "FROM base\n/: (run (shell wait))\nWait\n" >>= fun () ->
+  Lwt.wakeup set_r2 (Ok ());
+  b2 >>!= get store "output" >>= fun result2 ->
+  Alcotest.(check build_result) "User 2 result" (Ok "ok") result2;
+  b3 >>!= get store "output" >>= fun result3 ->
+  Alcotest.(check build_result) "User 3 result" (Ok "ok") result3;
   Lwt.return_unit
 
 let sexp = Alcotest.of_pp Sexplib.Sexp.pp_hum
@@ -413,6 +465,7 @@ let () =
         test_case "Cancel"     `Quick test_cancel;
         test_case "Cancel 2"   `Quick test_cancel_2;
         test_case "Cancel 3"   `Quick test_cancel_3;
+        test_case "Cancel 4"   `Quick test_cancel_4;
       ];
     ]
   end
