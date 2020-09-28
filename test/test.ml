@@ -190,7 +190,7 @@ let test_concurrent_failure_2 _switch () =
   Lwt.return ()
 
 let test_cancel _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+  with_config @@ fun ~src_dir ~store:_ ~sandbox ~builder ->
   let log = Log.create "b" in
   let switch = Lwt_switch.create () in
   let context = Context.v ~switch ~src_dir ~log:(Log.add log) () in
@@ -200,7 +200,7 @@ let test_cancel _switch () =
   let b = B.build builder context spec in
   Log.await log "FROM base\n/: (run (shell Wait))\nWait\n" >>= fun () ->
   Lwt_switch.turn_off switch >>= fun () ->
-  b >>!= get store "appended" >>= fun result ->
+  b >>= fun result ->
   Alcotest.(check build_result) "Final result" (Error `Cancelled) result;
   Log.check "Check log" 
     {|FROM base
@@ -317,6 +317,33 @@ let test_cancel_4 _switch () =
   Alcotest.(check build_result) "User 3 result" (Ok "ok") result3;
   Lwt.return_unit
 
+(* Start a new build while the previous one is cancelling. *)
+let test_cancel_5 _switch () =
+  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+  let spec = Spec.{ from = "base"; ops = [ run "Wait" ] } in
+  let r, set_r = Lwt.wait () in
+  let delay_store, set_delay = Lwt.wait () in
+  Mock_sandbox.expect sandbox (mock_op ~result:r ~cancel:set_r ~delay_store ());
+  let log1 = Log.create "b1" in
+  let switch1 = Lwt_switch.create () in
+  let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
+  let b1 = B.build builder context1 spec in
+  Log.await log1 "FROM base\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  Lwt_switch.turn_off switch1 >>= fun () ->
+  b1 >>= fun result1 ->
+  Alcotest.(check build_result) "User 1 result" (Error `Cancelled) result1;
+  (* Begin a new build. *)
+  Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "ok") ());
+  let log2 = Log.create "b2" in
+  let switch2 = Lwt_switch.create () in
+  let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
+  let b2 = B.build builder context2 spec in
+  Log.await log2 "FROM base\n/: (run (shell Wait))\n" >>= fun () ->
+  Lwt.wakeup set_delay ();
+  b2 >>!= get store "output" >>= fun result1 ->
+  Alcotest.(check build_result) "User 2 result" (Ok "ok") result1;
+  Lwt.return_unit
+
 let sexp = Alcotest.of_pp Sexplib.Sexp.pp_hum
 
 (* Check that parsing an S-expression and then serialising it again gets the same result. *)
@@ -354,6 +381,7 @@ let () =
         test_case "Cancel 2"   `Quick test_cancel_2;
         test_case "Cancel 3"   `Quick test_cancel_3;
         test_case "Cancel 4"   `Quick test_cancel_4;
+        test_case "Cancel 5"   `Quick test_cancel_5;
       ];
     ]
   end

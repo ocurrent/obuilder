@@ -18,7 +18,7 @@ let add t tag x =
   begin match tag with
     | `Heading -> Buffer.add_string t.buf (x ^ "\n")
     | `Output -> Buffer.add_string t.buf x
-    | `Note -> print_endline x
+    | `Note -> ()
   end;
   Lwt_condition.broadcast t.cond ()
 

@@ -17,9 +17,9 @@ module Make (Raw : S.STORE) = struct
   type t = {
     raw : Raw.t;
     dao : Dao.t;
-    (* Invariant: builds in [in_progress] have [users > 0], a [log] that isn't
-       finished (i.e. can be tailed), a [cancelled] that is still pending, and a
-       [result] that is still pending. *)
+    (* Invariants for builds in [in_progress]:
+       - [result] is still pending and [log] isn't finished.
+       - [cancelled] is resolved iff [users = 0]. *)
     mutable in_progress : build Builds.t;
   }
 
@@ -33,13 +33,11 @@ module Make (Raw : S.STORE) = struct
       Lwt.wakeup_exn set_log (Failure "Build ended without setting a log!");
       Lwt.return_unit
 
-  let dec_ref t ~id build =
+  let dec_ref build =
     build.users <- build.users - 1;
     if Lwt.is_sleeping build.result then (
       Log.info (fun f -> f "User cancelled job (users now = %d)" build.users);
       if build.users = 0 then (
-        (* Remove it immediately, so that no other user can try to attach to it. *)
-        t.in_progress <- Builds.remove id t.in_progress;
         Lwt.wakeup_later build.set_cancelled ()
       )
     )
@@ -50,12 +48,18 @@ module Make (Raw : S.STORE) = struct
      [fn] should set the log being used as soon as it knows it
      (this can't happen until we've created the temporary directory
      in the underlying store). *)
-  let share_build ?switch t ~log:client_log id fn =
+  let rec share_build ?switch t ~log:client_log id fn =
     match Builds.find_opt id t.in_progress with
+    | Some existing when existing.users = 0 ->
+      client_log `Note ("Waiting for previous build to finish cancelling");
+      assert (Lwt.is_sleeping existing.result);
+      existing.result >>= fun _ ->
+      share_build ?switch t ~log:client_log id fn
     | Some existing ->
+      (* We're already building this, and the build hasn't been cancelled. *)
       existing.users <- existing.users + 1;
       existing.log >>= fun log ->
-      Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref t ~id existing; Lwt.return_unit) >>= fun () ->
+      Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref existing; Lwt.return_unit) >>= fun () ->
       Build_log.tail ?switch log (client_log `Output) >>!= fun () ->
       existing.result
     | None ->
@@ -64,21 +68,20 @@ module Make (Raw : S.STORE) = struct
       let tail_log = log >>= fun log -> Build_log.tail ?switch log (client_log `Output) in
       let cancelled, set_cancelled = Lwt.wait () in
       let build = { users = 1; cancelled; set_cancelled; log; result } in
-      Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref t ~id build; Lwt.return_unit) >>= fun () ->
+      Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref build; Lwt.return_unit) >>= fun () ->
       t.in_progress <- Builds.add id build t.in_progress;
       Lwt.async
         (fun () ->
            Lwt.try_bind
              (fun () -> fn ~cancelled set_log)
              (fun r ->
-                if build.users > 0 then
-                  t.in_progress <- Builds.remove id t.in_progress;
+                t.in_progress <- Builds.remove id t.in_progress;
                 Lwt.wakeup_later set_result r;
                 finish_log ~set_log log
              )
              (fun ex ->
-                if build.users > 0 then
-                  t.in_progress <- Builds.remove id t.in_progress;
+                Log.info (fun f -> f "Build %S error: %a" id Fmt.exn ex);
+                t.in_progress <- Builds.remove id t.in_progress;
                 Lwt.wakeup_later_exn set_result ex;
                 finish_log ~set_log log
              )
