@@ -12,3 +12,8 @@ module Db = Db
 module Os = Os
 
 module Runc_sandbox = Runc_sandbox
+
+(**/**)
+
+(* For unit-tests *)
+module Manifest = Manifest
