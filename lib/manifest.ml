@@ -1,7 +1,12 @@
 let ( / ) = Filename.concat
 
+type hash = Sha256.t
+
+let show_hash = Sha256.to_hex
+let pp_hash f t = Fmt.string f (show_hash t)
+
 type t = [
-  | `File of (string * string)
+  | `File of (string * hash)
   | `Symlink of (string * string)
   | `Dir of (string * t list)
 ] [@@deriving show]
@@ -21,7 +26,7 @@ let rec generate ~exclude ~src_dir src : t =
     in
     `Dir (src, items)
   | Unix.{ st_kind = S_REG; _ } ->
-    let hash = Digest.file path in
+    let hash = Sha256.file path in
     `File (src, hash)
   | Unix.{ st_kind = S_LNK; _ } ->
     let target = Unix.readlink path in

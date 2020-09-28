@@ -37,10 +37,10 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
   let run t ~base ~context cmd =
     let { Context.switch; workdir; user; env; shell; log; src_dir = _ } = context in
     let id =
-      Digest.string
+      Sha256.string
         ([%derive.show: string * string * (string * string) list * string]
            (base, workdir, env, cmd))
-      |> Digest.to_hex
+      |> Sha256.to_hex
     in
     Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
         let argv = shell @ [cmd] in
@@ -68,7 +68,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       dst;
     } in
     (* Fmt.pr "COPY: %a@." pp_copy_details details; *)
-    let id = Digest.to_hex (Digest.string (show_copy_details details)) in
+    let id = Sha256.to_hex (Sha256.string (show_copy_details details)) in
     Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
         let argv = ["tar"; "-xf"; "-"] in
         let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
@@ -138,7 +138,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
 
   let get_base t ~log base =
     log `Heading (Fmt.strf "FROM %s" base);
-    let id = Digest.to_hex (Digest.string base) in
+    let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log:_ tmp ->
         Fmt.pr "Base image not present; importing %S...@." base;
         let rootfs = tmp / "rootfs" in

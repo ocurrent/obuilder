@@ -22,6 +22,7 @@
   sexplib
   ppx_deriving
   ppx_sexp_conv
+  sha
   sqlite3
   (ocaml (>= 4.10.0))
   (alcotest-lwt :with-test)
