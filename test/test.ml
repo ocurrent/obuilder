@@ -365,6 +365,54 @@ let test_sexp () =
       (user (uid 1) (gid 2))
      ) |}
 
+let manifest =
+  Alcotest.result
+    (Alcotest.testable Manifest.pp (fun a b -> Manifest.show a = Manifest.show b))
+    (Alcotest.of_pp (fun f (`Msg m) -> Fmt.string f m))
+
+(* Test copy step. *)
+let test_copy _switch () =
+  Lwt_io.with_temp_dir ~prefix:"test-copy-" @@ fun src_dir ->
+  Lwt_io.(with_file ~mode:output) (src_dir / "file") (fun ch -> Lwt_io.write ch "file-data") >>= fun () ->
+  (* Files *)
+  let f1hash = Sha256.string "file-data" in
+  Alcotest.(check manifest) "File" (Ok (`File ("file", f1hash)))
+  @@ Manifest.generate ~exclude:[] ~src_dir "file";
+  Alcotest.(check manifest) "File" (Ok (`File ("file", f1hash)))
+  @@ Manifest.generate ~exclude:[] ~src_dir "./file";
+  Alcotest.(check manifest) "File" (Ok (`File ("file", f1hash)))
+  @@ Manifest.generate ~exclude:[] ~src_dir "/file";
+  Alcotest.(check manifest) "Missing" (Error (`Msg {|Source path "file2" not found|}))
+  @@ Manifest.generate ~exclude:[] ~src_dir "file2";
+  Alcotest.(check manifest) "Not dir" (Error (`Msg {|Not a directory: file (in "file/file2")|}))
+  @@ Manifest.generate ~exclude:[] ~src_dir "file/file2";
+  Alcotest.(check manifest) "Parent" (Error (`Msg {|Can't use .. in source paths! (in "../file")|}))
+  @@ Manifest.generate ~exclude:[] ~src_dir "../file";
+  (* Symlinks *)
+  Unix.symlink "/root" (src_dir / "link");
+  Alcotest.(check manifest) "Link" (Ok (`Symlink (("link", "/root"))))
+  @@ Manifest.generate ~exclude:[] ~src_dir "link";
+  Alcotest.(check manifest) "Follow link" (Error (`Msg {|Not a regular file: link (in "link/file")|}))
+  @@ Manifest.generate ~exclude:[] ~src_dir "link/file";
+  (* Directories *)
+  Alcotest.(check manifest) "Tree"
+    (Ok (`Dir ("", [`Symlink ("link", "/root")])))
+  @@ Manifest.generate ~exclude:["file"] ~src_dir "";
+  Alcotest.(check manifest) "Tree"
+    (Ok (`Dir ("", [`File ("file", f1hash);
+                    `Symlink ("link", "/root")])))
+  @@ Manifest.generate ~exclude:[] ~src_dir ".";
+  Unix.mkdir (src_dir / "dir1") 0o700;
+  Unix.mkdir (src_dir / "dir1" / "dir2") 0o700;
+  Lwt_io.(with_file ~mode:output) (src_dir / "dir1" / "dir2" / "file2") (fun ch -> Lwt_io.write ch "file2") >>= fun () ->
+  let f2hash = Sha256.string "file2" in
+  Alcotest.(check manifest) "Nested file" (Ok (`File ("dir1/dir2/file2", f2hash)))
+  @@ Manifest.generate ~exclude:[] ~src_dir "dir1/dir2/file2";
+  Alcotest.(check manifest) "Tree"
+    (Ok (`Dir ("dir1", [`Dir ("dir1/dir2", [`File ("dir1/dir2/file2", f2hash)])])))
+  @@ Manifest.generate ~exclude:[] ~src_dir "dir1";
+  Lwt.return_unit
+
 let () =
   let open Alcotest_lwt in
   Lwt_main.run begin
@@ -382,6 +430,9 @@ let () =
         test_case "Cancel 3"   `Quick test_cancel_3;
         test_case "Cancel 4"   `Quick test_cancel_4;
         test_case "Cancel 5"   `Quick test_cancel_5;
+      ];
+      "manifest", [
+        test_case "Copy"       `Quick test_copy;
       ];
     ]
   end

@@ -57,34 +57,44 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     dst : string;
   } [@@deriving show]
 
+  let rec sequence = function
+    | [] -> Ok []
+    | Error e :: _ -> Error e
+    | Ok x :: xs ->
+      match sequence xs with
+      | Ok xs -> Ok (x :: xs)
+      | e -> e
+
   let copy t ~context ~base { Spec.src; dst; exclude } =
     let { Context.switch; src_dir; workdir; user; log; shell = _; env = _ } = context in
     let dst = if Filename.is_relative dst then workdir / dst else dst in
-    let src_manifest = List.map (Manifest.generate ~exclude ~src_dir) src in
-    let details = {
-      base;
-      src_manifest;
-      user;
-      dst;
-    } in
-    (* Fmt.pr "COPY: %a@." pp_copy_details details; *)
-    let id = Sha256.to_hex (Sha256.string (show_copy_details details)) in
-    Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
-        let argv = ["tar"; "-xf"; "-"] in
-        let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
-        Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
-        let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
-        let send =
-          (* If the sending thread finishes (or fails), close the writing socket
-             immediately so that the tar process finishes too. *)
-          Lwt.finalize
-            (fun () -> Tar_transfer.send_files ~src_dir ~src_manifest ~dst ~to_untar)
-            (fun () -> Lwt_unix.close to_untar)
-        in
-        proc >>= fun result ->
-        send >>= fun () ->
-        Lwt.return result
-      )
+    match sequence (List.map (Manifest.generate ~exclude ~src_dir) src) with
+    | Error _ as e -> Lwt.return e
+    | Ok src_manifest ->
+      let details = {
+        base;
+        src_manifest;
+        user;
+        dst;
+      } in
+      (* Fmt.pr "COPY: %a@." pp_copy_details details; *)
+      let id = Sha256.to_hex (Sha256.string (show_copy_details details)) in
+      Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
+          let argv = ["tar"; "-xf"; "-"] in
+          let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
+          Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
+          let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
+          let send =
+            (* If the sending thread finishes (or fails), close the writing socket
+               immediately so that the tar process finishes too. *)
+            Lwt.finalize
+              (fun () -> Tar_transfer.send_files ~src_dir ~src_manifest ~dst ~to_untar)
+              (fun () -> Lwt_unix.close to_untar)
+          in
+          proc >>= fun result ->
+          send >>= fun () ->
+          Lwt.return result
+        )
 
   let pp_op ~(context:Context.t) f op =
     let sexp = Spec.sexp_of_op op in
