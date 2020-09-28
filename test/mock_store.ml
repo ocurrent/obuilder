@@ -11,11 +11,16 @@ type t = {
 
 let delay_store = ref Lwt.return_unit
 
+let rec waitpid_non_intr pid =
+  try Unix.waitpid [] pid
+  with Unix.Unix_error (Unix.EINTR, _, _) -> waitpid_non_intr pid
+
 let build t ?base ~id fn =
   base |> Option.iter (fun base -> assert (not (String.contains base '/')));
   let dir = t.dir / id in
   assert (Os.check_dir dir = `Missing);
   let tmp_dir = dir ^ ".part" in
+  assert (not (Sys.file_exists tmp_dir));
   begin match base with
     | None -> Os.ensure_dir tmp_dir; Lwt.return_unit
     | Some base ->
@@ -30,7 +35,10 @@ let build t ?base ~id fn =
     Unix.rename tmp_dir dir;
     Lwt_result.return ()
   | Error _ as e ->
-    Lwt.return e
+    let rm = Unix.create_process "rm" [| "rm"; "-r"; "--"; tmp_dir |] Unix.stdin Unix.stdout Unix.stderr in
+    match waitpid_non_intr rm with
+    | _, Unix.WEXITED 0 -> Lwt.return e
+    | _ -> failwith "rm -r failed!"
 
 let state_dir t = t.dir / "state"
 
