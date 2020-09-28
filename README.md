@@ -46,9 +46,167 @@ performed using a single builder object:
 
 OBuilder calculates a digest of the input files to decide whether a `copy` step
 needs to be repeated. However, if it decides to copy the file to the build sandbox,
-it does not check the digest again. Therefore, you must not modify the input
+it does not check the digest again. Also, it only checks that it is not following
+symlinks during the initial scan. Therefore, you must not modify the input
 files while a build is in progress.
 
 Failed build steps are not cached.
 
+## The build specification language
+
+The spec files are loosly based on the [Dockerfile][] format.
+The main difference is that the format uses S-expressions rather than a custom format,
+which should make it easier to generate and consume it automatically.
+
+When performing a build, the user gives OBuilder a specification file (as described below),
+and a source directory, containing files which may be copied into the image using `copy`.
+
+At the moment, multi-stage builds are not supported, so a spec file is just a single stage, of the form:
+
+```sexp
+((from BASE) OP...)
+```
+
+Example:
+
+```sexp
+((from busybox@sha256:d366a4665ab44f0648d7a00ae3fae139d55e32f9712c67accd604bb55df9d05a)
+ (shell /bin/sh -c)
+ (run (shell "echo hello world")))
+```
+
+`BASE` identifies a Docker image, which will be fetched using `docker pull` and imported into the OBuilder cache.
+OBuilder will not check for updates, so `BASE` should include a digest identifying the exact image, as shown above.
+
+The operations are performed in order. Each operation gets a build context and a filesystem snapshot, and may produce
+a new context and a new snapshot.
+The initial filesystem snapshot is `BASE`. `run` and `copy` operations create new snapshots.
+
+The initial context is supplied by the user (see [build.mli](lib/build.mli) for details).
+By default:
+- The environment is taken from the Docker configuration of `BASE`.
+- The user is `(uid 0) (gid 0)`.
+- The workdir is `/`.
+- The shell is `/bin/bash -c`.
+
+### workdir
+
+```sexp
+(workdir DIR)
+```
+
+Example:
+
+```sexp
+(workdir /usr/local)
+```
+
+This operation sets the current working directory used for the following commands, until the next `workdir` operation.
+If the path given is relative, it is combined with the previous setting.
+
+### shell
+
+```sexp
+(shell ARG...)
+```
+
+Example:
+
+```sexp
+(shell /bin/bash -c)
+```
+
+This sets the shell used for future `(run (shell COMMAND))` operations.
+The command run will be this list of arguments followed by the single argument `COMMAND`.
+
+### run
+
+```sexp
+(run (shell COMMAND))
+```
+
+Example:
+
+```sexp
+(run (shell "echo hello"))
+```
+
+Runs the single argument `COMMAND` using the values in the current context (set by `workdir` and `shell`).
+
+### copy
+
+```sexp
+(copy
+ (src SRC...)
+ (dst DST)
+ (exclude EXCL...)?)
+```
+
+Examples:
+
+```sexp
+(copy
+ (src .)
+ (dst build/)
+ (exclude .git _build))
+```
+
+```sexp
+(copy
+ (src platform.ml.linux)
+ (dst platform.ml))
+```
+
+This copies files, directories and symlinks from the source directory (provided by the user when building) into
+the image. If `DST` does not start with `/` then it is relative to the current workdir.
+
+It has two forms:
+- If `DST` ends with `/` then it copies each item in `SRC` to the directory `DST`.
+- Otherwise, it copies the single item `SRC` as `DST`.
+
+Files whose basenames are listed in `exclude` are ignored.
+If `exclude` is not given, the empty list is used.
+At present, glob patterns or full paths cannot be used here.
+
+Notes:
+
+- Unlike Docker's `COPY` operation, OBuilder copies the files using the current
+  user and group IDs, as set with `(user ...)`.
+
+- Both `SRC` and `DST` use `/` as the directory separator on all platforms.
+
+- The copy is currently done by running `tar` inside the container to receive the files.
+  Therefore, the filesystem must have a working `tar` binary.
+
+### user
+
+```sexp
+(user (uid UID) (gid GID))
+```
+
+Example:
+
+```sexp
+(user (uid 1000) (gid 1000))
+```
+
+This updates the build context to set the user and group IDs used for the following `copy` and `run` commands.
+Note that only numeric IDs are supported.
+
+### env
+
+```sexp
+(env NAME VALUE)
+```
+
+Example:
+
+```sexp
+(env OPTIONS "-O2 -Wall")
+```
+
+Updates the build context so that the environment variable `NAME` has the value `VALUE` in future `run` operations.
+
+
+[Dockerfile]: https://docs.docker.com/engine/reference/builder/
 [OCluster]: https://github.com/ocurrent/ocluster

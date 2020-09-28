@@ -100,6 +100,13 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     let sexp = Spec.sexp_of_op op in
     Fmt.pf f "@[<v2>%s: %a@]" context.workdir Sexplib.Sexp.pp_hum sexp
 
+  let update_workdir ~(context:Context.t) path =
+    let workdir =
+      if Astring.String.is_prefix ~affix:"/" path then path
+      else context.workdir ^ "/" ^ path
+    in
+    { context with workdir }
+
   let rec run_steps t ~(context:Context.t) ~base = function
     | [] -> Lwt_result.return base
     | op :: ops ->
@@ -107,7 +114,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       let k = run_steps t ops in
       match op with
       | `Comment _ -> k ~base ~context
-      | `Workdir workdir -> k ~base ~context:{context with workdir}
+      | `Workdir workdir -> k ~base ~context:(update_workdir ~context workdir)
       | `User user -> k ~base ~context:{context with user}
       | `Run { shell = cmd } ->
         run t ~base ~context cmd >>!= fun base ->
