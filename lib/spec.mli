@@ -5,7 +5,7 @@ val cache_id : string -> (cache_id, [> `Msg of string]) result
 type copy = {
   src : string list;
   dst : string;
-  exclude : string list [@sexp.list];
+  exclude : string list;
 } [@@deriving sexp]
 
 type user = {
@@ -19,14 +19,14 @@ type cache = {
 } [@@deriving sexp]
 
 type run = {
-  cache : cache list [@sexp.list];
+  cache : cache list;
   shell : string;
 } [@@deriving sexp]
 
 type op = [
   | `Comment of string
   | `Workdir of string
-  | `Shell of string list [@sexp.list]
+  | `Shell of string list
   | `Run of run
   | `Copy of copy
   | `User of user
