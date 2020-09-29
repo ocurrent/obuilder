@@ -7,6 +7,8 @@ let ( / ) = Filename.concat
 
 type t = {
   dir : string;
+  cond : unit Lwt_condition.t;
+  mutable builds : int;
 }
 
 let delay_store = ref Lwt.return_unit
@@ -16,35 +18,44 @@ let rec waitpid_non_intr pid =
   with Unix.Unix_error (Unix.EINTR, _, _) -> waitpid_non_intr pid
 
 let build t ?base ~id fn =
-  base |> Option.iter (fun base -> assert (not (String.contains base '/')));
-  let dir = t.dir / id in
-  assert (Os.check_dir dir = `Missing);
-  let tmp_dir = dir ^ ".part" in
-  assert (not (Sys.file_exists tmp_dir));
-  begin match base with
-    | None -> Os.ensure_dir tmp_dir; Lwt.return_unit
-    | Some base ->
-      Lwt_process.exec ("", [| "cp"; "-r"; t.dir / base; tmp_dir |]) >>= function
-      | Unix.WEXITED 0 -> Lwt.return_unit
-      | _ -> failwith "cp failed!"
-  end >>= fun () ->
-  fn tmp_dir >>= fun r ->
-  !delay_store >>= fun () ->
-  match r with
-  | Ok () ->
-    Unix.rename tmp_dir dir;
-    Lwt_result.return ()
-  | Error _ as e ->
-    let rm = Unix.create_process "rm" [| "rm"; "-r"; "--"; tmp_dir |] Unix.stdin Unix.stdout Unix.stderr in
-    match waitpid_non_intr rm with
-    | _, Unix.WEXITED 0 -> Lwt.return e
-    | _ -> failwith "rm -r failed!"
+  t.builds <- t.builds + 1;
+  Lwt.finalize
+    (fun () ->
+       base |> Option.iter (fun base -> assert (not (String.contains base '/')));
+       let dir = t.dir / id in
+       assert (Os.check_dir dir = `Missing);
+       let tmp_dir = dir ^ ".part" in
+       assert (not (Sys.file_exists tmp_dir));
+       begin match base with
+         | None -> Os.ensure_dir tmp_dir; Lwt.return_unit
+         | Some base ->
+           Lwt_process.exec ("", [| "cp"; "-r"; t.dir / base; tmp_dir |]) >>= function
+           | Unix.WEXITED 0 -> Lwt.return_unit
+           | _ -> failwith "cp failed!"
+       end >>= fun () ->
+       fn tmp_dir >>= fun r ->
+       !delay_store >>= fun () ->
+       match r with
+       | Ok () ->
+         Unix.rename tmp_dir dir;
+         Lwt_result.return ()
+       | Error _ as e ->
+         let rm = Unix.create_process "rm" [| "rm"; "-r"; "--"; tmp_dir |] Unix.stdin Unix.stdout Unix.stderr in
+         match waitpid_non_intr rm with
+         | _, Unix.WEXITED 0 -> Lwt.return e
+         | _ -> failwith "rm -r failed!"
+    )
+    (fun () ->
+       t.builds <- t.builds - 1;
+       Lwt_condition.broadcast t.cond ();
+       Lwt.return_unit
+    )
 
 let state_dir t = t.dir / "state"
 
 let with_store fn =
   Lwt_io.with_temp_dir ~prefix:"mock-store-" @@ fun dir ->
-  let t = { dir } in
+  let t = { dir; cond = Lwt_condition.create (); builds = 0 } in
   Obuilder.Os.ensure_dir (state_dir t);
   fn t
 
@@ -63,3 +74,10 @@ let result t id =
   match Os.check_dir dir with
   | `Present -> Some dir
   | `Missing -> None
+
+let rec finish t =
+  if t.builds > 0 then (
+    Logs.info (fun f -> f "Waiting for %d builds to finish" t.builds);
+    Lwt_condition.wait t.cond >>= fun () ->
+    finish t
+  ) else Lwt.return_unit

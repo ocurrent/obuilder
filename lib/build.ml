@@ -1,4 +1,5 @@
 open Lwt.Infix
+open Sexplib.Std
 
 let ( / ) = Filename.concat
 let ( >>!= ) = Lwt_result.bind
@@ -51,11 +52,11 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       )
 
   type copy_details = {
-    base : S.id [@printer Fmt.string];
+    base : S.id;
     src_manifest : Manifest.t list;
     user : Spec.user;
     dst : string;
-  } [@@deriving show]
+  } [@@deriving sexp_of]
 
   let rec sequence = function
     | [] -> Ok []
@@ -78,7 +79,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         dst;
       } in
       (* Fmt.pr "COPY: %a@." pp_copy_details details; *)
-      let id = Sha256.to_hex (Sha256.string (show_copy_details details)) in
+      let id = Sha256.to_hex (Sha256.string (Sexplib.Sexp.to_string (sexp_of_copy_details details))) in
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
           let argv = ["tar"; "-xf"; "-"] in
           let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in

@@ -2,7 +2,7 @@ type t = [
   | `File of (string * Sha256.t)
   | `Symlink of (string * string)
   | `Dir of (string * t list)
-] [@@deriving show]
+] [@@deriving sexp_of]
 
 val generate : exclude:string list -> src_dir:string -> string -> (t, [> `Msg of string]) result
 (** [generate ~exclude ~src_dir src] returns a manifest of the subtree at [src_dir/src].

@@ -28,7 +28,9 @@ let with_config fn =
   let builder = B.v ~store ~sandbox in
   let src_dir = Mock_store.state_dir store / "src" in
   Os.ensure_dir src_dir;
-  fn ~src_dir ~store ~sandbox ~builder
+  Lwt.finalize
+    (fun () -> fn ~src_dir ~store ~sandbox ~builder)
+    (fun () -> Mock_store.finish store)
 
 let mock_op ?(result=Lwt_result.return ()) ?(delay_store=Lwt.return_unit) ?cancel ?output () =
   fun ~cancelled ?stdin:_ ~log (config:Obuilder.Config.t) dir ->
@@ -367,7 +369,9 @@ let test_sexp () =
 
 let manifest =
   Alcotest.result
-    (Alcotest.testable Manifest.pp (fun a b -> Manifest.show a = Manifest.show b))
+    (Alcotest.testable
+       (fun f x -> Sexplib.Sexp.pp_mach f (Manifest.sexp_of_t x))
+       (fun a b -> Manifest.sexp_of_t a = Manifest.sexp_of_t b))
     (Alcotest.of_pp (fun f (`Msg m) -> Fmt.string f m))
 
 (* Test copy step. *)
