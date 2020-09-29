@@ -1,4 +1,6 @@
-type id = string
+open Sexplib.Std
+
+type id = string [@@deriving sexp_of]
 
 type tag = [
   | `Heading    (** Introduces a new build step *)

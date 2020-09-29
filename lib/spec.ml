@@ -26,7 +26,7 @@ type copy = {
   src : string list;
   dst : string;
   exclude : string list [@sexp.list];
-} [@@deriving show { with_path = false }, sexp]
+} [@@deriving sexp]
 
 let copy_inlined = function
   | "src" | "exclude" -> true
@@ -36,10 +36,10 @@ let copy_of_sexp x = copy_of_sexp (inflate_record copy_inlined x)
 let sexp_of_copy x = deflate_record copy_inlined (sexp_of_copy x)
 
 type user = { uid : int; gid : int }
-[@@deriving show { with_path = false }, sexp]
+[@@deriving sexp]
 
 type run = { shell : string }
-[@@deriving show { with_path = false }, sexp]
+[@@deriving sexp]
 
 type op = [
   | `Comment of string
@@ -49,7 +49,7 @@ type op = [
   | `Copy of copy
   | `User of user
   | `Env of (string * string)
-] [@@deriving show, sexp]
+] [@@deriving sexp]
 
 (* For some ops, we remove the extra () in the sexp string format,
    formatting them as if they were in-line records. e.g.
@@ -85,7 +85,7 @@ let op_of_sexp x =
 type stage = {
   from : string;
   ops : op list;
-} [@@deriving show]
+}
 
 let sexp_of_stage { from; ops } =
   let open Sexplib.Sexp in

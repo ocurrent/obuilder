@@ -1,15 +1,16 @@
+open Sexplib.Std
+
 let ( / ) = Filename.concat
 
 type hash = Sha256.t
 
-let show_hash = Sha256.to_hex
-let pp_hash f t = Fmt.string f (show_hash t)
+let sexp_of_hash t = Sexplib.Sexp.Atom (Sha256.to_hex t)
 
 type t = [
   | `File of (string * hash)
   | `Symlink of (string * string)
   | `Dir of (string * t list)
-] [@@deriving show]
+] [@@deriving sexp_of]
 
 let rec generate ~exclude ~src_dir src : t =
   let path = src_dir / src in

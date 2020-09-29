@@ -367,7 +367,9 @@ let test_sexp () =
 
 let manifest =
   Alcotest.result
-    (Alcotest.testable Manifest.pp (fun a b -> Manifest.show a = Manifest.show b))
+    (Alcotest.testable
+       (fun f x -> Sexplib.Sexp.pp_mach f (Manifest.sexp_of_t x))
+       (fun a b -> Manifest.sexp_of_t a = Manifest.sexp_of_t b))
     (Alcotest.of_pp (fun f (`Msg m) -> Fmt.string f m))
 
 (* Test copy step. *)
