@@ -15,9 +15,19 @@ module Json_config = struct
       "options", `List (List.map (fun x -> `String x) options);
     ]
 
+  let user_mounts =
+    List.map @@ fun { Config.Mount.src; dst } ->
+    mount ~ty:"bind" ~src dst
+          ~options:[
+            "bind";
+            "nosuid";
+            "noexec";
+            "nodev";
+          ]
+
   let strings xs = `List ( List.map (fun x -> `String x) xs)
 
-  let make {Config.cwd; argv; hostname; user; env} ~config_dir ~results_dir : Yojson.Safe.t =
+  let make {Config.cwd; argv; hostname; user; env; mounts} ~config_dir ~results_dir : Yojson.Safe.t =
     let user =
       let { Spec.uid; gid } = user in
       `Assoc [
@@ -113,7 +123,7 @@ module Json_config = struct
         "readonly", `Bool false;
       ];
       "hostname", `String hostname;
-      "mounts", `List [
+      "mounts", `List (
         mount "/proc"
           ~options:[      (* TODO: copy to others? *)
             "nosuid";
@@ -121,7 +131,7 @@ module Json_config = struct
             "nodev";
           ]
           ~ty:"proc"
-          ~src:"proc";
+          ~src:"proc" ::
         mount "/dev"
           ~ty:"tmpfs"
           ~src:"tmpfs"
@@ -130,7 +140,7 @@ module Json_config = struct
             "strictatime";
             "mode=755";
             "size=65536k";
-          ];
+          ] ::
         mount "/dev/pts"
           ~ty:"devpts"
           ~src:"devpts"
@@ -140,7 +150,7 @@ module Json_config = struct
             "newinstance";
             "ptmxmode=0666";
             "mode=0620";
-          ];
+          ] ::
         mount "/dev/shm"
           ~ty:"tmpfs"
           ~src:"shm"
@@ -150,7 +160,7 @@ module Json_config = struct
             "nodev";
             "mode=1777";
             "size=65536k";
-          ];
+          ] ::
         mount "/dev/mqueue"
           ~ty:"mqueue"
           ~src:"mqueue"
@@ -158,7 +168,7 @@ module Json_config = struct
             "nosuid";
             "noexec";
             "nodev";
-          ];
+          ] ::
         mount "/sys"
           ~ty:"none"
           ~src:"/sys"
@@ -168,22 +178,23 @@ module Json_config = struct
             "noexec";
             "nodev";
             "ro";
-          ];
+          ] ::
         mount "/etc/hosts"
           ~ty:"bind"
           ~src:(config_dir / "hosts")
           ~options:[
             "rbind";
             "rprivate"
-          ];
+          ] ::
         mount "/etc/resolv.conf"
           ~ty:"bind"
           ~src:"/etc/resolv.conf"  (* XXX *)
           ~options:[
             "rbind";
             "rprivate"
-          ];
-      ];
+          ] ::
+        user_mounts mounts
+      );
       "linux", `Assoc [
         "uidMappings", `List [
           `Assoc [

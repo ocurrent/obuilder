@@ -387,6 +387,10 @@ let test_sexp () =
       (comment "A test comment")
       (workdir /src)
       (run (shell "command"))
+      (run
+       (cache (a (target /data))
+              (b (target /srv)))
+       (shell "command"))
       (copy (src a b) (dst c))
       (copy (src a b) (dst c) (exclude .git _build))
       (env DEBUG 1)
@@ -443,12 +447,29 @@ let test_copy _switch () =
   @@ Manifest.generate ~exclude:[] ~src_dir "dir1";
   Lwt.return_unit
 
+let test_cache_id () =
+  let check id expected =
+    let actual =
+      match Spec.cache_id id with
+      | Ok x -> Ok (x :> string)
+      | Error (`Msg m) -> Error m
+    in
+    Alcotest.(check (result string string)) ("ID-" ^ id) expected actual
+  in
+  check "ok" @@ Ok "ok";
+  check "" @@ Error "Cache ID is empty!";
+  check "123" @@ Error {|Cache ID "123" should start with [A-Za-z]|};
+  check "a1" @@ Ok "a1";
+  check "a/1" @@ Error {|Invalid character in cache ID "a/1" (should be [-._A-Za-z0-9])|};
+  check "Az09-id.foo_orig" @@ Ok "Az09-id.foo_orig"
+
 let () =
   let open Alcotest_lwt in
   Lwt_main.run begin
     run "OBuilder" [
       "spec", [
-        test_case_sync "Sexp" `Quick test_sexp;
+        test_case_sync "Sexp"     `Quick test_sexp;
+        test_case_sync "Cache ID" `Quick test_cache_id;
       ];
       "build", [
         test_case "Simple"     `Quick test_simple;

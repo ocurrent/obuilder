@@ -8,7 +8,7 @@ sudo losetup -P $ZFS_LOOP /tmp/zfs.img
 sudo zpool create zfs $ZFS_LOOP
 
 BTRFS_LOOP=$(sudo losetup -f)
-dd if=/dev/zero of=/tmp/btrfs.img bs=100M count=10
+dd if=/dev/zero of=/tmp/btrfs.img bs=100M count=50
 sudo losetup -P $BTRFS_LOOP /tmp/btrfs.img
 sudo mkfs.btrfs -f $BTRFS_LOOP
 sudo mkdir /btrfs
@@ -20,4 +20,16 @@ opam install --deps-only -t .
 opam exec -- make
 opam exec -- dune exec -- obuilder build -f test/test1.spec test/test1 --store=btrfs:/btrfs
 opam exec -- dune exec -- obuilder build -f test/test1.spec test/test1 --store=zfs:zfs
+
+# Populate the caches from our own Travis cache
+btrfs subvolume create /btrfs/cache/opam-archives
+cp -r ~/.opam/download-cache/* /btrfs/cache/opam-archives/
+sudo chown -R 1000:1000 /btrfs/cache/opam-archives
+
+sudo zfs create zfs/c-opam-archives
+sudo cp -r ~/.opam/download-cache/* /zfs/c-opam-archives/
+sudo chown -R 1000:1000 /zfs/c-opam-archives
+sudo zfs snapshot zfs/c-opam-archives@snap
+
+opam exec -- dune exec -- obuilder build -f example.spec . --store=btrfs:/btrfs
 opam exec -- dune exec -- obuilder build -f example.spec . --store=zfs:zfs

@@ -35,7 +35,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     sandbox : Sandbox.t;
   }
 
-  let run t ~base ~context cmd =
+  let run t ~base ~context ~cache cmd =
     let { Context.switch; workdir; user; env; shell; log; src_dir = _ } = context in
     let id =
       Sha256.string
@@ -44,11 +44,24 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       |> Sha256.to_hex
     in
     Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
-        let argv = shell @ [cmd] in
-        let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env in
-        Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
-        Lwt_unix.close close_me >>= fun () ->
-        Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp
+        let to_release = ref [] in
+        Lwt.finalize
+          (fun () ->
+             cache |> Lwt_list.map_s (fun { Spec.id; target } ->
+                 Store.cache ~user t.store id >|= fun (src, release) ->
+                 to_release := release :: !to_release;
+                 { Config.Mount.src; dst = target }
+               )
+             >>= fun mounts ->
+             let argv = shell @ [cmd] in
+             let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts in
+             Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
+             Lwt_unix.close close_me >>= fun () ->
+             Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp
+          )
+          (fun () ->
+             !to_release |> Lwt_list.iter_s (fun f -> f ())
+          )
       )
 
   type copy_details = {
@@ -82,7 +95,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       let id = Sha256.to_hex (Sha256.string (Sexplib.Sexp.to_string (sexp_of_copy_details details))) in
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
           let argv = ["tar"; "-xf"; "-"] in
-          let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] in
+          let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] ~mounts:[] in
           Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
           let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
           let send =
@@ -117,8 +130,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Comment _ -> k ~base ~context
       | `Workdir workdir -> k ~base ~context:(update_workdir ~context workdir)
       | `User user -> k ~base ~context:{context with user}
-      | `Run { shell = cmd } ->
-        run t ~base ~context cmd >>!= fun base ->
+      | `Run { shell = cmd; cache } ->
+        run t ~base ~context ~cache cmd >>!= fun base ->
         k ~base ~context
       | `Copy x ->
         copy t ~context ~base x >>!= fun base ->

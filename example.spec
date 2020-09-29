@@ -19,8 +19,14 @@
     && opam update -u"))
  (copy (src obuilder.opam) (dst .))                     ; Copy just the opam file first (helps caching)
  (run (shell "opam pin add -yn obuilder.dev ."))
- (run (shell "opam depext -y obuilder"))                ; Install OS package dependencies
- (run (shell "opam install --deps-only -t obuilder"))   ; Install OCaml dependencies
+ ; Install OS package dependencies
+ (run
+  (cache (opam-archives (target /home/opam/.opam/download-cache)))
+  (shell "opam depext -y obuilder"))
+ ; Install OCaml dependencies
+ (run
+  (cache (opam-archives (target /home/opam/.opam/download-cache)))
+  (shell "opam install --deps-only -t obuilder"))
  (copy                                                  ; Copy the rest of the source code
   (src .)
   (dst /src/)

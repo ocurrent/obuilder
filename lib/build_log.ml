@@ -14,6 +14,7 @@ type t = {
 
 let with_dup fd fn =
   let fd = Lwt_unix.dup fd in
+  Lwt_unix.set_close_on_exec fd;
   Lwt.finalize
     (fun () -> fn fd)
     (fun () -> Lwt_unix.close fd)
@@ -66,7 +67,7 @@ let tail ?switch t dst =
     th
 
 let create path =
-  Lwt_unix.openfile path Lwt_unix.[O_CREAT; O_TRUNC; O_RDWR] 0o666 >|= fun fd ->
+  Lwt_unix.openfile path Lwt_unix.[O_CREAT; O_TRUNC; O_RDWR; O_CLOEXEC] 0o666 >|= fun fd ->
   let cond = Lwt_condition.create () in
   {
     state = `Open (fd, cond);

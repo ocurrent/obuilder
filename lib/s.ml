@@ -34,6 +34,21 @@ module type STORE = sig
   val state_dir : t -> string
   (** [state_dir] is the path of a directory which can be used to store mutable
       state related to this store (e.g. an sqlite3 database). *)
+
+  val cache :
+    user:Spec.user ->
+    t ->
+    Spec.cache_id ->
+    (string * (unit -> unit Lwt.t)) Lwt.t
+  (** [cache ~user t name] creates a writeable copy of the latest snapshot of the
+      cache [name]. It returns the path of this fresh copy and a function which
+      must be called to free it when done.
+      If the cache [name] does not exist, it is first created (as an empty directory,
+      and owned by [user]).
+      When the copy is released, it is snapshotted to become the new latest
+      version of the cache, unless the cache has already been updated since
+      it was snapshotted, in which case this writeable copy is simply discarded.
+  *)
 end
 
 module type SANDBOX = sig

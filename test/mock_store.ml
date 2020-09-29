@@ -97,3 +97,5 @@ let find ~output t =
   in
   let items = Sys.readdir t.dir |> Array.to_list |> List.sort String.compare in
   aux items
+
+let cache ~user:_ _t _ = assert false
