@@ -13,10 +13,15 @@ let create root =
   Os.ensure_dir (root / "state");
   { root }
 
+let btrfs ?(sudo=false) args =
+  let args = "btrfs" :: args in
+  let args = if sudo then "sudo" :: args else args in
+  Os.exec ~stdout:`Dev_null args
+
 let delete_snapshot_if_exists path =
   match Os.check_dir path with
   | `Missing -> Lwt.return_unit
-  | `Present -> Os.exec ["sudo"; "btrfs"; "subvolume"; "delete"; path]
+  | `Present -> btrfs ~sudo:true ["subvolume"; "delete"; path]
 
 let path t id =
   t.root / "result" / id
@@ -29,15 +34,15 @@ let build t ?base ~id fn =
   let result_tmp = result ^ ".part" in
   delete_snapshot_if_exists result_tmp >>= fun () ->
   begin match base with
-    | None -> Os.exec ["btrfs"; "subvolume"; "create"; "--"; result_tmp]
+    | None -> btrfs ["subvolume"; "create"; "--"; result_tmp]
     | Some base ->
-      Os.exec ["btrfs"; "subvolume"; "snapshot"; path t base; result_tmp]
+      btrfs ["subvolume"; "snapshot"; "--"; path t base; result_tmp]
   end
   >>= fun () ->
   fn result_tmp >>!= fun () ->
   (* delete_snapshot_if_exists result >>= fun () -> *) (* XXX: just for testing *)
-  Os.exec ["btrfs"; "subvolume"; "snapshot"; "-r"; result_tmp; result] >>= fun () ->
-  Os.exec ["sudo"; "btrfs"; "subvolume"; "delete"; result_tmp] >>= fun () ->
+  btrfs ["subvolume"; "snapshot"; "-r"; "--"; result_tmp; result] >>= fun () ->
+  btrfs ~sudo:true ["subvolume"; "delete"; "--"; result_tmp] >>= fun () ->
   Lwt_result.return ()
 
 let result t id =
