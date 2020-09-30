@@ -29,10 +29,12 @@ let path t id =
 let state_dir t =
   t.root / "state"
 
+let delete t id =
+  delete_snapshot_if_exists (path t id)
+
 let build t ?base ~id fn =
   let result = path t id in
   let result_tmp = result ^ ".part" in
-  delete_snapshot_if_exists result_tmp >>= fun () ->
   begin match base with
     | None -> btrfs ["subvolume"; "create"; "--"; result_tmp]
     | Some base ->

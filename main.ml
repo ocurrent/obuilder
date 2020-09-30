@@ -12,40 +12,50 @@ let store = Lwt_main.run @@ Store.create ~pool:"tank"
 
 module Sandbox = Obuilder.Runc_sandbox
 
+type builder = Builder : (module Obuilder.BUILDER with type t = 'a) * 'a -> builder
+
 let log tag msg =
   match tag with
   | `Heading -> Fmt.pr "%a@." Fmt.(styled (`Fg (`Hi `Blue)) string) msg
   | `Note -> Fmt.pr "%a@." Fmt.(styled (`Fg `Yellow) string) msg
   | `Output -> output_string stdout msg; flush stdout
 
-let build_in (type s) (module Store : Obuilder.S.STORE with type t = s) (store : s) spec src_dir =
+let create_builder (type s) (module Store : Obuilder.S.STORE with type t = s) (store : s) =
   let module Builder = Obuilder.Builder(Store)(Sandbox) in
   let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") in
-  Fmt_tty.setup_std_outputs ();
-  let spec = Obuilder.Spec.stage_of_sexp (Sexplib.Sexp.load_sexp spec) in
-  (* assert (spec = Obuilder.Spec.stage_of_sexp (Obuilder.Spec.sexp_of_stage spec)); *)
   let builder = Builder.v ~store ~sandbox in
-  let context = Obuilder.Context.v ~log ~src_dir () in
-  Builder.build builder context spec >>= function
-  | Ok x ->
-    Fmt.pr "Got: %S@." (x :> string);
-    Lwt.return_unit
-  | Error `Cancelled ->
-    Fmt.epr "Cancelled at user's request@.";
-    exit 1
-  | Error (`Msg m) ->
-    Fmt.epr "Build step failed: %s@." m;
-    exit 1
+  Builder ((module Builder), builder)
+
+let create_builder = function
+  | `Btrfs path ->
+    let store = Obuilder.Btrfs_store.create path in
+    Lwt.return @@ create_builder (module Obuilder.Btrfs_store) store
+  | `Zfs pool ->
+    Obuilder.Zfs_store.create ~pool >|= fun store ->
+    create_builder (module Obuilder.Zfs_store) store
 
 let build store spec src_dir =
-  Lwt_main.run @@ begin
-    match store with
-    | `Btrfs path ->
-      let store = Obuilder.Btrfs_store.create path in
-      build_in (module Obuilder.Btrfs_store) store spec src_dir
-    | `Zfs pool ->
-      Obuilder.Zfs_store.create ~pool >>= fun store ->
-      build_in (module Obuilder.Zfs_store) store spec src_dir
+  Lwt_main.run begin
+    create_builder store >>= fun (Builder ((module Builder), builder)) ->
+    let spec = Obuilder.Spec.stage_of_sexp (Sexplib.Sexp.load_sexp spec) in
+    (* assert (spec = Obuilder.Spec.stage_of_sexp (Obuilder.Spec.sexp_of_stage spec)); *)
+    let context = Obuilder.Context.v ~log ~src_dir () in
+    Builder.build builder context spec >>= function
+    | Ok x ->
+      Fmt.pr "Got: %S@." (x :> string);
+      Lwt.return_unit
+    | Error `Cancelled ->
+      Fmt.epr "Cancelled at user's request@.";
+      exit 1
+    | Error (`Msg m) ->
+      Fmt.epr "Build step failed: %s@." m;
+      exit 1
+  end
+
+let delete store id =
+  Lwt_main.run begin
+    create_builder store >>= fun (Builder ((module Builder), builder)) ->
+    Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
   end
 
 open Cmdliner
@@ -91,12 +101,25 @@ let store =
     ~docv:"STORE"
     ["store"]
 
+let id =
+  Arg.required @@
+  Arg.pos 0 Arg.(some string) None @@
+  Arg.info
+    ~doc:"The ID of a build within the store"
+    ~docv:"ID"
+    []
+
 let build =
   let doc = "Build a spec file." in
   Term.(const build $ store $ spec_file $ src_dir),
   Term.info "build" ~doc
 
-let cmds = [build]
+let delete =
+  let doc = "Recursively delete a cached build result." in
+  Term.(const delete $ store $ id),
+  Term.info "delete" ~doc
+
+let cmds = [build; delete]
 
 let default_cmd =
   let doc = "a command-line interface for OBuilder" in
@@ -105,4 +128,6 @@ let default_cmd =
 
 let term_exit (x : unit Term.result) = Term.exit x
 
-let () = term_exit @@ Term.eval_choice default_cmd cmds
+let () =
+  Fmt_tty.setup_std_outputs ();
+  term_exit @@ Term.eval_choice default_cmd cmds

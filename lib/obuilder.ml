@@ -2,6 +2,7 @@ module S = S
 module Spec = Spec
 module Config = Config
 module Context = Build.Context
+module type BUILDER = S.BUILDER with type context := Build.Context.t
 module Builder = Build.Make
 module Build_log = Build_log
 

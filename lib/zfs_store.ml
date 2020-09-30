@@ -31,13 +31,12 @@ let create ~pool =
   end >|= fun () ->
   t
 
-let delete_clone_if_exists ~pool id =
-  match check_dir (strf "/%s/%s" pool id) with
+let delete t id =
+  match check_dir (strf "/%s/%s" t.pool id) with
   | `Missing -> Lwt.return_unit
-  | `Present -> Os.exec ["sudo"; "zfs"; "destroy"; strf "%s/%s" pool id]
+  | `Present -> Os.exec ["sudo"; "zfs"; "destroy"; "-r"; "--"; strf "%s/%s" t.pool id]
 
 let build t ?base ~id fn =
-  delete_clone_if_exists ~pool:t.pool id >>= fun () ->
   let clone = strf "/%s/%s" t.pool id in
   begin match base with
     | None -> Os.exec ["sudo"; "zfs"; "create"; "--"; strf "%s/%s" t.pool id]
