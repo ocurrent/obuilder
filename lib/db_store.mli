@@ -14,6 +14,8 @@ module Make (Raw : S.STORE) : sig
       @param switch Turn this off if you no longer need the result. The build
                     will be cancelled if no-one else is waiting for it. *)
 
+  val delete : ?log:(S.id -> unit) -> t -> S.id -> unit Lwt.t
+
   val result : t -> S.id -> string option
 
   val wrap : Raw.t -> t

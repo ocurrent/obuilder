@@ -28,9 +28,7 @@ let with_config fn =
   let builder = B.v ~store ~sandbox in
   let src_dir = Mock_store.state_dir store / "src" in
   Os.ensure_dir src_dir;
-  Lwt.finalize
-    (fun () -> fn ~src_dir ~store ~sandbox ~builder)
-    (fun () -> Mock_store.finish store)
+  fn ~src_dir ~store ~sandbox ~builder
 
 let mock_op ?(result=Lwt_result.return ()) ?(delay_store=Lwt.return_unit) ?cancel ?output () =
   fun ~cancelled ?stdin:_ ~log (config:Obuilder.Config.t) dir ->
@@ -346,6 +344,34 @@ let test_cancel_5 _switch () =
   Alcotest.(check build_result) "User 2 result" (Ok "ok") result1;
   Lwt.return_unit
 
+let test_delete _switch () =
+  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+  let spec = Spec.{ from = "base"; ops = [ run "A"; run "B" ] } in
+  Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "A") ());
+  Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "B") ());
+  let log1 = Log.create "b1" in
+  let switch1 = Lwt_switch.create () in
+  let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
+  let b1 = B.build builder context1 spec in
+  b1 >>!= get store "output" >>= fun result1 ->
+  Alcotest.(check build_result) "Build 1 result" (Ok "B") result1;
+  (* Remove A *)
+  Mock_store.find ~output:"A" store >>= fun id ->
+  let id = Option.get id in
+  let log = ref [] in
+  B.delete ~log:(fun x -> log := x :: !log) builder id >>= fun () ->
+  Alcotest.(check int) "Deleted 2 items" 2 (List.length !log);
+  (* Check rebuild works *)
+  Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "A") ());
+  Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "B") ());
+  let log2 = Log.create "b2" in
+  let switch2 = Lwt_switch.create () in
+  let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
+  let b2 = B.build builder context2 spec in
+  b2 >>!= get store "output" >>= fun result2 ->
+  Alcotest.(check build_result) "Build 2 result" (Ok "B") result2;
+  Lwt.return_unit
+
 let sexp = Alcotest.of_pp Sexplib.Sexp.pp_hum
 
 (* Check that parsing an S-expression and then serialising it again gets the same result. *)
@@ -434,6 +460,7 @@ let () =
         test_case "Cancel 3"   `Quick test_cancel_3;
         test_case "Cancel 4"   `Quick test_cancel_4;
         test_case "Cancel 5"   `Quick test_cancel_5;
+        test_case "Delete"     `Quick test_delete;
       ];
       "manifest", [
         test_case "Copy"       `Quick test_copy;

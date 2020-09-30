@@ -2,7 +2,6 @@ open Lwt.Infix
 
 module Os = Obuilder.Os
 
-let ( >>!= ) = Lwt_result.bind
 let ( / ) = Filename.concat
 
 type t = {
@@ -16,6 +15,12 @@ let delay_store = ref Lwt.return_unit
 let rec waitpid_non_intr pid =
   try Unix.waitpid [] pid
   with Unix.Unix_error (Unix.EINTR, _, _) -> waitpid_non_intr pid
+
+let rm_r path =
+  let rm = Unix.create_process "rm" [| "rm"; "-r"; "--"; path |] Unix.stdin Unix.stdout Unix.stderr in
+  match waitpid_non_intr rm with
+  | _, Unix.WEXITED 0 -> ()
+  | _ -> failwith "rm -r failed!"
 
 let build t ?base ~id fn =
   t.builds <- t.builds + 1;
@@ -40,10 +45,8 @@ let build t ?base ~id fn =
          Unix.rename tmp_dir dir;
          Lwt_result.return ()
        | Error _ as e ->
-         let rm = Unix.create_process "rm" [| "rm"; "-r"; "--"; tmp_dir |] Unix.stdin Unix.stdout Unix.stderr in
-         match waitpid_non_intr rm with
-         | _, Unix.WEXITED 0 -> Lwt.return e
-         | _ -> failwith "rm -r failed!"
+         rm_r tmp_dir;
+         Lwt.return e
     )
     (fun () ->
        t.builds <- t.builds - 1;
@@ -52,20 +55,6 @@ let build t ?base ~id fn =
     )
 
 let state_dir t = t.dir / "state"
-
-let with_store fn =
-  Lwt_io.with_temp_dir ~prefix:"mock-store-" @@ fun dir ->
-  let t = { dir; cond = Lwt_condition.create (); builds = 0 } in
-  Obuilder.Os.ensure_dir (state_dir t);
-  fn t
-
-let add t id fn =
-  let dir = t.dir / id in
-  match Os.check_dir dir with
-  | `Present -> Fmt.failwith "%S is already in the store!" id
-  | `Missing ->
-    Os.ensure_dir dir;
-    fn dir
 
 let path t id = t.dir / id
 
@@ -81,3 +70,30 @@ let rec finish t =
     Lwt_condition.wait t.cond >>= fun () ->
     finish t
   ) else Lwt.return_unit
+
+let with_store fn =
+  Lwt_io.with_temp_dir ~prefix:"mock-store-" @@ fun dir ->
+  let t = { dir; cond = Lwt_condition.create (); builds = 0 } in
+  Obuilder.Os.ensure_dir (state_dir t);
+  Lwt.finalize
+    (fun () -> fn t)
+    (fun () -> finish t)
+
+let delete t id =
+  match result t id with
+  | Some path -> rm_r path; Lwt.return_unit
+  | None -> Lwt.return_unit
+
+let find ~output t =
+  let rec aux = function
+    | [] -> Lwt.return_none
+    | x :: xs ->
+      let output_path = t.dir / x / "rootfs" / "output" in
+      if Sys.file_exists output_path then (
+        Lwt_io.(with_file ~mode:input) output_path Lwt_io.read >>= fun data ->
+        if data = output then Lwt.return_some x
+        else aux xs
+      ) else aux xs
+  in
+  let items = Sys.readdir t.dir |> Array.to_list |> List.sort String.compare in
+  aux items
