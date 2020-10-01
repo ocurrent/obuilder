@@ -97,6 +97,18 @@ let with_pipe_to_child fn =
        ensure_closed_lwt w
     )
 
+let pread argv =
+  with_pipe_from_child @@ fun ~r ~w ->
+  let child = exec ~stdout:(`FD_copy w.raw) argv in
+  close w;
+  let r = Lwt_io.(of_fd ~mode:input) r in
+  Lwt.finalize
+    (fun () -> Lwt_io.read r)
+    (fun () -> Lwt_io.close r)
+  >>= fun data ->
+  child >>= fun () ->
+  Lwt.return data
+
 let check_dir x =
   match Unix.lstat x with
   | Unix.{ st_kind = S_DIR; _ } -> `Present

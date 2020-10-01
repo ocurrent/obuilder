@@ -52,6 +52,11 @@ files while a build is in progress.
 
 Failed build steps are not cached.
 
+Files and directories in the store may have owners and groups that only make sense
+in the context of some container. The store should therefore be configured so
+that other processes on the host (which might have the same IDs by coincidence)
+cannot reach them, e.g. by `chmod go-rwx /path/to/store`.
+
 ## The build specification language
 
 The spec files are loosly based on the [Dockerfile][] format.

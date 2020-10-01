@@ -23,6 +23,9 @@ module type STORE = sig
       as the [base] for further builds, until it is expired from the cache.
       On failure, nothing is recorded and calling [build] again will make
       another attempt at building it.
+      The builder will not request concurrent builds for the same [id] (it
+      will handle that itself). It will also not ask for a build that already
+      exists (i.e. for which [result] returns a path).
       @param base Initialise [tmpdir] as a clone of [base]. *)
 
   val delete : t -> id -> unit Lwt.t
@@ -47,8 +50,10 @@ module type STORE = sig
       and owned by [user]).
       When the copy is released, it is snapshotted to become the new latest
       version of the cache, unless the cache has already been updated since
-      it was snapshotted, in which case this writeable copy is simply discarded.
-  *)
+      it was snapshotted, in which case this writeable copy is simply discarded. *)
+
+  val delete_cache : t -> Spec.cache_id -> unit Lwt.t
+  (** [delete_cache t name] removes the cache [name], if present. *)
 end
 
 module type SANDBOX = sig
