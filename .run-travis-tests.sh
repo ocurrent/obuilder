@@ -21,6 +21,9 @@ opam exec -- make
 opam exec -- dune exec -- obuilder build -f test/test1.spec test/test1 --store=btrfs:/btrfs
 opam exec -- dune exec -- obuilder build -f test/test1.spec test/test1 --store=zfs:zfs
 
+opam exec -- dune exec -- ./stress/stress.exe btrfs:/btrfs
+opam exec -- dune exec -- ./stress/stress.exe zfs:zfs
+
 # Populate the caches from our own Travis cache
 btrfs subvolume create /btrfs/cache/opam-archives
 cp -r ~/.opam/download-cache/* /btrfs/cache/opam-archives/

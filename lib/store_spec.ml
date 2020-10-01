@@ -19,8 +19,8 @@ type store = Store : (module S.STORE with type t = 'a) * 'a -> store
 
 let to_store = function
   | `Btrfs path ->
-    Btrfs_store.create path |> fun store ->
-    Lwt.return (Store ((module Btrfs_store), store))
+    Btrfs_store.create path >|= fun store ->
+    Store ((module Btrfs_store), store)
   | `Zfs pool ->
     Zfs_store.create ~pool >|= fun store ->
     Store ((module Zfs_store), store)

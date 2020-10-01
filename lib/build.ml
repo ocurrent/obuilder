@@ -142,22 +142,10 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Shell shell ->
         k ~base ~context:{context with shell}
 
-  let pread argv =
-    Os.with_pipe_from_child @@ fun ~r ~w ->
-    let child = Os.exec ~stdout:(`FD_copy w.raw) argv in
-    Os.close w;
-    let r = Lwt_io.(of_fd ~mode:input) r in
-    Lwt.finalize
-      (fun () -> Lwt_io.read r)
-      (fun () -> Lwt_io.close r)
-    >>= fun line ->
-    child >>= fun () ->
-    Lwt.return line
-
   let export_env base : Os.env Lwt.t =
-    pread ["docker"; "image"; "inspect";
-           "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|};
-           "--"; base] >|= fun env ->
+    Os.pread ["docker"; "image"; "inspect";
+              "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|};
+              "--"; base] >|= fun env ->
     String.split_on_char '\x00' env
     |> List.filter_map (function
         | "\n" -> None
@@ -175,7 +163,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         let rootfs = tmp / "rootfs" in
         Unix.mkdir rootfs 0o755;
         (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
-        pread ["docker"; "create"; "--"; base] >>= fun cid ->
+        Os.pread ["docker"; "create"; "--"; base] >>= fun cid ->
         let cid = String.trim cid in
         let r, w = Unix.pipe ~cloexec:true () in
         let exporter, tar =

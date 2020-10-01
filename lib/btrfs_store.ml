@@ -1,66 +1,111 @@
 open Lwt.Infix
 
+let strf = Printf.sprintf
+
+(* Represents a persistent cache.
+   You must hold a cache's lock when removing or updating its entry in
+   "cache", and must assume this may happen at any time when not holding it.
+   The generation counter is used to check whether the cache has been updated
+   since being cloned. The counter starts from zero when the in-memory cache
+   value is created (i.e. you cannot compare across restarts). *)
 type cache = {
   lock : Lwt_mutex.t;
-  mutable gen : int;            (* Version counter. *)
+  mutable gen : int;
 }
 
 type t = {
-  root : string;
+  root : string;        (* The top-level directory (containing `result`, etc). *)
   caches : (Spec.cache_id, cache) Hashtbl.t;
-  mutable next : int;
+  mutable next : int;   (* Used to generate unique temporary IDs. *)
 }
 
 let ( / ) = Filename.concat
 
-let create root =
-  Os.ensure_dir (root / "result");
-  Os.ensure_dir (root / "state");
-  Os.ensure_dir (root / "cache");
-  Os.ensure_dir (root / "cache-tmp");
-  { root; caches = Hashtbl.create 10; next = 0 }
+module Btrfs = struct
+  let btrfs ?(sudo=false) args =
+    let args = "btrfs" :: args in
+    let args = if sudo then "sudo" :: args else args in
+    Os.exec ~stdout:`Dev_null args
 
-let btrfs ?(sudo=false) args =
-  let args = "btrfs" :: args in
-  let args = if sudo then "sudo" :: args else args in
-  Os.exec ~stdout:`Dev_null args
+  let subvolume_create path =
+    assert (not (Sys.file_exists path));
+    btrfs ["subvolume"; "create"; "--"; path]
+
+  let subvolume_delete path =
+    btrfs ~sudo:true ["subvolume"; "delete"; "--"; path]
+
+  let subvolume_snapshot mode ~src dst =
+    assert (not (Sys.file_exists dst));
+    let readonly =
+      match mode with
+      | `RO -> ["-r"]
+      | `RW -> []
+    in
+    btrfs ~sudo:true (["subvolume"; "snapshot"] @ readonly @ ["--"; src; dst])
+end
 
 let delete_snapshot_if_exists path =
   match Os.check_dir path with
   | `Missing -> Lwt.return_unit
-  | `Present -> btrfs ~sudo:true ["subvolume"; "delete"; path]
+  | `Present -> Btrfs.subvolume_delete path
 
-let path t id =
-  t.root / "result" / id
+module Path = struct
+  (* A btrfs store contains several subdirectories:
 
-let state_dir t =
-  t.root / "state"
+     - result: completed builds, named by ID
+     - result-tmp: in-progress builds
+     - state: for sqlite DB, etc
+     - cache: the latest version of each cache, by cache ID
+     - cache-tmp: in-progress updates to caches
+
+     result-tmp and cache-tmp are wiped at start-up. *)
+
+  let result t id        = t.root / "result" / id
+  let result_tmp t id    = t.root / "result-tmp" / id
+  let state t            = t.root / "state"
+  let cache t name       = t.root / "cache" / (name : Spec.cache_id :> string)
+  let cache_tmp t i name = t.root / "cache-tmp" / strf "%d-%s" i (name : Spec.cache_id :> string)
+end
 
 let delete t id =
-  delete_snapshot_if_exists (path t id)
+  delete_snapshot_if_exists (Path.result t id)
+
+let purge path =
+  Sys.readdir path |> Array.to_list |> Lwt_list.iter_s (fun item ->
+      let item = path / item in
+      Log.warn (fun f -> f "Removing left-over temporary item %S" path);
+      Btrfs.subvolume_delete item
+    )
+
+let create root =
+  Os.ensure_dir (root / "result");
+  Os.ensure_dir (root / "result-tmp");
+  Os.ensure_dir (root / "state");
+  Os.ensure_dir (root / "cache");
+  Os.ensure_dir (root / "cache-tmp");
+  purge (root / "result-tmp") >>= fun () ->
+  purge (root / "cache-tmp") >>= fun () ->
+  Lwt.return { root; caches = Hashtbl.create 10; next = 0 }
 
 let build t ?base ~id fn =
-  let result = path t id in
-  let result_tmp = result ^ ".part" in
-  (* If we crashed during a previous build then we might have a left-over
-     directory. Remove it. *)
-  delete_snapshot_if_exists result_tmp >>= fun () ->
+  let result = Path.result t id in
+  let result_tmp = Path.result_tmp t id in
+  assert (not (Sys.file_exists result));        (* Builder should have checked first *)
   begin match base with
-    | None -> btrfs ["subvolume"; "create"; "--"; result_tmp]
-    | Some base ->
-      btrfs ["subvolume"; "snapshot"; "--"; path t base; result_tmp]
+    | None -> Btrfs.subvolume_create result_tmp
+    | Some base -> Btrfs.subvolume_snapshot `RW ~src:(Path.result t base) result_tmp
   end
   >>= fun () ->
   fn result_tmp >>= fun r ->
   begin match r with
-    | Ok () -> btrfs ["subvolume"; "snapshot"; "-r"; "--"; result_tmp; result]
+    | Ok () -> Btrfs.subvolume_snapshot `RO ~src:result_tmp result
     | Error _ -> Lwt.return_unit
   end >>= fun () ->
-  btrfs ~sudo:true ["subvolume"; "delete"; "--"; result_tmp] >>= fun () ->
-  Lwt_result.return ()
+  Btrfs.subvolume_delete result_tmp >>= fun () ->
+  Lwt.return r
 
 let result t id =
-  let dir = path t id in
+  let dir = Path.result t id in
   match Os.check_dir dir with
   | `Present -> Some dir
   | `Missing -> None
@@ -76,19 +121,20 @@ let get_cache t (name : Spec.cache_id) =
 let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   let cache = get_cache t name in
   Lwt_mutex.with_lock cache.lock @@ fun () ->
-  let gen = cache.gen in
-  let tmp = t.root / "cache-tmp" / string_of_int t.next in
+  let tmp = Path.cache_tmp t t.next name in
   t.next <- t.next + 1;
-  let snapshot = t.root / "cache" / (name :> string) in
+  let snapshot = Path.cache t name in
+  (* Create cache if it doesn't already exist. *)
   begin match Os.check_dir snapshot with
     | `Missing ->
       let { Spec.uid; gid } = user in
-      btrfs ["subvolume"; "create"; "--"; snapshot] >>= fun () ->
+      Btrfs.subvolume_create snapshot >>= fun () ->
       Os.exec ["sudo"; "chown"; Printf.sprintf "%d:%d" uid gid; snapshot]
     | `Present -> Lwt.return_unit
   end >>= fun () ->
-  delete_snapshot_if_exists tmp >>= fun () ->
-  btrfs ~sudo:true ["subvolume"; "snapshot"; "--"; snapshot; tmp] >>= fun () ->
+  (* Create writeable clone. *)
+  let gen = cache.gen in
+  Btrfs.subvolume_snapshot `RW ~src:snapshot tmp >>= fun () ->
   let release () =
     Lwt_mutex.with_lock cache.lock @@ fun () ->
     begin
@@ -96,10 +142,21 @@ let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
         (* The cache hasn't changed since we cloned it. Update it. *)
         (* todo: check if it has actually changed. *)
         cache.gen <- cache.gen + 1;
-        btrfs ~sudo:true ["subvolume"; "delete"; "--"; snapshot] >>= fun () ->
-        btrfs ~sudo:true ["subvolume"; "snapshot"; "-r"; "--"; tmp; snapshot]
+        Btrfs.subvolume_delete snapshot >>= fun () ->
+        Btrfs.subvolume_snapshot `RO ~src:tmp snapshot
       ) else Lwt.return_unit
     end >>= fun () ->
-    btrfs ~sudo:true ["subvolume"; "delete"; "--"; tmp]
+    Btrfs.subvolume_delete tmp
   in
   Lwt.return (tmp, release)
+
+let delete_cache t name =
+  let cache = get_cache t name in
+  Lwt_mutex.with_lock cache.lock @@ fun () ->
+  cache.gen <- cache.gen + 1;   (* Ensures in-progress writes will be discarded *)
+  let snapshot = Path.cache t name in
+  if Sys.file_exists snapshot then
+    Btrfs.subvolume_delete snapshot
+  else Lwt.return_unit
+
+let state_dir = Path.state

@@ -1,0 +1,3 @@
+(executable
+  (name stress)
+  (libraries obuilder cmdliner fmt.tty))

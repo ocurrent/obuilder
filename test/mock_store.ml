@@ -99,3 +99,5 @@ let find ~output t =
   aux items
 
 let cache ~user:_ _t _ = assert false
+
+let delete_cache _t _ = assert false
