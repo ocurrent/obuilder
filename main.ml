@@ -20,19 +20,12 @@ let log tag msg =
   | `Note -> Fmt.pr "%a@." Fmt.(styled (`Fg `Yellow) string) msg
   | `Output -> output_string stdout msg; flush stdout
 
-let create_builder (type s) (module Store : Obuilder.S.STORE with type t = s) (store : s) =
+let create_builder spec =
+  Obuilder.Store_spec.to_store spec >|= fun (Store ((module Store), store)) -> 
   let module Builder = Obuilder.Builder(Store)(Sandbox) in
   let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") in
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)
-
-let create_builder = function
-  | `Btrfs path ->
-    let store = Obuilder.Btrfs_store.create path in
-    Lwt.return @@ create_builder (module Obuilder.Btrfs_store) store
-  | `Zfs pool ->
-    Obuilder.Zfs_store.create ~pool >|= fun store ->
-    create_builder (module Obuilder.Zfs_store) store
 
 let build store spec src_dir =
   Lwt_main.run begin
@@ -76,22 +69,8 @@ let src_dir =
     ~docv:"DIR"
     []
 
-let cut ~sep s =
-  String.index_opt s sep |> Option.map @@ fun i ->
-  String.sub s 0 i, String.sub s (i + 1) (String.length s - i - 1)
-
 let store_t =
-  let parse s =
-    match cut s ~sep:':' with
-    | Some ("zfs", pool) -> Ok (`Zfs pool)
-    | Some ("btrfs", path) -> Ok (`Btrfs path)
-    | _ -> Error (`Msg "Store must start with zfs: or btrfs:")
-  in
-  let pp f = function
-    | `Zfs pool -> Fmt.pf f "zfs:%s" pool
-    | `Btrfs path -> Fmt.pf f "btrfs:%s" path
-  in
-  Arg.conv (parse, pp)
+  Arg.conv Obuilder.Store_spec.(of_string, pp)
 
 let store =
   Arg.required @@
