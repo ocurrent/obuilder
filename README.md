@@ -122,16 +122,35 @@ The command run will be this list of arguments followed by the single argument `
 ### run
 
 ```sexp
-(run (shell COMMAND))
+(run
+ (cache CACHE...)?
+ (shell COMMAND))
+ 
 ```
 
-Example:
+Examples:
 
 ```sexp
 (run (shell "echo hello"))
 ```
 
+```sexp
+(run
+ (cache (opam-archives (target /home/opam/.opam/download-cache)))
+ (shell "opam install utop"))
+```
+
 Runs the single argument `COMMAND` using the values in the current context (set by `workdir` and `shell`).
+
+The `(cache CACHE...)` field can be used to mount one or more persistent caches for the command.
+Each `CACHE` takes the form `(NAME (target PATH))`, where `NAME` uniquely identifies the cache to use
+and `PATH` is the mount point within the container.
+
+If the cache `NAME` does not yet exist then it is first created as an empty directory,
+owned by the user in the build context.
+A mutable copy of the cache is created for the command. When the command finishes (whether successful or not)
+this copy becomes the new version of the cache, unless some other command updated the same cache first, in
+which case this one is discarded.
 
 ### copy
 

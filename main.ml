@@ -129,5 +129,6 @@ let default_cmd =
 let term_exit (x : unit Term.result) = Term.exit x
 
 let () =
+  (* Logs.(set_level (Some Info)); *)
   Fmt_tty.setup_std_outputs ();
   term_exit @@ Term.eval_choice default_cmd cmds

@@ -121,6 +121,7 @@ module Make (Raw : S.STORE) = struct
         Lwt.return e
 
   let result t id = Raw.result t.raw id
+  let cache ~user t = Raw.cache ~user t.raw
 
   let delete ?(log=ignore) t id =
     let rec aux id =
