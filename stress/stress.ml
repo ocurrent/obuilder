@@ -58,7 +58,8 @@ module Test(Store : S.STORE) = struct
     let user = { Spec.uid = 123; gid = 456 } in
     let id = Spec.cache_id "c1" |> Result.get_ok in
     (* Create a new cache *)
-    Store.delete_cache t id >>= fun () ->
+    Store.delete_cache t id >>= fun x ->
+    assert (x = Ok ());
     Store.cache ~user t id >>= fun (c, r) ->
     assert ((Unix.lstat c).Unix.st_uid = 123);
     assert ((Unix.lstat c).Unix.st_gid = 456);
@@ -87,12 +88,19 @@ module Test(Store : S.STORE) = struct
     (* Concurrent delete *)
     Store.cache ~user t id >>= fun (c, r) ->
     write ~path:(c / "data") "v3" >>= fun () ->
-    Store.delete_cache t id >>= fun () ->
-    r () >>= fun () -> (* (not saved) *)
-    Store.cache ~user t id >>= fun (c, r) ->
-    assert (not (Sys.file_exists (c / "data")));
-    r () >>= fun () ->
-    Lwt.return_unit
+    Store.delete_cache t id >>= function
+    | Ok () -> (* Btrfs allows deletion here *)
+      r () >>= fun () -> (* (not saved) *)
+      Store.cache ~user t id >>= fun (c, r) ->
+      assert (not (Sys.file_exists (c / "data")));
+      r () >>= fun () ->
+      Lwt.return_unit
+    | Error `Busy -> (* Zfs does not *)
+      r () >>= fun () ->
+      (* Now it can be deleted. *)
+      Store.delete_cache t id >>= fun x ->
+      assert (x = Ok ());
+      Lwt.return_unit
 
   module Sandbox = Runc_sandbox
   module Build = Builder(Store)(Sandbox)
@@ -102,6 +110,8 @@ module Test(Store : S.STORE) = struct
   let n_jobs = 100
   let max_running = 10
 
+  let stress_cache = Spec.cache_id "stress" |> Result.get_ok
+
   (* A build of [n_steps] where each step appends a random number in 0..!n_values to `output` *)
   let random_build () =
     let rec aux = function
@@ -109,7 +119,8 @@ module Test(Store : S.STORE) = struct
       | i -> Random.int n_values :: aux (i - 1)
     in
     let items = aux n_steps in
-    let ops = items |> List.map (fun i -> Spec.run (strf "echo -n %d >> output; echo 'added:%d'" i i)) in
+    let cache = [ { Spec.id = stress_cache; target = "/mnt" } ] in
+    let ops = items |> List.map (fun i -> Spec.run ~cache (strf "echo -n %d >> output; echo 'added:%d'" i i)) in
     let expected = items |> List.map string_of_int |> String.concat "" in
     let ops = ops @ [Spec.run (strf {|[ `cat output` = %S ] || exit 1|} expected)] in
     let check_log data =

@@ -155,8 +155,9 @@ let delete_cache t name =
   Lwt_mutex.with_lock cache.lock @@ fun () ->
   cache.gen <- cache.gen + 1;   (* Ensures in-progress writes will be discarded *)
   let snapshot = Path.cache t name in
-  if Sys.file_exists snapshot then
-    Btrfs.subvolume_delete snapshot
-  else Lwt.return_unit
+  if Sys.file_exists snapshot then (
+    Btrfs.subvolume_delete snapshot >>= fun () ->
+    Lwt_result.return ()
+  ) else Lwt_result.return ()
 
 let state_dir = Path.state
