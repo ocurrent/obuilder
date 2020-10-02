@@ -157,6 +157,8 @@ A mutable copy of the cache is created for the command. When the command finishe
 this copy becomes the new version of the cache, unless some other command updated the same cache first, in
 which case this one is discarded.
 
+`NAME` must match the regexp `[A-Za-z][-._A-Za-z0-9]*`.
+
 ### copy
 
 ```sexp
