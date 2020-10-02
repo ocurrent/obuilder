@@ -2,6 +2,7 @@ open Lwt.Infix
 open Obuilder
 
 let ( / ) = Filename.concat
+let strf = Printf.sprintf
 
 let read path =
   Lwt_io.(with_file ~mode:input) path Lwt_io.read
@@ -25,7 +26,7 @@ module Test(Store : S.STORE) = struct
       close_in ch;
       assert_str expected data
 
-  let test_build t =
+  let test_store t =
     assert (Store.result t "unknown" = None);
     (* Build without a base *)
     Store.delete t "base" >>= fun () ->
@@ -92,15 +93,103 @@ module Test(Store : S.STORE) = struct
     assert (not (Sys.file_exists (c / "data")));
     r () >>= fun () ->
     Lwt.return_unit
+
+  module Sandbox = Runc_sandbox
+  module Build = Builder(Store)(Sandbox)
+
+  let n_steps = 4
+  let n_values = 3
+  let n_jobs = 100
+  let max_running = 10
+
+  (* A build of [n_steps] where each step appends a random number in 0..!n_values to `output` *)
+  let random_build () =
+    let rec aux = function
+      | 0 -> []
+      | i -> Random.int n_values :: aux (i - 1)
+    in
+    let items = aux n_steps in
+    let ops = items |> List.map (fun i -> Spec.run (strf "echo -n %d >> output; echo 'added:%d'" i i)) in
+    let expected = items |> List.map string_of_int |> String.concat "" in
+    let ops = ops @ [Spec.run (strf {|[ `cat output` = %S ] || exit 1|} expected)] in
+    let check_log data =
+      data |> String.split_on_char '\n' |> List.filter_map (fun line ->
+          match Astring.String.cut ~sep:":" line with 
+          | Some ("added", x) -> Some x
+          | _ -> None
+        )
+      |> String.concat ""
+      |> fun got ->
+      assert_str expected got
+    in
+    check_log, { Spec.from = "busybox"; ops }
+
+  let do_build builder =
+    let src_dir = "/root" in
+    let buf = Buffer.create 100 in
+    let log t x =
+      (* print_endline x; *)
+      match t with
+      | `Heading -> Buffer.add_string buf (strf "# %s\n" x)
+      | `Note -> Buffer.add_string buf (strf ": %s\n" x)
+      | `Output -> Buffer.add_string buf x
+    in
+    let ctx = Context.v ~shell:["/bin/sh"; "-c"] ~log ~src_dir () in
+    let check_log, spec = random_build () in
+    Build.build builder ctx spec >>= function
+    | Ok _ ->
+      check_log (Buffer.contents buf);
+      Lwt.return_unit
+    | Error (`Msg m) -> failwith m
+    | Error `Cancelled -> assert false
+
+  let stress_builds store =
+    let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") in
+    let builder = Build.v ~store ~sandbox in
+    let pending = ref n_jobs in
+    let running = ref 0 in
+    let cond = Lwt_condition.create () in
+    let failures = ref 0 in
+    let rec aux () =
+      if !running = 0 && !pending = 0 then Lwt.return ()
+      else if !running < max_running && !pending > 0 then (
+        if !pending mod 10 = 0 then Fmt.pr "%d pending: starting new build@." !pending;
+        incr running;
+        decr pending;
+        let th = do_build builder in
+        Lwt.on_any th
+          (fun () ->
+             decr running;
+             Lwt_condition.broadcast cond ()
+          )
+          (fun ex ->
+             Logs.warn (fun f -> f "Build failed: %a" Fmt.exn ex);
+             decr running;
+             incr failures;
+             Lwt_condition.broadcast cond ()
+          );
+        aux ()
+      ) else (
+        Lwt_condition.wait cond >>= aux
+      )
+    in
+    let t0 = Unix.gettimeofday () in
+    aux () >>= fun () ->
+    let time = Unix.gettimeofday () -. t0 in
+    Fmt.pr "Ran %d jobs (max %d at once). %d failures. Took %.1f s (%.1f jobs/s)@."
+      n_jobs max_running !failures
+      time (float n_jobs /. time);
+    if !failures > 0 then Fmt.failwith "%d failures!" !failures
+    else Lwt.return_unit
 end
 
 let stress spec =
   Lwt_main.run begin
     Store_spec.to_store spec >>= fun (Store ((module Store), store)) ->
     let module T = Test(Store) in
-    T.test_build store >>= fun () ->
+    T.test_store store >>= fun () ->
     T.test_cache store >>= fun () ->
-    Lwt.return_unit
+    T.stress_builds store
   end
 
 open Cmdliner
@@ -124,7 +213,7 @@ let cmd =
   Term.info "stress" ~doc
 
 let () =
-  Logs.(set_level (Some Info));
+  (* Logs.(set_level (Some Info)); *)
   Fmt_tty.setup_std_outputs ();
   Logs.set_reporter @@ Logs.format_reporter ();
   term_exit @@ Term.eval cmd
