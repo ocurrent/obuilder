@@ -1,5 +1,5 @@
 (library
   (name obuilder)
   (public_name obuilder)
-  (preprocess (pps ppx_deriving.show ppx_sexp_conv))
-  (libraries lwt lwt.unix fmt yojson tar-unix sexplib sqlite3 astring logs sha dockerfile))
+  (preprocess (pps ppx_sexp_conv))
+  (libraries lwt lwt.unix fmt yojson tar-unix sexplib sqlite3 astring logs sha dockerfile obuilder-spec))

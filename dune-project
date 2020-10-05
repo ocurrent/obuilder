@@ -16,6 +16,7 @@
   lwt
   astring
   fmt
+  logs
   cmdliner
   tar-unix
   yojson
@@ -25,6 +26,19 @@
   sha
   sqlite3
   dockerfile
+  obuilder-spec
   (ocaml (>= 4.10.0))
   (alcotest-lwt :with-test)
+))
+
+(package
+ (name obuilder-spec)
+ (synopsis "Build specification format")
+ (depends
+  sexplib
+  astring
+  ppx_deriving
+  ppx_sexp_conv
+  dockerfile
+  (ocaml (>= 4.10.0))
 ))

@@ -52,8 +52,8 @@ let delete store id =
 
 let dockerfile spec =
   Sexplib.Sexp.load_sexp spec
-  |> Obuilder.Spec.stage_of_sexp
-  |> Obuilder.Docker.dockerfile_of_spec 
+  |> Obuilder_spec.stage_of_sexp
+  |> Obuilder_spec.Docker.dockerfile_of_spec 
   |> Dockerfile.string_of_t
   |> print_endline
 

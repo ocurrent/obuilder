@@ -17,8 +17,8 @@
     && git reset -q --hard $OPAM_HASH \
     && git log --no-decorate -n1 --oneline \
     && opam update -u"))
- (copy (src obuilder.opam) (dst .))                     ; Copy just the opam file first (helps caching)
- (run (shell "opam pin add -yn obuilder.dev ."))
+ (copy (src obuilder-spec.opam obuilder.opam) (dst ./))                     ; Copy just the opam file first (helps caching)
+ (run (shell "opam pin add -yn ."))
  ; Install OS package dependencies
  (run
   (cache (opam-archives (target /home/opam/.opam/download-cache)))

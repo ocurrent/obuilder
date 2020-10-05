@@ -15,7 +15,7 @@ type cache = {
 
 type t = {
   root : string;        (* The top-level directory (containing `result`, etc). *)
-  caches : (Spec.cache_id, cache) Hashtbl.t;
+  caches : (Obuilder_spec.cache_id, cache) Hashtbl.t;
   mutable next : int;   (* Used to generate unique temporary IDs. *)
 }
 
@@ -63,8 +63,8 @@ module Path = struct
   let result t id        = t.root / "result" / id
   let result_tmp t id    = t.root / "result-tmp" / id
   let state t            = t.root / "state"
-  let cache t name       = t.root / "cache" / (name : Spec.cache_id :> string)
-  let cache_tmp t i name = t.root / "cache-tmp" / strf "%d-%s" i (name : Spec.cache_id :> string)
+  let cache t name       = t.root / "cache" / (name : Obuilder_spec.cache_id :> string)
+  let cache_tmp t i name = t.root / "cache-tmp" / strf "%d-%s" i (name : Obuilder_spec.cache_id :> string)
 end
 
 let delete t id =
@@ -110,7 +110,7 @@ let result t id =
   | `Present -> Some dir
   | `Missing -> None
 
-let get_cache t (name : Spec.cache_id) =
+let get_cache t (name : Obuilder_spec.cache_id) =
   match Hashtbl.find_opt t.caches name with
   | Some c -> c
   | None ->
@@ -127,7 +127,7 @@ let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   (* Create cache if it doesn't already exist. *)
   begin match Os.check_dir snapshot with
     | `Missing ->
-      let { Spec.uid; gid } = user in
+      let { Obuilder_spec.uid; gid } = user in
       Btrfs.subvolume_create snapshot >>= fun () ->
       Os.exec ["sudo"; "chown"; Printf.sprintf "%d:%d" uid gid; snapshot]
     | `Present -> Lwt.return_unit

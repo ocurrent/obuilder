@@ -29,7 +29,7 @@ module Json_config = struct
 
   let make {Config.cwd; argv; hostname; user; env; mounts} ~config_dir ~results_dir : Yojson.Safe.t =
     let user =
-      let { Spec.uid; gid } = user in
+      let { Obuilder_spec.uid; gid } = user in
       `Assoc [
         "uid", `Int uid;
         "gid", `Int gid;

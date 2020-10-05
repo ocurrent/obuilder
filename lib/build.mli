@@ -4,7 +4,7 @@ module Context : sig
   val v :
     ?switch:Lwt_switch.t ->
     ?env:Os.env ->
-    ?user:Spec.user ->
+    ?user:Obuilder_spec.user ->
     ?workdir:string ->
     ?shell:string list ->
     log:S.logger ->
