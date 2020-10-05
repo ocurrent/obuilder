@@ -39,9 +39,9 @@ module type STORE = sig
       state related to this store (e.g. an sqlite3 database). *)
 
   val cache :
-    user:Spec.user ->
+    user:Obuilder_spec.user ->
     t ->
-    Spec.cache_id ->
+    Obuilder_spec.cache_id ->
     (string * (unit -> unit Lwt.t)) Lwt.t
   (** [cache ~user t name] creates a writeable copy of the latest snapshot of the
       cache [name]. It returns the path of this fresh copy and a function which
@@ -52,7 +52,7 @@ module type STORE = sig
       version of the cache, unless the cache has already been updated since
       it was snapshotted, in which case this writeable copy is simply discarded. *)
 
-  val delete_cache : t -> Spec.cache_id -> (unit, [> `Busy]) Lwt_result.t
+  val delete_cache : t -> Obuilder_spec.cache_id -> (unit, [> `Busy]) Lwt_result.t
   (** [delete_cache t name] removes the cache [name], if present.
       If the cache is currently in use, the store may instead return [Error `Busy]. *)
 end
@@ -83,7 +83,7 @@ module type BUILDER = sig
   val build :
     t ->
     context ->
-    Spec.stage ->
+    Obuilder_spec.stage ->
     (id, [`Cancelled | `Msg of string]) Lwt_result.t
 
   val delete : ?log:(id -> unit) -> t -> id -> unit Lwt.t

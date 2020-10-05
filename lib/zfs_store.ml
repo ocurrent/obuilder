@@ -32,7 +32,7 @@ type cache = {
 
 type t = {
   pool : string;
-  caches : (Spec.cache_id, cache) Hashtbl.t;
+  caches : (Obuilder_spec.cache_id, cache) Hashtbl.t;
   mutable next : int;
 }
 
@@ -46,8 +46,8 @@ module Dataset : sig
   val groups : dataset list
 
   val result : S.id -> dataset
-  val cache : Spec.cache_id -> dataset
-  val cache_tmp : int -> Spec.cache_id -> dataset
+  val cache : Obuilder_spec.cache_id -> dataset
+  val cache_tmp : int -> Obuilder_spec.cache_id -> dataset
 
   val full_name : ?snapshot:string -> t -> dataset -> string
   val path : ?snapshot:string -> t -> dataset -> string
@@ -65,8 +65,8 @@ end = struct
   let groups = [state; result_group; cache_group; cache_tmp_group]
 
   let result id = "result/" ^ id
-  let cache (name : Spec.cache_id) = "cache/" ^ (name :> string)
-  let cache_tmp i (name : Spec.cache_id) = strf "cache-tmp/%d-%s" i (name :> string)
+  let cache (name : Obuilder_spec.cache_id) = "cache/" ^ (name :> string)
+  let cache_tmp i (name : Obuilder_spec.cache_id) = strf "cache-tmp/%d-%s" i (name :> string)
 
   let full_name ?snapshot t ds =
     match snapshot with
@@ -88,11 +88,11 @@ end = struct
     else fn ()
 end
 
-let user = { Spec.uid = Unix.getuid (); gid = Unix.getgid () }
+let user = { Obuilder_spec.uid = Unix.getuid (); gid = Unix.getgid () }
 
 module Zfs = struct
   let chown ~user t ds =
-    let { Spec.uid; gid } = user in
+    let { Obuilder_spec.uid; gid } = user in
     Os.exec ["sudo"; "chown"; strf "%d:%d" uid gid; Dataset.path t ds]
 
   let create t ds =
@@ -197,7 +197,7 @@ let result t id =
   if Sys.file_exists path then Some path
   else None
 
-let get_cache t (name : Spec.cache_id) =
+let get_cache t (name : Obuilder_spec.cache_id) =
   match Hashtbl.find_opt t.caches name with
   | Some c -> c
   | None ->

@@ -9,7 +9,7 @@ type t = {
   cwd : string;
   argv : string list;
   hostname : string;
-  user : Spec.user;
+  user : Obuilder_spec.user;
   env : Os.env;
   mounts : Mount.t list;
 }

@@ -1,5 +1,6 @@
 (test
   (name test)
+  (package obuilder)
   (deps base.tar)
   (libraries alcotest-lwt obuilder str))
 

@@ -400,7 +400,7 @@ let test_sexp () =
 let test_docker () =
   let test name expect sexp =
     let spec = Spec.stage_of_sexp (Sexplib.Sexp.of_string sexp) in
-    let got = Docker.dockerfile_of_spec spec |> Dockerfile.string_of_t in
+    let got = Obuilder_spec.Docker.dockerfile_of_spec spec |> Dockerfile.string_of_t in
     let expect =
       String.split_on_char '\n' expect
       |> List.map String.trim

@@ -1,5 +1,6 @@
 (executable
   (public_name obuilder)
   (name main)
+  (package obuilder)
   (preprocess (pps ppx_deriving.show))
   (libraries lwt lwt.unix fmt tar-unix obuilder fmt.tty cmdliner logs.fmt))
