@@ -1,5 +1,6 @@
 module S = S
 module Spec = Spec
+module Docker = Docker
 module Config = Config
 module Context = Build.Context
 module type BUILDER = S.BUILDER with type context := Build.Context.t

@@ -233,6 +233,23 @@ Example:
 
 Updates the build context so that the environment variable `NAME` has the value `VALUE` in future `run` operations.
 
+## Convert to Dockerfile format
+
+You can convert an OBuilder spec to a Dockerfile like this:
+
+```shell
+obuilder dockerfile -f example.spec > Dockerfile
+```
+
+The dockerfile should work the same way as the spec file, except for these limitations:
+
+- In `(copy (excludes ...) ...)` the excludes part is ignored.
+  You will need to ensure you have a suitable `.dockerignore` file instead.
+- In `(run (cache ...) ...)` the caches are ignored, as regular Docker doesn't support this.
+  It would be possible to switch to the extended BuildKit format in this case,
+  but the normal use is to let users duplicate a build easily, and
+  it's easier if they don't need to set up BuildKit.
+
 
 [Dockerfile]: https://docs.docker.com/engine/reference/builder/
 [OCluster]: https://github.com/ocurrent/ocluster

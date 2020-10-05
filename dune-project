@@ -24,6 +24,7 @@
   ppx_sexp_conv
   sha
   sqlite3
+  dockerfile
   (ocaml (>= 4.10.0))
   (alcotest-lwt :with-test)
 ))

@@ -29,10 +29,10 @@ btrfs subvolume create /btrfs/cache/opam-archives
 cp -r ~/.opam/download-cache/* /btrfs/cache/opam-archives/
 sudo chown -R 1000:1000 /btrfs/cache/opam-archives
 
-sudo zfs create zfs/c-opam-archives
-sudo cp -r ~/.opam/download-cache/* /zfs/c-opam-archives/
-sudo chown -R 1000:1000 /zfs/c-opam-archives
-sudo zfs snapshot zfs/c-opam-archives@snap
+sudo zfs create zfs/cache/opam-archives
+sudo cp -r ~/.opam/download-cache/* /zfs/cache/opam-archives/
+sudo chown -R 1000:1000 /zfs/cache/opam-archives
+sudo zfs snapshot zfs/cache/opam-archives@snap
 
 opam exec -- dune exec -- obuilder build -f example.spec . --store=btrfs:/btrfs
 opam exec -- dune exec -- obuilder build -f example.spec . --store=zfs:zfs

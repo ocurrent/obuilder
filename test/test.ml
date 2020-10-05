@@ -397,6 +397,47 @@ let test_sexp () =
       (user (uid 1) (gid 2))
      ) |}
 
+let test_docker () =
+  let test name expect sexp =
+    let spec = Spec.stage_of_sexp (Sexplib.Sexp.of_string sexp) in
+    let got = Docker.dockerfile_of_spec spec |> Dockerfile.string_of_t in
+    let expect =
+      String.split_on_char '\n' expect
+      |> List.map String.trim
+      |> List.filter ((<>) "")
+      |> String.concat "\n"
+    in
+    Alcotest.(check string) name expect got
+  in
+  test "Dockerfile"
+    {| FROM base
+       # A test comment
+       WORKDIR /src
+       RUN command1
+       SHELL [ "/bin/sh", "-c" ]
+       RUN command2
+       COPY a b c
+       COPY a b c
+       ENV DEBUG 1
+       USER 1:2
+       COPY --chown=1:2 a b c
+    |} {|
+     ((from base)
+      (comment "A test comment")
+      (workdir /src)
+      (run (shell "command1"))
+      (shell /bin/sh -c)
+      (run
+       (cache (a (target /data))
+              (b (target /srv)))
+       (shell "command2"))
+      (copy (src a b) (dst c))
+      (copy (src a b) (dst c) (exclude .git _build))
+      (env DEBUG 1)
+      (user (uid 1) (gid 2))
+      (copy (src a b) (dst c))
+     ) |}
+
 let manifest =
   Alcotest.result
     (Alcotest.testable
@@ -470,6 +511,7 @@ let () =
       "spec", [
         test_case_sync "Sexp"     `Quick test_sexp;
         test_case_sync "Cache ID" `Quick test_cache_id;
+        test_case_sync "Docker"   `Quick test_docker;
       ];
       "build", [
         test_case "Simple"     `Quick test_simple;
