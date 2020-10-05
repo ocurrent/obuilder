@@ -31,7 +31,6 @@ let build store spec src_dir =
   Lwt_main.run begin
     create_builder store >>= fun (Builder ((module Builder), builder)) ->
     let spec = Obuilder.Spec.stage_of_sexp (Sexplib.Sexp.load_sexp spec) in
-    (* assert (spec = Obuilder.Spec.stage_of_sexp (Obuilder.Spec.sexp_of_stage spec)); *)
     let context = Obuilder.Context.v ~log ~src_dir () in
     Builder.build builder context spec >>= function
     | Ok x ->
@@ -50,6 +49,13 @@ let delete store id =
     create_builder store >>= fun (Builder ((module Builder), builder)) ->
     Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
   end
+
+let dockerfile spec =
+  Sexplib.Sexp.load_sexp spec
+  |> Obuilder.Spec.stage_of_sexp
+  |> Obuilder.Docker.dockerfile_of_spec 
+  |> Dockerfile.string_of_t
+  |> print_endline
 
 open Cmdliner
 
@@ -98,7 +104,12 @@ let delete =
   Term.(const delete $ store $ id),
   Term.info "delete" ~doc
 
-let cmds = [build; delete]
+let dockerfile =
+  let doc = "Convert a spec to Dockerfile format" in
+  Term.(const dockerfile $ spec_file),
+  Term.info "dockerfile" ~doc
+
+let cmds = [build; delete; dockerfile]
 
 let default_cmd =
   let doc = "a command-line interface for OBuilder" in
