@@ -52,8 +52,9 @@ module type STORE = sig
       version of the cache, unless the cache has already been updated since
       it was snapshotted, in which case this writeable copy is simply discarded. *)
 
-  val delete_cache : t -> Spec.cache_id -> unit Lwt.t
-  (** [delete_cache t name] removes the cache [name], if present. *)
+  val delete_cache : t -> Spec.cache_id -> (unit, [> `Busy]) Lwt_result.t
+  (** [delete_cache t name] removes the cache [name], if present.
+      If the cache is currently in use, the store may instead return [Error `Busy]. *)
 end
 
 module type SANDBOX = sig
