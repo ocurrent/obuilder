@@ -38,10 +38,13 @@ type stage = {
   ops : op list;
 } [@@deriving sexp]
 
-val comment : string -> op
+val stage : from:string -> op list -> stage
+
+val comment : ('a, unit, string, op) format4 -> 'a
 val workdir : string -> op
-val run : ?cache:cache list -> string -> op
-val copy : ?exclude:string list -> string list -> string -> op
+val shell : string list -> op
+val run : ?cache:cache list -> ('a, unit, string, op) format4 -> 'a
+val copy : ?exclude:string list -> string list -> dst:string -> op
 val env : string -> string -> op
 val user : uid:int -> gid:int -> op
 

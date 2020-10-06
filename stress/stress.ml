@@ -120,9 +120,9 @@ module Test(Store : S.STORE) = struct
     in
     let items = aux n_steps in
     let cache = [ { Spec.id = stress_cache; target = "/mnt" } ] in
-    let ops = items |> List.map (fun i -> Spec.run ~cache (strf "echo -n %d >> output; echo 'added:%d'" i i)) in
+    let ops = items |> List.map (fun i -> Spec.run ~cache "echo -n %d >> output; echo 'added:%d'" i i) in
     let expected = items |> List.map string_of_int |> String.concat "" in
-    let ops = ops @ [Spec.run (strf {|[ `cat output` = %S ] || exit 1|} expected)] in
+    let ops = ops @ [Spec.run {|[ `cat output` = %S ] || exit 1|} expected] in
     let check_log data =
       data |> String.split_on_char '\n' |> List.filter_map (fun line ->
           match Astring.String.cut ~sep:":" line with 

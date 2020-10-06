@@ -138,11 +138,14 @@ let stage_of_sexp = function
     { from; ops = List.map op_of_sexp ops }
   | x -> Fmt.failwith "Invalid stage: %a" Sexplib.Sexp.pp_hum x
 
-let comment c = `Comment c
+let comment fmt = fmt |> Printf.ksprintf (fun c -> `Comment c)
 let workdir x = `Workdir x
-let run ?(cache=[]) x = `Run { shell = x; cache }
-let copy ?(exclude=[]) src dst = `Copy { src; dst; exclude }
+let shell xs = `Shell xs
+let run ?(cache=[]) fmt = fmt |> Printf.ksprintf (fun x -> `Run { shell = x; cache })
+let copy ?(exclude=[]) src ~dst = `Copy { src; dst; exclude }
 let env k v = `Env (k, v)
 let user ~uid ~gid = `User { uid; gid }
 
 let root = { uid = 0; gid = 0 }
+
+let stage ~from ops = { from; ops }
