@@ -50,10 +50,10 @@ let delete store id =
     Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
   end
 
-let dockerfile spec =
+let dockerfile buildkit spec =
   Sexplib.Sexp.load_sexp spec
   |> Obuilder_spec.stage_of_sexp
-  |> Obuilder_spec.Docker.dockerfile_of_spec 
+  |> Obuilder_spec.Docker.dockerfile_of_spec ~buildkit
   |> Dockerfile.string_of_t
   |> print_endline
 
@@ -104,9 +104,16 @@ let delete =
   Term.(const delete $ store $ id),
   Term.info "delete" ~doc
 
+let buildkit =
+  Arg.value @@
+  Arg.flag @@
+  Arg.info
+    ~doc:"Output extended BuildKit syntax"
+    ["buildkit"]
+
 let dockerfile =
   let doc = "Convert a spec to Dockerfile format" in
-  Term.(const dockerfile $ spec_file),
+  Term.(const dockerfile $ buildkit $ spec_file),
   Term.info "dockerfile" ~doc
 
 let cmds = [build; delete; dockerfile]

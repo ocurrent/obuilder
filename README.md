@@ -157,8 +157,6 @@ A mutable copy of the cache is created for the command. When the command finishe
 this copy becomes the new version of the cache, unless some other command updated the same cache first, in
 which case this one is discarded.
 
-`NAME` must match the regexp `[A-Za-z][-._A-Za-z0-9]*`.
-
 ### copy
 
 ```sexp
@@ -245,10 +243,8 @@ The dockerfile should work the same way as the spec file, except for these limit
 
 - In `(copy (excludes ...) ...)` the excludes part is ignored.
   You will need to ensure you have a suitable `.dockerignore` file instead.
-- In `(run (cache ...) ...)` the caches are ignored, as regular Docker doesn't support this.
-  It would be possible to switch to the extended BuildKit format in this case,
-  but the normal use is to let users duplicate a build easily, and
-  it's easier if they don't need to set up BuildKit.
+
+- If you want to include caches, use `--buildkit` to output in the extended BuildKit syntax.
 
 
 [Dockerfile]: https://docs.docker.com/engine/reference/builder/

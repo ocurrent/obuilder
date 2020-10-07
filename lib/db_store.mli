@@ -21,7 +21,7 @@ module Make (Raw : S.STORE) : sig
   val cache :
     user : Obuilder_spec.user ->
     t ->
-    Obuilder_spec.cache_id ->
+    string ->
     (string * (unit -> unit Lwt.t)) Lwt.t
 
   val wrap : Raw.t -> t
