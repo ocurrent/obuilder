@@ -73,7 +73,7 @@ let delete t id =
 let purge path =
   Sys.readdir path |> Array.to_list |> Lwt_list.iter_s (fun item ->
       let item = path / item in
-      Log.warn (fun f -> f "Removing left-over temporary item %S" path);
+      Log.warn (fun f -> f "Removing left-over temporary item %S" item);
       Btrfs.subvolume_delete item
     )
 
