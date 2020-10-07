@@ -19,3 +19,4 @@ module Store_spec = Store_spec
 
 (* For unit-tests *)
 module Manifest = Manifest
+module Escape = Escape

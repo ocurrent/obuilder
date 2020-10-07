@@ -56,7 +56,7 @@ module Test(Store : S.STORE) = struct
     let uid = Unix.getuid () in
     let gid = Unix.getgid () in
     let user = { Spec.uid = 123; gid = 456 } in
-    let id = Spec.cache_id "c1" |> Result.get_ok in
+    let id = "c1" in
     (* Create a new cache *)
     Store.delete_cache t id >>= fun x ->
     assert (x = Ok ());
@@ -110,7 +110,7 @@ module Test(Store : S.STORE) = struct
   let n_jobs = 100
   let max_running = 10
 
-  let stress_cache = Spec.cache_id "stress" |> Result.get_ok
+  let stress_cache = "stress"
 
   (* A build of [n_steps] where each step appends a random number in 0..!n_values to `output` *)
   let random_build () =
@@ -119,7 +119,7 @@ module Test(Store : S.STORE) = struct
       | i -> Random.int n_values :: aux (i - 1)
     in
     let items = aux n_steps in
-    let cache = [ { Spec.id = stress_cache; target = "/mnt" } ] in
+    let cache = [ Spec.Cache.v stress_cache ~target:"/mnt" ] in
     let ops = items |> List.map (fun i -> Spec.run ~cache "echo -n %d >> output; echo 'added:%d'" i i) in
     let expected = items |> List.map string_of_int |> String.concat "" in
     let ops = ops @ [Spec.run {|[ `cat output` = %S ] || exit 1|} expected] in

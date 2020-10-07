@@ -398,9 +398,9 @@ let test_sexp () =
      ) |}
 
 let test_docker () =
-  let test name expect sexp =
+  let test ~buildkit name expect sexp =
     let spec = Spec.stage_of_sexp (Sexplib.Sexp.of_string sexp) in
-    let got = Obuilder_spec.Docker.dockerfile_of_spec spec |> Dockerfile.string_of_t in
+    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit spec |> Dockerfile.string_of_t in
     let expect =
       String.split_on_char '\n' expect
       |> List.map String.trim
@@ -409,13 +409,41 @@ let test_docker () =
     in
     Alcotest.(check string) name expect got
   in
-  test "Dockerfile"
+  test ~buildkit:false "Dockerfile"
     {| FROM base
        # A test comment
        WORKDIR /src
        RUN command1
        SHELL [ "/bin/sh", "-c" ]
        RUN command2
+       COPY a b c
+       COPY a b c
+       ENV DEBUG 1
+       USER 1:2
+       COPY --chown=1:2 a b c
+    |} {|
+     ((from base)
+      (comment "A test comment")
+      (workdir /src)
+      (run (shell "command1"))
+      (shell /bin/sh -c)
+      (run
+       (cache (a (target /data))
+              (b (target /srv)))
+       (shell "command2"))
+      (copy (src a b) (dst c))
+      (copy (src a b) (dst c) (exclude .git _build))
+      (env DEBUG 1)
+      (user (uid 1) (gid 2))
+      (copy (src a b) (dst c))
+     ) |};
+  test ~buildkit:true "BuildKit"
+    {| FROM base
+       # A test comment
+       WORKDIR /src
+       RUN command1
+       SHELL [ "/bin/sh", "-c" ]
+       RUN --mount=type=cache,id=a,target=/data,uid=0 --mount=type=cache,id=b,target=/srv,uid=0 command2
        COPY a b c
        COPY a b c
        ENV DEBUG 1
@@ -489,20 +517,18 @@ let test_copy _switch () =
   Lwt.return_unit
 
 let test_cache_id () =
-  let check id expected =
-    let actual =
-      match Spec.cache_id id with
-      | Ok x -> Ok (x :> string)
-      | Error (`Msg m) -> Error m
-    in
-    Alcotest.(check (result string string)) ("ID-" ^ id) expected actual
+  let check expected id =
+    Alcotest.(check string) ("ID-" ^ id) expected (Escape.cache id)
   in
-  check "ok" @@ Ok "ok";
-  check "" @@ Error "Cache ID is empty!";
-  check "123" @@ Error {|Cache ID "123" should start with [A-Za-z]|};
-  check "a1" @@ Ok "a1";
-  check "a/1" @@ Error {|Invalid character in cache ID "a/1" (should be [-._A-Za-z0-9])|};
-  check "Az09-id.foo_orig" @@ Ok "Az09-id.foo_orig"
+  check "c-ok" "ok";
+  check "c-" "";
+  check "c-123" "123";
+  check "c-a1" "a1";
+  check "c-a%2f1" "a/1";
+  check "c-.." "..";
+  check "c-%2520" "%20";
+  check "c-foo%3abar" "foo:bar";
+  check "c-Az09-id.foo_orig" "Az09-id.foo_orig"
 
 let () =
   let open Alcotest_lwt in

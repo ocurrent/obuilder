@@ -32,7 +32,7 @@ type cache = {
 
 type t = {
   pool : string;
-  caches : (Obuilder_spec.cache_id, cache) Hashtbl.t;
+  caches : (string, cache) Hashtbl.t;
   mutable next : int;
 }
 
@@ -46,8 +46,8 @@ module Dataset : sig
   val groups : dataset list
 
   val result : S.id -> dataset
-  val cache : Obuilder_spec.cache_id -> dataset
-  val cache_tmp : int -> Obuilder_spec.cache_id -> dataset
+  val cache : string -> dataset
+  val cache_tmp : int -> string -> dataset
 
   val full_name : ?snapshot:string -> t -> dataset -> string
   val path : ?snapshot:string -> t -> dataset -> string
@@ -65,8 +65,8 @@ end = struct
   let groups = [state; result_group; cache_group; cache_tmp_group]
 
   let result id = "result/" ^ id
-  let cache (name : Obuilder_spec.cache_id) = "cache/" ^ (name :> string)
-  let cache_tmp i (name : Obuilder_spec.cache_id) = strf "cache-tmp/%d-%s" i (name :> string)
+  let cache name = "cache/" ^ Escape.cache name
+  let cache_tmp i name = strf "cache-tmp/%d-%s" i (Escape.cache name)
 
   let full_name ?snapshot t ds =
     match snapshot with
@@ -197,7 +197,7 @@ let result t id =
   if Sys.file_exists path then Some path
   else None
 
-let get_cache t (name : Obuilder_spec.cache_id) =
+let get_cache t name =
   match Hashtbl.find_opt t.caches name with
   | Some c -> c
   | None ->
