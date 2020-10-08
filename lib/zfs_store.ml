@@ -93,10 +93,10 @@ let user = { Obuilder_spec.uid = Unix.getuid (); gid = Unix.getgid () }
 module Zfs = struct
   let chown ~user t ds =
     let { Obuilder_spec.uid; gid } = user in
-    Os.exec ["sudo"; "chown"; strf "%d:%d" uid gid; Dataset.path t ds]
+    Os.sudo ["chown"; strf "%d:%d" uid gid; Dataset.path t ds]
 
   let create t ds =
-    Os.exec ["sudo"; "zfs"; "create"; "--"; Dataset.full_name t ds]
+    Os.sudo ["zfs"; "create"; "--"; Dataset.full_name t ds]
 
   let destroy t ds mode =
     let opts =
@@ -105,7 +105,7 @@ module Zfs = struct
       | `And_snapshots -> ["-r"]
       | `And_snapshots_and_clones -> ["-R"]
     in
-    Os.exec (["sudo"; "zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds])
+    Os.sudo (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds])
 
   let destroy_snapshot t ds snapshot mode =
     let opts =
@@ -114,24 +114,24 @@ module Zfs = struct
       | `Recurse -> ["-R"]
       | `Immediate -> []
     in
-    Os.exec (["sudo"; "zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds ^ "@" ^ snapshot])
+    Os.sudo (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds ^ "@" ^ snapshot])
 
   let clone t ~src ~snapshot dst =
-    Os.exec ["sudo"; "zfs"; "clone"; "--"; Dataset.full_name t src ~snapshot; Dataset.full_name t dst]
+    Os.sudo ["zfs"; "clone"; "--"; Dataset.full_name t src ~snapshot; Dataset.full_name t dst]
 
   let snapshot t ds ~snapshot =
-    Os.exec ["sudo"; "zfs"; "snapshot"; "--"; Dataset.full_name t ds ~snapshot]
+    Os.sudo ["zfs"; "snapshot"; "--"; Dataset.full_name t ds ~snapshot]
 
   let promote t ds =
-    Os.exec ["sudo"; "zfs"; "promote"; Dataset.full_name t ds]
+    Os.sudo ["zfs"; "promote"; Dataset.full_name t ds]
 
   let rename t ~old ds =
-    Os.exec ["sudo"; "zfs"; "rename"; "--"; Dataset.full_name t old; Dataset.full_name t ds]
+    Os.sudo ["zfs"; "rename"; "--"; Dataset.full_name t old; Dataset.full_name t ds]
 
   let rename_snapshot t ds ~old snapshot =
-    Os.exec ["sudo"; "zfs"; "rename"; "--";
-             Dataset.full_name t ds ~snapshot:old;
-             Dataset.full_name t ds ~snapshot]
+    Os.sudo ["zfs"; "rename"; "--";
+          Dataset.full_name t ds ~snapshot:old;
+          Dataset.full_name t ds ~snapshot]
 end
 
 let delete_if_exists t ds mode =

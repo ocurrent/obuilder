@@ -106,14 +106,14 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       let id = Sha256.to_hex (Sha256.string (Sexplib.Sexp.to_string (sexp_of_copy_details details))) in
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
           let argv = ["tar"; "-xf"; "-"] in
-          let config = Config.v ~cwd:"/" ~argv ~hostname ~user ~env:["PATH", "/bin:/usr/bin"] ~mounts:[] in
+          let config = Config.v ~cwd:"/" ~argv ~hostname ~user:Obuilder_spec.root ~env:["PATH", "/bin:/usr/bin"] ~mounts:[] in
           Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
           let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
           let send =
             (* If the sending thread finishes (or fails), close the writing socket
                immediately so that the tar process finishes too. *)
             Lwt.finalize
-              (fun () -> Tar_transfer.send_files ~src_dir ~src_manifest ~dst ~to_untar)
+              (fun () -> Tar_transfer.send_files ~src_dir ~src_manifest ~dst ~to_untar ~user)
               (fun () -> Lwt_unix.close to_untar)
           in
           proc >>= fun result ->
@@ -176,7 +176,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log:_ tmp ->
         Fmt.pr "Base image not present; importing %S...@." base;
         let rootfs = tmp / "rootfs" in
-        Unix.mkdir rootfs 0o755;
+        Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
         (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
         Os.pread ["docker"; "create"; "--"; base] >>= fun cid ->
         let cid = String.trim cid in

@@ -56,12 +56,18 @@ let exec_docker ?stdout = function
   | ["rm"; "--"; id] -> Fmt.pr "docker rm %S@." id; Lwt_result.return 0
   | x -> Fmt.failwith "Unknown mock docker command %a" Fmt.(Dump.list string) x
 
+let mkdir = function
+  | ["--mode=755"; "--"; path] -> Unix.mkdir path 0o755; Lwt_result.return 0
+  | x -> Fmt.failwith "Unexpected mkdir %a" Fmt.(Dump.list string) x
+
 let exec ?cwd ?stdin ?stdout ?stderr:_ ~pp = function
   | ("", argv) ->
     Fmt.pr "exec: %a@." Fmt.(Dump.array string) argv;
     begin match Array.to_list argv with
       | "docker" :: args -> exec_docker ?stdout args
       | "sudo" :: ("tar" :: _ as tar) -> Os.default_exec ?cwd ?stdin ?stdout ~pp ("", Array.of_list tar)
+      | "sudo" :: "mkdir" :: args
+      | "mkdir" :: args -> mkdir args
       | x -> Fmt.failwith "Unknown mock command %a" Fmt.(Dump.list string) x
     end
   | (x, _) -> Fmt.failwith "Unexpected absolute path: %S" x
