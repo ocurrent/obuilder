@@ -176,7 +176,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log:_ tmp ->
         Fmt.pr "Base image not present; importing %S...@." base;
         let rootfs = tmp / "rootfs" in
-        Unix.mkdir rootfs 0o755;
+        Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
         (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
         Os.pread ["docker"; "create"; "--"; base] >>= fun cid ->
         let cid = String.trim cid in

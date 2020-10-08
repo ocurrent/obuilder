@@ -2,6 +2,8 @@ open Lwt.Infix
 
 let strf = Printf.sprintf
 
+let running_as_root = Unix.getuid () = 0
+
 (* Represents a persistent cache.
    You must hold a cache's lock when removing or updating its entry in
    "cache", and must assume this may happen at any time when not holding it.
@@ -24,7 +26,7 @@ let ( / ) = Filename.concat
 module Btrfs = struct
   let btrfs ?(sudo=false) args =
     let args = "btrfs" :: args in
-    let args = if sudo then "sudo" :: args else args in
+    let args = if sudo && not running_as_root then "sudo" :: args else args in
     Os.exec ~stdout:`Dev_null args
 
   let subvolume_create path =
