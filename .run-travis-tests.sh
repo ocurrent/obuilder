@@ -22,14 +22,14 @@ opam exec -- dune exec -- ./stress/stress.exe btrfs:/btrfs
 opam exec -- dune exec -- ./stress/stress.exe zfs:zfs
 
 # Populate the caches from our own Travis cache
-btrfs subvolume create /btrfs/cache/opam-archives
-cp -r ~/.opam/download-cache/* /btrfs/cache/opam-archives/
-sudo chown -R 1000:1000 /btrfs/cache/opam-archives
+btrfs subvolume create /btrfs/cache/c-opam-archives
+cp -r ~/.opam/download-cache/* /btrfs/cache/c-opam-archives/
+sudo chown -R 1000:1000 /btrfs/cache/c-opam-archives
 
-sudo zfs create zfs/cache/opam-archives
-sudo cp -r ~/.opam/download-cache/* /zfs/cache/opam-archives/
-sudo chown -R 1000:1000 /zfs/cache/opam-archives
-sudo zfs snapshot zfs/cache/opam-archives@snap
+sudo zfs create zfs/cache/c-opam-archives
+sudo cp -r ~/.opam/download-cache/* /zfs/cache/c-opam-archives/
+sudo chown -R 1000:1000 /zfs/cache/c-opam-archives
+sudo zfs snapshot zfs/cache/c-opam-archives@snap
 
 opam exec -- dune exec -- obuilder build -f example.spec . --store=btrfs:/btrfs
 opam exec -- dune exec -- obuilder build -f example.spec . --store=zfs:zfs
