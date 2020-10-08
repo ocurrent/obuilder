@@ -12,6 +12,12 @@ let default_ctx = {
 let pp_pair f (k, v) =
   Fmt.pf f "%s=%s" k v
 
+let wrap x =
+  x
+  |> String.split_on_char '\n'
+  |> List.map String.trim
+  |> String.concat " \\\n    "
+
 let of_op ~buildkit (acc, ctx) : Spec.op -> Dockerfile.t list * ctx = function
   | `Comment x -> comment "%s" x :: acc, ctx
   | `Workdir x -> workdir "%s" x :: acc, ctx
@@ -29,8 +35,8 @@ let of_op ~buildkit (acc, ctx) : Spec.op -> Dockerfile.t list * ctx = function
           Fmt.strf "@[<h>%a@]" Fmt.(list ~sep:(unit ",") pp_pair) buildkit_options
         )
     in
-    run "%s %s" (String.concat " " mounts) shell :: acc, ctx
-  | `Run { cache = _; shell } -> run "%s" shell :: acc, ctx
+    run "%s %s" (String.concat " " mounts) (wrap shell) :: acc, ctx
+  | `Run { cache = _; shell } -> run "%s" (wrap shell) :: acc, ctx
   | `Copy { src; dst; exclude = _ } ->
     if ctx.user = Spec.root then copy ~src ~dst () :: acc, ctx
     else (
