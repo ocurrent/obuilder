@@ -397,13 +397,21 @@ let test_sexp () =
       (user (uid 1) (gid 2))
      ) |}
 
+let remove_indent = function
+  | (_ :: x :: _) as lines ->
+    let indent = Astring.String.find ((<>) ' ') x |> Option.value ~default:0 in
+    lines |> List.map (fun line ->
+        Astring.String.drop line ~sat:((=) ' ') ~max:indent
+      )
+  | x -> List.map String.trim x
+
 let test_docker () =
   let test ~buildkit name expect sexp =
     let spec = Spec.stage_of_sexp (Sexplib.Sexp.of_string sexp) in
     let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit spec |> Dockerfile.string_of_t in
     let expect =
       String.split_on_char '\n' expect
-      |> List.map String.trim
+      |> remove_indent
       |> List.filter ((<>) "")
       |> String.concat "\n"
     in
@@ -415,7 +423,8 @@ let test_docker () =
        WORKDIR /src
        RUN command1
        SHELL [ "/bin/sh", "-c" ]
-       RUN command2
+       RUN command2 && \
+           command3
        COPY a b c
        COPY a b c
        ENV DEBUG 1
@@ -430,7 +439,8 @@ let test_docker () =
       (run
        (cache (a (target /data))
               (b (target /srv)))
-       (shell "command2"))
+       (shell "command2 &&
+               command3"))
       (copy (src a b) (dst c))
       (copy (src a b) (dst c) (exclude .git _build))
       (env DEBUG 1)
