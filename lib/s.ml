@@ -92,4 +92,10 @@ module type BUILDER = sig
       the delete might fail because an item got a new child during the delete, or
       we might delete something that the build is using.
       @param log Called just before deleting each item, so it can be displayed. *)
+
+  val prune : ?log:(id -> unit) -> t -> before:Unix.tm -> int -> int Lwt.t
+  (** [prune t ~before n] attempts to remove up to [n] items from the store,
+      all of which were last used before [before].
+      Returns the number of items removed.
+      @param log Called just before deleting each item, so it can be displayed. *)
 end

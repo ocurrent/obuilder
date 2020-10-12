@@ -79,6 +79,28 @@ let test_simple _switch () =
      |} log;
   Lwt.return_unit
 
+let test_prune _switch () =
+  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+  let start = Unix.(gettimeofday () |> gmtime) in
+  let log = Log.create "b" in
+  let context = Context.v ~src_dir ~log:(Log.add log) () in
+  let spec = Spec.{ from = "base"; ops = [ run "Append" ] } in
+  Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
+  B.build builder context spec >>!= get store "output" >>= fun result ->
+  Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
+  Log.check "Check log" 
+    {|FROM base
+      /: (run (shell Append))
+      Append
+     |} log;
+  let log id = Logs.info (fun f -> f "Deleting %S" id) in
+  B.prune ~log builder ~before:start 10 >>= fun n ->
+  Alcotest.(check int) "Nothing before start time" 0 n;
+  let end_time = Unix.(gettimeofday () +. 60.0 |> gmtime) in
+  B.prune ~log builder ~before:end_time 10 >>= fun n ->
+  Alcotest.(check int) "Prune" 2 n;
+  Lwt.return_unit
+
 (* Two builds, [A;B] and [A;C] are started together. The [A] command is only run once,
    with the log visible to both while the build is still in progress. *)
 let test_concurrent _switch () =
@@ -551,6 +573,7 @@ let () =
       ];
       "build", [
         test_case "Simple"     `Quick test_simple;
+        test_case "Prune"      `Quick test_prune;
         test_case "Concurrent" `Quick test_concurrent;
         test_case "Concurrent failure" `Quick test_concurrent_failure;
         test_case "Concurrent failure 2" `Quick test_concurrent_failure_2;

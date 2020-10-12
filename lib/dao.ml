@@ -2,12 +2,15 @@ type t = {
   db : Db.t;
   begin_transaction : Sqlite3.stmt;
   commit : Sqlite3.stmt;
+  rollback : Sqlite3.stmt;
   add : Sqlite3.stmt;
   set_used : Sqlite3.stmt;
   update_rc : Sqlite3.stmt;
   exists : Sqlite3.stmt;
   children : Sqlite3.stmt;
   delete : Sqlite3.stmt;
+  lru : Sqlite3.stmt;
+  parent : Sqlite3.stmt;
 }
 
 let format_timestamp time =
@@ -23,8 +26,11 @@ let create db =
                        parent   TEXT,
                        FOREIGN KEY (parent) REFERENCES builds (id) ON DELETE RESTRICT 
                      ) |} |> Db.or_fail ~cmd:"create builds";
+  Sqlite3.exec db {| CREATE INDEX IF NOT EXISTS lru
+                     ON builds (rc, used) |} |> Db.or_fail ~cmd:"create lru index";
   let begin_transaction = Sqlite3.prepare db "BEGIN TRANSACTION" in
   let commit = Sqlite3.prepare db "COMMIT" in
+  let rollback = Sqlite3.prepare db {| ROLLBACK |} in
   let add = Sqlite3.prepare db {| INSERT INTO builds
                                     (id, created, used, rc, parent)
                                     VALUES (?, ?, ?, 0, ?) |} in
@@ -33,17 +39,25 @@ let create db =
   let exists = Sqlite3.prepare db {| SELECT EXISTS(SELECT 1 FROM builds WHERE id = ?) |} in
   let children = Sqlite3.prepare db {| SELECT id FROM builds WHERE parent = ? |} in
   let delete = Sqlite3.prepare db {| DELETE FROM builds WHERE id = ? |} in
-  { db; begin_transaction; commit; add; set_used; update_rc; exists; children; delete }
+  let lru = Sqlite3.prepare db {| SELECT id FROM builds WHERE rc = 0 AND used < ? ORDER BY used ASC LIMIT ? |} in
+  let parent = Sqlite3.prepare db {| SELECT parent FROM builds WHERE id = ? |} in
+  { db; begin_transaction; commit; rollback; add; set_used; update_rc; exists; children; delete; lru; parent }
+
+let with_transaction t fn =
+  Db.exec t.begin_transaction [];
+  match fn () with
+  | x -> Db.exec t.commit []; x
+  | exception ex -> Db.exec t.rollback []; raise ex
 
 let add ?parent ~id ~now t =
   let now = format_timestamp now in
   match parent with
   | None -> Db.exec t.add Sqlite3.Data.[ TEXT id; TEXT now; TEXT now; NULL ];
   | Some parent ->
-    Db.exec t.begin_transaction [];
-    Db.exec t.add Sqlite3.Data.[ TEXT id; TEXT now; TEXT now; TEXT parent ];
-    Db.exec t.update_rc Sqlite3.Data.[ INT 1L; TEXT parent ];
-    Db.exec t.commit []
+    with_transaction t (fun () ->
+        Db.exec t.add Sqlite3.Data.[ TEXT id; TEXT now; TEXT now; TEXT parent ];
+        Db.exec t.update_rc Sqlite3.Data.[ INT 1L; TEXT parent ];
+      )
 
 let set_used ~id ~now t =
   let now = format_timestamp now in
@@ -61,4 +75,18 @@ let children t id =
   | x -> Fmt.failwith "Invalid row: %a" Db.dump_row x
 
 let delete t id =
-  Db.exec t.delete Sqlite3.Data.[ TEXT id ]
+  with_transaction t (fun () ->
+      match Db.query_one t.parent Sqlite3.Data.[ TEXT id ] with
+      | [ TEXT parent ] ->
+        Db.exec t.delete Sqlite3.Data.[ TEXT id ];
+        Db.exec t.update_rc Sqlite3.Data.[ INT (-1L); TEXT parent ]
+      | [ NULL ] ->
+        Db.exec t.delete Sqlite3.Data.[ TEXT id ]
+      | x -> Fmt.failwith "Invalid row: %a" Db.dump_row x
+    )
+
+let lru t ~before n =
+  Db.query t.lru Sqlite3.Data.[ TEXT (format_timestamp before); INT (Int64.of_int n) ]
+  |> List.map @@ function
+  | Sqlite3.Data.[ TEXT id ] -> id
+  | x -> Fmt.failwith "Invalid row: %a" Db.dump_row x
