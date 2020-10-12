@@ -309,3 +309,7 @@ let delete_cache t name =
       Lwt_result.return ()
     ) else Lwt_result.return ()
   )
+
+let complete_deletes _t =
+  (* The man-page says "Pending changes are generally accounted for within a few seconds" *)
+  Lwt_unix.sleep 5.0

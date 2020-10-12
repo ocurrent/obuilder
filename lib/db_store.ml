@@ -159,7 +159,9 @@ module Make (Raw : S.STORE) = struct
         | n -> aux (acc + n) (limit - n)
       )
     in
-    aux 0 limit
+    aux 0 limit >>= fun n ->
+    Raw.complete_deletes t.raw >>= fun () ->
+    Lwt.return n
 
   let wrap raw =
     let db_dir = Raw.state_dir raw / "db" in
