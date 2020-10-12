@@ -27,7 +27,9 @@ module Json_config = struct
 
   let strings xs = `List ( List.map (fun x -> `String x) xs)
 
-  let make {Config.cwd; argv; hostname; user; env; mounts} ~config_dir ~results_dir : Yojson.Safe.t =
+  let namespace x = `Assoc [ "type", `String x ]
+
+  let make {Config.cwd; argv; hostname; user; env; mounts; network} ~config_dir ~results_dir : Yojson.Safe.t =
     let user =
       let { Obuilder_spec.uid; gid } = user in
       `Assoc [
@@ -35,6 +37,13 @@ module Json_config = struct
         "gid", `Int gid;
       ]
     in
+    let network_ns =
+      match network with
+      | ["host"] -> []
+      | [] -> ["network"]
+      | xs -> Fmt.failwith "Unsupported network configuration %a" Fmt.Dump.(list string) xs
+    in
+    let namespaces = network_ns @ ["pid"; "ipc"; "uts"; "mount"] in
     `Assoc [
       "ociVersion", `String "1.0.1-dev";
       "process", `Assoc [
@@ -210,20 +219,7 @@ module Json_config = struct
             "size", `Int 1;
           ];
         ];
-        "namespaces", `List [
-          `Assoc [
-            "type", `String "pid"
-          ];
-          `Assoc [
-            "type", `String "ipc"
-          ];
-          `Assoc [
-            "type", `String "uts"
-          ];
-          `Assoc [
-            "type", `String "mount"
-          ];
-        ];
+        "namespaces", `List (List.map namespace namespaces);
         "maskedPaths", strings [
           "/proc/acpi";
           "/proc/asound";

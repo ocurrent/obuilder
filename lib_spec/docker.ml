@@ -22,7 +22,7 @@ let of_op ~buildkit (acc, ctx) : Spec.op -> Dockerfile.t list * ctx = function
   | `Comment x -> comment "%s" x :: acc, ctx
   | `Workdir x -> workdir "%s" x :: acc, ctx
   | `Shell xs -> shell xs :: acc, ctx
-  | `Run { cache = (_ :: _) as cache; shell } when buildkit ->
+  | `Run { cache = (_ :: _) as cache; shell; network = _ } when buildkit ->
     let mounts =
       cache |> List.map (fun { Cache.id; target; buildkit_options } ->
           let buildkit_options =
@@ -36,7 +36,7 @@ let of_op ~buildkit (acc, ctx) : Spec.op -> Dockerfile.t list * ctx = function
         )
     in
     run "%s %s" (String.concat " " mounts) (wrap shell) :: acc, ctx
-  | `Run { cache = _; shell } -> run "%s" (wrap shell) :: acc, ctx
+  | `Run { cache = _; network = _; shell } -> run "%s" (wrap shell) :: acc, ctx
   | `Copy { src; dst; exclude = _ } ->
     if ctx.user = Spec.root then copy ~src ~dst () :: acc, ctx
     else (

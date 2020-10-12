@@ -129,6 +129,7 @@ The command run will be this list of arguments followed by the single argument `
 ```sexp
 (run
  (cache CACHE...)?
+ (network NETWORK...)?
  (shell COMMAND))
  
 ```
@@ -142,6 +143,7 @@ Examples:
 ```sexp
 (run
  (cache (opam-archives (target /home/opam/.opam/download-cache)))
+ (network host)
  (shell "opam install utop"))
 ```
 
@@ -156,6 +158,13 @@ owned by the user in the build context.
 A mutable copy of the cache is created for the command. When the command finishes (whether successful or not)
 this copy becomes the new version of the cache, unless some other command updated the same cache first, in
 which case this one is discarded.
+
+The `(network NETWORK...)` field specifies which network(s) the container will be connected to.
+`(network host)` is a special value which runs the container in the host's network namespace.
+Otherwise, a fresh network namespace is created for the container, with interfaces for the given
+networks (if any).
+
+Currently, no other networks can be used, so the only options are `host` or an isolated private network.
 
 ### copy
 
@@ -245,6 +254,9 @@ The dockerfile should work the same way as the spec file, except for these limit
   You will need to ensure you have a suitable `.dockerignore` file instead.
 
 - If you want to include caches, use `--buildkit` to output in the extended BuildKit syntax.
+
+- All `(network ...)` fields are ignored, as Docker does not allow per-step control of
+  networking.
 
 
 [Dockerfile]: https://docs.docker.com/engine/reference/builder/
