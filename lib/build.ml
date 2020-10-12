@@ -223,6 +223,9 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
   let delete ?log t id =
     Store.delete ?log t.store id
 
+  let prune ?log t ~before limit =
+    Store.prune ?log t.store ~before limit
+
   let v ~store ~sandbox =
     let store = Store.wrap store in
     { store; sandbox }

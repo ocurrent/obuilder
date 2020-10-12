@@ -192,6 +192,18 @@ module Test(Store : S.STORE) = struct
       time (float n_jobs /. time);
     if !failures > 0 then Fmt.failwith "%d failures!" !failures
     else Lwt.return_unit
+
+  let prune store =
+    let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") in
+    let builder = Build.v ~store ~sandbox in
+    let log id = Logs.info (fun f -> f "Deleting %S" id) in
+    let end_time = Unix.(gettimeofday () +. 60.0 |> gmtime) in
+    let rec aux () =
+      Build.prune ~log builder ~before:end_time 100 >>= function
+      | 0 -> Lwt.return_unit
+      | _ -> aux ()
+    in
+    aux ()
 end
 
 let stress spec =
@@ -200,7 +212,8 @@ let stress spec =
     let module T = Test(Store) in
     T.test_store store >>= fun () ->
     T.test_cache store >>= fun () ->
-    T.stress_builds store
+    T.stress_builds store >>= fun () ->
+    T.prune store
   end
 
 open Cmdliner

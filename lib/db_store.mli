@@ -16,6 +16,8 @@ module Make (Raw : S.STORE) : sig
 
   val delete : ?log:(S.id -> unit) -> t -> S.id -> unit Lwt.t
 
+  val prune : ?log:(S.id -> unit) -> t -> before:Unix.tm -> int -> int Lwt.t
+
   val result : t -> S.id -> string option
 
   val cache :
