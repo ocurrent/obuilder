@@ -11,7 +11,9 @@
  (user (uid 1000) (gid 1000))                           ; Build as the "opam" user
  (run (shell "sudo chown opam /src"))
  (env OPAM_HASH "3332c004db65ef784f67efdadc50982f000b718f") ; Fix the version of opam-repository we want
- (run (shell
+ (run 
+  (network host)
+  (shell
    "cd ~/opam-repository \
     && (git cat-file -e $OPAM_HASH || git fetch origin master) \
     && git reset -q --hard $OPAM_HASH \
@@ -21,10 +23,12 @@
  (run (shell "opam pin add -yn ."))
  ; Install OS package dependencies
  (run
+  (network host)
   (cache (opam-archives (target /home/opam/.opam/download-cache)))
   (shell "opam depext -y obuilder"))
  ; Install OCaml dependencies
  (run
+  (network host)
   (cache (opam-archives (target /home/opam/.opam/download-cache)))
   (shell "opam install --deps-only -t obuilder"))
  (copy                                                  ; Copy the rest of the source code

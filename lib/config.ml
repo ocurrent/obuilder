@@ -12,7 +12,8 @@ type t = {
   user : Obuilder_spec.user;
   env : Os.env;
   mounts : Mount.t list;
+  network : string list;
 }
 
-let v ~cwd ~argv ~hostname ~user ~env ~mounts =
-  { cwd; argv; hostname; user; env; mounts }
+let v ~cwd ~argv ~hostname ~user ~env ~mounts ~network =
+  { cwd; argv; hostname; user; env; mounts; network }

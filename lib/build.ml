@@ -44,6 +44,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     env : Os.env;
     cmd : string;
     shell : string list;
+    network : string list;
   } [@@deriving sexp_of]
 
   let run t ~switch ~log ~cache run_input =
@@ -53,7 +54,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       |> Sha256.string
       |> Sha256.to_hex
     in
-    let { base; workdir; user; env; cmd; shell } = run_input in
+    let { base; workdir; user; env; cmd; shell; network } = run_input in
     Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
         let to_release = ref [] in
         Lwt.finalize
@@ -65,7 +66,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
                )
              >>= fun mounts ->
              let argv = shell @ [cmd] in
-             let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts in
+             let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~network in
              Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
              Lwt_unix.close close_me >>= fun () ->
              Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp
@@ -106,7 +107,15 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       let id = Sha256.to_hex (Sha256.string (Sexplib.Sexp.to_string (sexp_of_copy_details details))) in
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
           let argv = ["tar"; "-xf"; "-"] in
-          let config = Config.v ~cwd:"/" ~argv ~hostname ~user:Obuilder_spec.root ~env:["PATH", "/bin:/usr/bin"] ~mounts:[] in
+          let config = Config.v
+              ~cwd:"/"
+              ~argv
+              ~hostname
+              ~user:Obuilder_spec.root
+              ~env:["PATH", "/bin:/usr/bin"]
+              ~mounts:[]
+              ~network:[]
+          in
           Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
           let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
           let send =
@@ -141,10 +150,10 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Comment _ -> k ~base ~context
       | `Workdir workdir -> k ~base ~context:(update_workdir ~context workdir)
       | `User user -> k ~base ~context:{context with user}
-      | `Run { shell = cmd; cache } ->
+      | `Run { shell = cmd; cache; network } ->
         let switch, run_input, log =
           let { Context.switch; workdir; user; env; shell; log; src_dir = _ } = context in
-          (switch, { base; workdir; user; env; cmd; shell }, log)
+          (switch, { base; workdir; user; env; cmd; shell; network }, log)
         in
         run t ~switch ~log ~cache run_input >>!= fun base ->
         k ~base ~context
