@@ -36,6 +36,9 @@ module Btrfs = struct
   let subvolume_delete path =
     btrfs ~sudo:true ["subvolume"; "delete"; "--"; path]
 
+  let subvolume_sync path =
+    btrfs ~sudo:true ["subvolume"; "sync"; "--"; path]
+
   let subvolume_snapshot mode ~src dst =
     assert (not (Sys.file_exists dst));
     let readonly =
@@ -163,3 +166,6 @@ let delete_cache t name =
   ) else Lwt_result.return ()
 
 let state_dir = Path.state
+
+let complete_deletes t =
+  Btrfs.subvolume_sync t.root

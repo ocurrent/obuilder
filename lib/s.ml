@@ -55,6 +55,10 @@ module type STORE = sig
   val delete_cache : t -> string -> (unit, [> `Busy]) Lwt_result.t
   (** [delete_cache t name] removes the cache [name], if present.
       If the cache is currently in use, the store may instead return [Error `Busy]. *)
+
+  val complete_deletes : t -> unit Lwt.t
+  (** [complete_deletes t] attempts to wait for previously executed deletes to finish,
+      so that the free space is accurate. *)
 end
 
 module type SANDBOX = sig

@@ -199,7 +199,8 @@ module Test(Store : S.STORE) = struct
     let log id = Logs.info (fun f -> f "Deleting %S" id) in
     let end_time = Unix.(gettimeofday () +. 60.0 |> gmtime) in
     let rec aux () =
-      Build.prune ~log builder ~before:end_time 100 >>= function
+      Fmt.pr "Pruning...@.";
+      Build.prune ~log builder ~before:end_time 1000 >>= function
       | 0 -> Lwt.return_unit
       | _ -> aux ()
     in
