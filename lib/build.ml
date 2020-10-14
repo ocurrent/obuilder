@@ -200,7 +200,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
               Fun.protect
                 (fun () ->
                    let exporter = Os.exec ~stdout:(`FD_copy w) ["docker"; "export"; "--"; cid] in
-                   let tar = Os.exec ~stdin:(`FD_copy r) ["sudo"; "tar"; "-C"; rootfs; "-xf"; "-"] in
+                   let tar = Os.sudo ~stdin:(`FD_copy r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
                    exporter, tar
                 )
                 ~finally:(fun () ->

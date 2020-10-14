@@ -262,14 +262,14 @@ let run ~cancelled ?stdin:stdin ~log t config results_dir =
   let id = string_of_int !next_id in
   incr next_id;
   Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
-  let cmd = ["sudo"; "runc"; "--root"; t.runc_state_dir; "run"; id] in
+  let cmd = ["runc"; "--root"; t.runc_state_dir; "run"; id] in
   let stdout = `FD_copy out_w.raw in
   let stderr = stdout in
   let copy_log = copy_to_log ~src:out_r ~dst:log in
   let proc =
     let stdin = Option.map (fun x -> `FD_copy x.Os.raw) stdin in
     let pp f = Os.pp_cmd f config.argv in
-    Os.exec_result ~cwd:tmp ?stdin ~stdout ~stderr ~pp cmd
+    Os.sudo_result ~cwd:tmp ?stdin ~stdout ~stderr ~pp cmd
   in
   Os.close out_w;
   Option.iter Os.close stdin;
@@ -277,7 +277,7 @@ let run ~cancelled ?stdin:stdin ~log t config results_dir =
       let rec aux () =
         if Lwt.is_sleeping proc then (
           let pp f = Fmt.pf f "runc kill %S" id in
-          Os.exec_result ~cwd:tmp ["sudo"; "runc"; "--root"; t.runc_state_dir; "kill"; id; "KILL"] ~pp >>= function
+          Os.sudo_result ~cwd:tmp ["runc"; "--root"; t.runc_state_dir; "kill"; id; "KILL"] ~pp >>= function
           | Ok () -> Lwt.return_unit
           | Error (`Msg m) ->
             (* This might be because it hasn't been created yet, so retry. *)

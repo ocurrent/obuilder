@@ -142,7 +142,7 @@ let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
     | `Missing ->
       let { Obuilder_spec.uid; gid } = user in
       Btrfs.subvolume_create snapshot >>= fun () ->
-      Os.exec ["sudo"; "chown"; Printf.sprintf "%d:%d" uid gid; snapshot]
+      Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; snapshot]
     | `Present -> Lwt.return_unit
   end >>= fun () ->
   (* Create writeable clone. *)
