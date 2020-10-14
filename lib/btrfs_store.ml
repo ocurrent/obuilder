@@ -101,13 +101,21 @@ let build t ?base ~id fn =
     | Some base -> Btrfs.subvolume_snapshot `RW ~src:(Path.result t base) result_tmp
   end
   >>= fun () ->
-  fn result_tmp >>= fun r ->
-  begin match r with
-    | Ok () -> Btrfs.subvolume_snapshot `RO ~src:result_tmp result
-    | Error _ -> Lwt.return_unit
-  end >>= fun () ->
-  Btrfs.subvolume_delete result_tmp >>= fun () ->
-  Lwt.return r
+  Lwt.try_bind
+    (fun () -> fn result_tmp)
+    (fun r ->
+       begin match r with
+         | Ok () -> Btrfs.subvolume_snapshot `RO ~src:result_tmp result
+         | Error _ -> Lwt.return_unit
+       end >>= fun () ->
+       Btrfs.subvolume_delete result_tmp >>= fun () ->
+       Lwt.return r
+    )
+  (fun ex ->
+      Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
+      Btrfs.subvolume_delete result_tmp >>= fun () ->
+      Lwt.fail ex
+  )
 
 let result t id =
   let dir = Path.result t id in
