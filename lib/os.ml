@@ -38,9 +38,13 @@ let exec ?cwd ?stdin ?stdout ?stderr argv =
 
 let running_as_root = Unix.getuid () = 0
 
-let sudo args =
+let sudo ?stdin args =
   let args = if running_as_root then args else "sudo" :: args in
-  exec args
+  exec ?stdin args
+
+let sudo_result ?cwd ?stdin ?stdout ?stderr ~pp args =
+  let args = if running_as_root then args else "sudo" :: args in
+  exec_result ?cwd ?stdin ?stdout ?stderr ~pp args
 
 let with_open_out path fn =
   Lwt_unix.openfile path Unix.[O_RDWR; O_CREAT; O_EXCL] 0o666 >>= fun fd ->
