@@ -179,17 +179,25 @@ let build t ?base ~id fn =
       Zfs.clone t ~src ~snapshot:default_snapshot ds
   end
   >>= fun () ->
-  fn clone >>= function
-  | Ok () ->
-    Log.debug (fun f -> f "zfs: build %S succeeded" id);
-    Zfs.snapshot t ds ~snapshot:default_snapshot >>= fun () ->
-    (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
-       keep it around? *)
-    Lwt_result.return ()
-  | Error _ as e ->
-    Log.debug (fun f -> f "zfs: build %S failed" id);
-    Zfs.destroy t ds `Only >>= fun () ->
-    Lwt.return e
+  Lwt.try_bind
+    (fun () -> fn clone)
+    (function
+      | Ok () ->
+        Log.debug (fun f -> f "zfs: build %S succeeded" id);
+        Zfs.snapshot t ds ~snapshot:default_snapshot >>= fun () ->
+        (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
+           keep it around? *)
+        Lwt_result.return ()
+      | Error _ as e ->
+        Log.debug (fun f -> f "zfs: build %S failed" id);
+        Zfs.destroy t ds `Only >>= fun () ->
+        Lwt.return e
+    )
+    (fun ex ->
+        Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
+        Zfs.destroy t ds `Only >>= fun () ->
+        Lwt.fail ex
+    )
 
 let result t id =
   let ds = Dataset.result id in
