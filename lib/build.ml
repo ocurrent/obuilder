@@ -179,6 +179,13 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
           | Some _ as pair -> pair
       )
 
+  let with_container base fn =
+    Os.pread ["docker"; "create"; "--"; base] >>= fun cid ->
+    let cid = String.trim cid in
+    Lwt.finalize
+      (fun () -> fn cid)
+      (fun () -> Os.exec ["docker"; "rm"; "--"; cid])
+
   let get_base t ~log base =
     log `Heading (Fmt.strf "FROM %s" base);
     let id = Sha256.to_hex (Sha256.string base) in
@@ -187,24 +194,23 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         let rootfs = tmp / "rootfs" in
         Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
         (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
-        Os.pread ["docker"; "create"; "--"; base] >>= fun cid ->
-        let cid = String.trim cid in
-        let r, w = Unix.pipe ~cloexec:true () in
-        let exporter, tar =
-          Fun.protect
-            (fun () ->
-               let exporter = Os.exec ~stdout:(`FD_copy w) ["docker"; "export"; "--"; cid] in
-               let tar = Os.exec ~stdin:(`FD_copy r) ["sudo"; "tar"; "-C"; rootfs; "-xf"; "-"] in
-               exporter, tar
-            )
-            ~finally:(fun () ->
-                Unix.close r;
-                Unix.close w
-              )
-        in
-        exporter >>= fun () ->
-        tar >>= fun () ->
-        Os.exec ["docker"; "rm"; "--"; cid] >>= fun () ->
+        with_container base (fun cid ->
+            let r, w = Unix.pipe ~cloexec:true () in
+            let exporter, tar =
+              Fun.protect
+                (fun () ->
+                   let exporter = Os.exec ~stdout:(`FD_copy w) ["docker"; "export"; "--"; cid] in
+                   let tar = Os.exec ~stdin:(`FD_copy r) ["sudo"; "tar"; "-C"; rootfs; "-xf"; "-"] in
+                   exporter, tar
+                )
+                ~finally:(fun () ->
+                    Unix.close r;
+                    Unix.close w
+                  )
+            in
+            exporter >>= fun () ->
+            tar
+          ) >>= fun () ->
         export_env base >>= fun env ->
         Os.write_file ~path:(tmp / "env")
           (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
