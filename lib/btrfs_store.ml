@@ -139,15 +139,14 @@ let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   let snapshot = Path.cache t name in
   (* Create cache if it doesn't already exist. *)
   begin match Os.check_dir snapshot with
-    | `Missing ->
-      let { Obuilder_spec.uid; gid } = user in
-      Btrfs.subvolume_create snapshot >>= fun () ->
-      Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; snapshot]
+    | `Missing -> Btrfs.subvolume_create snapshot
     | `Present -> Lwt.return_unit
   end >>= fun () ->
   (* Create writeable clone. *)
   let gen = cache.gen in
   Btrfs.subvolume_snapshot `RW ~src:snapshot tmp >>= fun () ->
+  let { Obuilder_spec.uid; gid } = user in
+  Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; tmp] >>= fun () ->
   let release () =
     Lwt_mutex.with_lock cache.lock @@ fun () ->
     begin
