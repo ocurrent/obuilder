@@ -122,6 +122,25 @@ module Json_config = struct
             "newinstance";
             "ptmxmode=0666";
             "mode=0620";
+            "gid=5";            (* tty *)
+          ] ::
+        mount "/sys"            (* This is how Docker does it. runc's default is a bit different. *)
+          ~ty:"sysfs"
+          ~src:"sysfs"
+          ~options:[
+            "nosuid";
+            "noexec";
+            "nodev";
+            "ro";
+          ] ::
+        mount "/sys/fs/cgroup"
+          ~ty:"cgroup"
+          ~src:"cgroup"
+          ~options:[
+            "ro";
+            "nosuid";
+            "noexec";
+            "nodev";
           ] ::
         mount "/dev/shm"
           ~ty:"tmpfs"
@@ -140,16 +159,6 @@ module Json_config = struct
             "nosuid";
             "noexec";
             "nodev";
-          ] ::
-        mount "/sys"
-          ~ty:"none"
-          ~src:"/sys"
-          ~options:[
-            "rbind";
-            "nosuid";
-            "noexec";
-            "nodev";
-            "ro";
           ] ::
         mount "/etc/hosts"
           ~ty:"bind"
