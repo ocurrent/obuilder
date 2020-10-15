@@ -156,13 +156,17 @@ module Json_config = struct
             "rbind";
             "rprivate"
           ] ::
-        mount "/etc/resolv.conf"
-          ~ty:"bind"
-          ~src:"/etc/resolv.conf"  (* XXX *)
-          ~options:[
-            "rbind";
-            "rprivate"
-          ] ::
+        (if network = ["host"] then
+           [ mount "/etc/resolv.conf"
+               ~ty:"bind"
+               ~src:"/etc/resolv.conf"
+               ~options:[
+                 "rbind";
+                 "rprivate"
+               ]
+           ]
+         else []
+        ) @
         user_mounts mounts
       );
       "linux", `Assoc [
