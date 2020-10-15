@@ -29,6 +29,27 @@ module Json_config = struct
 
   let namespace x = `Assoc [ "type", `String x ]
 
+  (* This is the same set that Docker uses by default.
+     These control what root can do in the container.
+     If the init process is non-root, permitted, effective and ambient sets are cleared.
+     See capabilities(7) for full details. *)
+  let default_linux_caps = [
+    "CAP_CHOWN";                (* Make arbitrary changes to file UIDs and GIDs *)
+    "CAP_DAC_OVERRIDE";         (* Bypass file read, write, and execute permission checks. *)
+    "CAP_FSETID";               (* Set SUID/SGID bits. *)
+    "CAP_FOWNER";               (* Bypass permission checks. *)
+    "CAP_MKNOD";                (* Create special files using mknod. *)
+    "CAP_NET_RAW";              (* Use RAW and PACKET sockets / bind to any address *)
+    "CAP_SETGID";               (* Make arbitrary manipulations of process GIDs. *)
+    "CAP_SETUID";               (* Make arbitrary manipulations of process UIDs. *)
+    "CAP_SETFCAP";              (* Set arbitrary capabilities on a file. *)
+    "CAP_SETPCAP";              (* Add any capability from bounding set to inheritable set. *)
+    "CAP_NET_BIND_SERVICE";     (* Bind a socket to Internet domain privileged ports. *)
+    "CAP_SYS_CHROOT";           (* Use chroot. *)
+    "CAP_KILL";                 (* Bypass permission checks for sending signals. *)
+    "CAP_AUDIT_WRITE"           (* Write records to kernel auditing log. *)
+  ]
+
   let make {Config.cwd; argv; hostname; user; env; mounts; network} ~config_dir ~results_dir : Yojson.Safe.t =
     let user =
       let { Obuilder_spec.uid; gid } = user in
@@ -53,70 +74,10 @@ module Json_config = struct
         "env", strings (List.map (fun (k, v)  -> Printf.sprintf "%s=%s" k v) env);
         "cwd", `String cwd;
         "capabilities", `Assoc [
-          "bounding", strings [
-            "CAP_CHOWN";
-            "CAP_DAC_OVERRIDE";
-            "CAP_FSETID";
-            "CAP_FOWNER";
-            "CAP_MKNOD";
-            "CAP_NET_RAW";
-            "CAP_SETGID";
-            "CAP_SETUID";
-            "CAP_SETFCAP";
-            "CAP_SETPCAP";
-            "CAP_NET_BIND_SERVICE";
-            "CAP_SYS_CHROOT";
-            "CAP_KILL";
-            "CAP_AUDIT_WRITE"
-          ];
-          "effective", strings [
-            "CAP_CHOWN";
-            "CAP_DAC_OVERRIDE";
-            "CAP_FSETID";
-            "CAP_FOWNER";
-            "CAP_MKNOD";
-            "CAP_NET_RAW";
-            "CAP_SETGID";
-            "CAP_SETUID";
-            "CAP_SETFCAP";
-            "CAP_SETPCAP";
-            "CAP_NET_BIND_SERVICE";
-            "CAP_SYS_CHROOT";
-            "CAP_KILL";
-            "CAP_AUDIT_WRITE"
-          ];
-          "inheritable", strings [
-            "CAP_CHOWN";
-            "CAP_DAC_OVERRIDE";
-            "CAP_FSETID";
-            "CAP_FOWNER";
-            "CAP_MKNOD";
-            "CAP_NET_RAW";
-            "CAP_SETGID";
-            "CAP_SETUID";
-            "CAP_SETFCAP";
-            "CAP_SETPCAP";
-            "CAP_NET_BIND_SERVICE";
-            "CAP_SYS_CHROOT";
-            "CAP_KILL";
-            "CAP_AUDIT_WRITE"
-          ];
-          "permitted", strings [
-            "CAP_CHOWN";
-            "CAP_DAC_OVERRIDE";
-            "CAP_FSETID";
-            "CAP_FOWNER";
-            "CAP_MKNOD";
-            "CAP_NET_RAW";
-            "CAP_SETGID";
-            "CAP_SETUID";
-            "CAP_SETFCAP";
-            "CAP_SETPCAP";
-            "CAP_NET_BIND_SERVICE";
-            "CAP_SYS_CHROOT";
-            "CAP_KILL";
-            "CAP_AUDIT_WRITE"
-          ]
+          "bounding", strings default_linux_caps;       (* Limits capabilities gained on execve. *)
+          "effective", strings default_linux_caps;      (* Checked by kernel to decide access *)
+          "inheritable", strings default_linux_caps;    (* Preserved across an execve (if root, or cap in ambient set) *)
+          "permitted", strings default_linux_caps;      (* Limiting superset for the effective capabilities *)
         ];
         "rlimits", `List [
           `Assoc [
