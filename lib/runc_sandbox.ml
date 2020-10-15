@@ -181,20 +181,6 @@ module Json_config = struct
         user_mounts mounts
       );
       "linux", `Assoc [
-        "uidMappings", `List [
-          `Assoc [
-            "containerID", `Int 0;
-            "hostID", `Int 1000;
-            "size", `Int 1
-          ];
-        ];
-        "gidMappings", `List [
-          `Assoc [
-            "containerID", `Int 0;
-            "hostID", `Int 1000;
-            "size", `Int 1;
-          ];
-        ];
         "namespaces", `List (List.map namespace namespaces);
         "maskedPaths", strings [
           "/proc/acpi";
