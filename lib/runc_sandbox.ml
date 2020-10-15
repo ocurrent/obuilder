@@ -29,7 +29,7 @@ module Json_config = struct
 
   let namespace x = `Assoc [ "type", `String x ]
 
-  (* This is the same set that Docker uses by default.
+  (* This is a subset of the capabilities that Docker uses by default.
      These control what root can do in the container.
      If the init process is non-root, permitted, effective and ambient sets are cleared.
      See capabilities(7) for full details. *)
@@ -39,15 +39,17 @@ module Json_config = struct
     "CAP_FSETID";               (* Set SUID/SGID bits. *)
     "CAP_FOWNER";               (* Bypass permission checks. *)
     "CAP_MKNOD";                (* Create special files using mknod. *)
-    "CAP_NET_RAW";              (* Use RAW and PACKET sockets / bind to any address *)
     "CAP_SETGID";               (* Make arbitrary manipulations of process GIDs. *)
     "CAP_SETUID";               (* Make arbitrary manipulations of process UIDs. *)
     "CAP_SETFCAP";              (* Set arbitrary capabilities on a file. *)
     "CAP_SETPCAP";              (* Add any capability from bounding set to inheritable set. *)
-    "CAP_NET_BIND_SERVICE";     (* Bind a socket to Internet domain privileged ports. *)
     "CAP_SYS_CHROOT";           (* Use chroot. *)
     "CAP_KILL";                 (* Bypass permission checks for sending signals. *)
     "CAP_AUDIT_WRITE"           (* Write records to kernel auditing log. *)
+    (* Allowed by Docker, but disabled here (because we use host networking):
+    "CAP_NET_RAW";              (* Use RAW and PACKET sockets / bind to any address *)
+    "CAP_NET_BIND_SERVICE";     (* Bind a socket to Internet domain privileged ports. *)
+    *)
   ]
 
   let make {Config.cwd; argv; hostname; user; env; mounts; network} ~config_dir ~results_dir : Yojson.Safe.t =
