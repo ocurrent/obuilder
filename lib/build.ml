@@ -78,9 +78,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
 
   type copy_details = {
     base : S.id;
-    src_manifest : Manifest.t list;
     user : Obuilder_spec.user;
-    dst : string;
+    op : [`Copy_items of Manifest.t list * string | `Copy_item of Manifest.t * string];
   } [@@deriving sexp_of]
 
   let rec sequence = function
@@ -91,19 +90,25 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | Ok xs -> Ok (x :: xs)
       | e -> e
 
+  let to_copy_op ~dst = function
+    | [] -> Fmt.error_msg "No source items for copy!"
+    | items when dst.[String.length dst - 1] = '/' -> Ok (`Copy_items (items, dst))
+    | [item] -> Ok (`Copy_item (item, dst))
+    | _ -> Fmt.error_msg "When copying multiple items, the destination must end with '/'"
+
   let copy t ~context ~base { Obuilder_spec.src; dst; exclude } =
     let { Context.switch; src_dir; workdir; user; log; shell = _; env = _ } = context in
     let dst = if Filename.is_relative dst then workdir / dst else dst in
-    match sequence (List.map (Manifest.generate ~exclude ~src_dir) src) with
+    let src_manifest = sequence (List.map (Manifest.generate ~exclude ~src_dir) src) in
+    match Result.bind src_manifest (to_copy_op ~dst) with
     | Error _ as e -> Lwt.return e
-    | Ok src_manifest ->
+    | Ok op ->
       let details = {
         base;
-        src_manifest;
+        op;
         user;
-        dst;
       } in
-      (* Fmt.pr "COPY: %a@." pp_copy_details details; *)
+      (* Fmt.pr "COPY: %a@." Sexplib.Sexp.pp_hum (sexp_of_copy_details details); *)
       let id = Sha256.to_hex (Sha256.string (Sexplib.Sexp.to_string (sexp_of_copy_details details))) in
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
           let argv = ["tar"; "-xf"; "-"] in
@@ -122,7 +127,13 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
             (* If the sending thread finishes (or fails), close the writing socket
                immediately so that the tar process finishes too. *)
             Lwt.finalize
-              (fun () -> Tar_transfer.send_files ~src_dir ~src_manifest ~dst ~to_untar ~user)
+              (fun () ->
+                 match op with
+                 | `Copy_items (src_manifest, dst_dir) ->
+                   Tar_transfer.send_files ~src_dir ~src_manifest ~dst_dir ~to_untar ~user
+                 | `Copy_item (src_manifest, dst) ->
+                   Tar_transfer.send_file ~src_dir ~src_manifest ~dst ~to_untar ~user
+              )
               (fun () -> Lwt_unix.close to_untar)
           in
           proc >>= fun result ->

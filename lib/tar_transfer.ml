@@ -106,22 +106,33 @@ let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
         copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
     )
 
-let send_files ~src_dir ~src_manifest ~dst ~user ~to_untar =
+let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
   src_manifest |> Lwt_list.iter_s (function
       | `File (path, _) ->
         let src = src_dir / path in
-        let dst = dst / (Filename.basename path) in       (* maybe don't copy docker's bad design here? *)
+        let dst = dst_dir / (Filename.basename path) in
         copy_file ~src ~dst ~to_untar ~user
       | `Symlink (src, target) ->
         let src = src_dir / src in
-        let dst = dst / Filename.basename src in
+        let dst = dst_dir / Filename.basename src in
         copy_symlink ~src ~target ~dst ~to_untar ~user
       | `Dir (src, items) ->
-        let dst =
-          if dst.[String.length dst - 1] = '/' then dst / Filename.basename src
-          else dst
-        in
+        let dst = dst_dir / Filename.basename src in
         copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
     )
   >>= fun () ->
+  Tar_lwt_unix.write_end to_untar
+
+let send_file ~src_dir ~src_manifest ~dst ~user ~to_untar =
+  begin
+    match src_manifest with
+    | `File (path, _) ->
+      let src = src_dir / path in
+      copy_file ~src ~dst ~to_untar ~user
+    | `Symlink (src, target) ->
+      let src = src_dir / src in
+      copy_symlink ~src ~target ~dst ~to_untar ~user
+    | `Dir (src, items) ->
+      copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
+  end >>= fun () ->
   Tar_lwt_unix.write_end to_untar
