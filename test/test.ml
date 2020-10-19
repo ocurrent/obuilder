@@ -65,17 +65,21 @@ let test_simple _switch () =
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
   Log.check "Check log" 
     {|FROM base
+      ;---> saved as .*
       /: (run (shell Append))
       Append
+      ;---> saved as .*
      |} log;
   (* Check result is cached *)
   Log.clear log;
   B.build builder context spec >>!= get store "output" >>= fun result ->
-  Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
+  Alcotest.(check build_result) "Final result cached" (Ok "base-distro\nrunner") result;
   Log.check "Check cached log"
     {|FROM base
+      ;---> using .* from cache
       /: (run (shell Append))
       Append
+      ;---> using .* from cache
      |} log;
   Lwt.return_unit
 
@@ -90,8 +94,10 @@ let test_prune _switch () =
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
   Log.check "Check log" 
     {|FROM base
+      ;---> saved as .*
       /: (run (shell Append))
       Append
+      ;---> saved as .*
      |} log;
   let log id = Logs.info (fun f -> f "Deleting %S" id) in
   B.prune ~log builder ~before:start 10 >>= fun n ->
@@ -116,8 +122,8 @@ let test_concurrent _switch () =
   Mock_sandbox.expect sandbox (mock_op ~output:`Append_cmd ());
   Mock_sandbox.expect sandbox (mock_op ~output:`Append_cmd ());
   let b1 = B.build builder context1 spec1 in
-  let b2 = B.build builder context2 spec2 in
   Log.await log1 "FROM base\n/: (run (shell A))\nA\n" >>= fun () ->
+  let b2 = B.build builder context2 spec2 in
   Log.await log2 "FROM base\n/: (run (shell A))\nA\n" >>= fun () ->
   Lwt.wakeup a_done (Ok ());
   b1 >>!= get store "output" >>= fun b1 ->
@@ -126,18 +132,24 @@ let test_concurrent _switch () =
   Alcotest.(check build_result) "Final result" (Ok "AC") b2;
   Log.check "Check AB log" 
     {| FROM base
+      ;---> saved as .*
        /: (run (shell A))
        A
+      ;---> saved as .*
        /: (run (shell B))
        B
+      ;---> saved as .*
      |}
     log1;
   Log.check "Check AC log" 
     {| FROM base
+      ;---> using .* from cache
        /: (run (shell A))
        A
+      ;---> saved as .*
        /: (run (shell C))
        C
+      ;---> saved as .*
      |}
     log2;
   Lwt.return ()
@@ -154,8 +166,8 @@ let test_concurrent_failure _switch () =
   let a, a_done = Lwt.wait () in
   Mock_sandbox.expect sandbox (mock_op ~result:a ());
   let b1 = B.build builder context1 spec1 in
-  let b2 = B.build builder context2 spec2 in
   Log.await log1 "FROM base\n/: (run (shell A))\nA\n" >>= fun () ->
+  let b2 = B.build builder context2 spec2 in
   Log.await log2 "FROM base\n/: (run (shell A))\nA\n" >>= fun () ->
   Lwt.wakeup a_done (Error (`Msg "Mock build failure"));
   b1 >>!= get store "output" >>= fun b1 ->
@@ -164,12 +176,14 @@ let test_concurrent_failure _switch () =
   Alcotest.(check build_result) "B2 result" (Error (`Msg "Mock build failure")) b2;
   Log.check "Check AB log" 
     {| FROM base
+      ;---> saved as .*
        /: (run (shell A))
        A
      |}
     log1;
   Log.check "Check AC log" 
     {| FROM base
+      ;---> using .* from cache
        /: (run (shell A))
        A
      |}
@@ -199,12 +213,14 @@ let test_concurrent_failure_2 _switch () =
   Alcotest.(check build_result) "B2 result" (Error (`Msg "Mock build failure")) b2;
   Log.check "Check AB log" 
     {| FROM base
+      ;---> saved as .*
        /: (run (shell A))
        A
      |}
     log1;
   Log.check "Check AC log" 
     {| FROM base
+      ;---> using .* from cache
        /: (run (shell A))
        A
      |}
@@ -226,6 +242,7 @@ let test_cancel _switch () =
   Alcotest.(check build_result) "Final result" (Error `Cancelled) result;
   Log.check "Check log" 
     {|FROM base
+      ;---> saved as .*
       /: (run (shell Wait))
       Wait
      |} log;
@@ -244,14 +261,15 @@ let test_cancel_2 _switch () =
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
   let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
   let b1 = B.build builder context1 spec in
-  let b2 = B.build builder context2 spec in
   Log.await log1 "FROM base\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  let b2 = B.build builder context2 spec in
   Log.await log2 "FROM base\n/: (run (shell Wait))\nWait\n" >>= fun () ->
   Lwt_switch.turn_off switch1 >>= fun () ->
   b1 >>= fun result1 ->
   Alcotest.(check build_result) "User 1 result" (Error `Cancelled) result1;
   Log.check "Check log" 
     {|FROM base
+      ;---> saved as .*
       /: (run (shell Wait))
       Wait
      |} log1;
@@ -260,8 +278,10 @@ let test_cancel_2 _switch () =
   Alcotest.(check build_result) "Final result" (Ok "ok") result2;
   Log.check "Check log" 
     {|FROM base
+      ;---> using .* from cache
       /: (run (shell Wait))
       Wait
+      ;---> saved as .*
      |} log2;
   Lwt.return_unit
 
@@ -278,14 +298,15 @@ let test_cancel_3 _switch () =
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
   let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
   let b1 = B.build builder context1 spec in
-  let b2 = B.build builder context2 spec in
   Log.await log1 "FROM base\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  let b2 = B.build builder context2 spec in
   Log.await log2 "FROM base\n/: (run (shell Wait))\nWait\n" >>= fun () ->
   Lwt_switch.turn_off switch1 >>= fun () ->
   b1 >>= fun result1 ->
   Alcotest.(check build_result) "User 1 result" (Error `Cancelled) result1;
   Log.check "Check log" 
     {|FROM base
+      ;---> saved as .*
       /: (run (shell Wait))
       Wait
      |} log1;
@@ -294,6 +315,7 @@ let test_cancel_3 _switch () =
   Alcotest.(check build_result) "User 2 result" (Error `Cancelled) result2;
   Log.check "Check log" 
     {|FROM base
+      ;---> using .* from cache
       /: (run (shell Wait))
       Wait
      |} log2;
