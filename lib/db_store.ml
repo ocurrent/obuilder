@@ -9,7 +9,7 @@ module Make (Raw : S.STORE) = struct
     cancelled : unit Lwt.t;
     set_cancelled : unit Lwt.u;         (* Resolve this to cancel (when [users = 0]). *)
     log : Build_log.t Lwt.t;
-    result : (S.id, [`Cancelled | `Msg of string]) Lwt_result.t;
+    result : (([`Loaded | `Saved] * S.id), [`Cancelled | `Msg of string]) Lwt_result.t;
   }
 
   module Builds = Map.Make(String)
@@ -42,26 +42,60 @@ module Make (Raw : S.STORE) = struct
       )
     )
 
+  (* Get the result for [id], either by loading it from the disk cache
+     or by doing a new build using [fn]. We only run one instance of this
+     at a time for a single [id]. *)
+  let get_build t ~base ~id ~cancelled ~set_log fn =
+    match Raw.result t.raw id with
+    | Some dir ->
+      let now = Unix.(gmtime (gettimeofday ())) in
+      Dao.set_used t.dao ~id ~now;
+      let log_file = dir / "log" in
+      begin
+        if Sys.file_exists log_file then Build_log.of_saved log_file
+        else Lwt.return Build_log.empty
+      end >>= fun log ->
+      Lwt.wakeup set_log log;
+      Lwt_result.return (`Loaded, id)
+    | None ->
+      Raw.build t.raw ?base ~id (fun dir ->
+          let log_file = dir / "log" in
+          if Sys.file_exists log_file then Unix.unlink log_file;
+          Build_log.create log_file >>= fun log ->
+          Lwt.wakeup set_log log;
+          fn ~cancelled ~log dir
+        )
+      >>!= fun () ->
+      let now = Unix.(gmtime (gettimeofday () )) in
+      Dao.add t.dao ?parent:base ~id ~now;
+      Lwt_result.return (`Saved, id)
+
+  let log_ty client_log ~id = function
+    | `Loaded -> client_log `Note (Fmt.strf "---> using %S from cache" id)
+    | `Saved -> client_log `Note (Fmt.strf "---> saved as %S" id)
+
   (* Check to see if we're in the process of building [id].
      If so, just tail the log from that.
-     If not, call [fn set_log] to start a new build.
-     [fn] should set the log being used as soon as it knows it
+     If not, use [get_build] to get the build.
+     [get_build] should set the log being used as soon as it knows it
      (this can't happen until we've created the temporary directory
      in the underlying store). *)
-  let rec share_build ?switch t ~log:client_log id fn =
+  let rec build ?switch t ?base ~id ~log:client_log fn =
     match Builds.find_opt id t.in_progress with
     | Some existing when existing.users = 0 ->
       client_log `Note ("Waiting for previous build to finish cancelling");
       assert (Lwt.is_sleeping existing.result);
       existing.result >>= fun _ ->
-      share_build ?switch t ~log:client_log id fn
+      build ?switch t ?base ~id ~log:client_log fn
     | Some existing ->
       (* We're already building this, and the build hasn't been cancelled. *)
       existing.users <- existing.users + 1;
       existing.log >>= fun log ->
       Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref existing; Lwt.return_unit) >>= fun () ->
       Build_log.tail ?switch log (client_log `Output) >>!= fun () ->
-      existing.result
+      existing.result >>!= fun (ty, r) ->
+      log_ty client_log ~id ty;
+      Lwt_result.return r
     | None ->
       let result, set_result = Lwt.wait () in
       let log, set_log = Lwt.wait () in
@@ -73,7 +107,7 @@ module Make (Raw : S.STORE) = struct
       Lwt.async
         (fun () ->
            Lwt.try_bind
-             (fun () -> fn ~cancelled set_log)
+             (fun () -> get_build t ~base ~id ~cancelled ~set_log fn)
              (fun r ->
                 t.in_progress <- Builds.remove id t.in_progress;
                 Lwt.wakeup_later set_result r;
@@ -87,38 +121,9 @@ module Make (Raw : S.STORE) = struct
              )
         );
       tail_log >>!= fun () ->
-      result
-
-  let build ?switch t ?base ~id ~log fn =
-    share_build ?switch t id ~log @@ fun ~cancelled set_log ->
-    match Raw.result t.raw id with
-    | Some dir ->
-      log `Note (Fmt.strf "---> using cached result %S" id);
-      let now = Unix.(gmtime (gettimeofday ())) in
-      Dao.set_used t.dao ~id ~now;
-      let log_file = dir / "log" in
-      begin
-        if Sys.file_exists log_file then Build_log.of_saved log_file
-        else Lwt.return (Build_log.empty)
-      end >>= fun log ->
-      Lwt.wakeup set_log log;
-      Lwt_result.return id
-    | None ->
-      Raw.build t.raw ?base ~id (fun dir ->
-          let log_file = dir / "log" in
-          if Sys.file_exists log_file then Unix.unlink log_file;
-          Build_log.create log_file >>= fun log ->
-          Lwt.wakeup set_log log;
-          fn ~cancelled ~log dir
-        )
-      >>= function
-      | Ok () ->
-        let now = Unix.(gmtime (gettimeofday () )) in
-        Dao.add t.dao ?parent:(base :> string option) ~id ~now;
-        log `Note (Fmt.strf "---> saved as %S" id);
-        Lwt_result.return id
-      | Error _ as e ->
-        Lwt.return e
+      result >>!= fun (ty, r) ->
+      log_ty client_log ~id ty;
+      Lwt_result.return r
 
   let result t id = Raw.result t.raw id
   let cache ~user t = Raw.cache ~user t.raw

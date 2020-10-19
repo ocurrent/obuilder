@@ -17,8 +17,8 @@ let add t tag x =
   Logs.info (fun f -> f "%s: %S" t.label x);
   begin match tag with
     | `Heading -> Buffer.add_string t.buf (x ^ "\n")
+    | `Note -> Buffer.add_string t.buf (";" ^ x ^ "\n")
     | `Output -> Buffer.add_string t.buf x
-    | `Note -> ()
   end;
   Lwt_condition.broadcast t.cond ()
 
@@ -28,8 +28,14 @@ let contents t =
 let clear t =
   Buffer.clear t.buf
 
+let remove_notes x =
+  x
+  |> String.split_on_char '\n'
+  |> List.filter (fun x -> not (Astring.String.is_prefix ~affix:";" x))
+  |> String.concat "\n"
+
 let rec await t expect =
-  let got = Buffer.contents t.buf in
+  let got = Buffer.contents t.buf |> remove_notes in
   if got = expect then Lwt.return_unit
   else if String.length got > String.length expect then (
       Fmt.failwith "Log expected %S but got %S" expect got
