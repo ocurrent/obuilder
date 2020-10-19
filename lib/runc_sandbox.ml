@@ -21,7 +21,6 @@ module Json_config = struct
           ~options:[
             "bind";
             "nosuid";
-            "noexec";
             "nodev";
           ]
 
