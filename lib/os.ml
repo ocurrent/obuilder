@@ -46,12 +46,6 @@ let sudo_result ?cwd ?stdin ?stdout ?stderr ~pp args =
   let args = if running_as_root then args else "sudo" :: args in
   exec_result ?cwd ?stdin ?stdout ?stderr ~pp args
 
-let with_open_out path fn =
-  Lwt_unix.openfile path Unix.[O_RDWR; O_CREAT; O_EXCL] 0o666 >>= fun fd ->
-  Lwt.finalize
-    (fun () -> fn fd)
-    (fun () -> Lwt_unix.close fd)
-
 let rec write_all fd buf ofs len =
   assert (len >= 0);
   if len = 0 then Lwt.return_unit
