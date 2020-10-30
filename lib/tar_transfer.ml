@@ -106,7 +106,10 @@ let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
         copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
     )
 
+let remove_leading_slashes = Astring.String.drop ~sat:((=) '/')
+
 let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
+  let dst_dir = remove_leading_slashes dst_dir in
   src_manifest |> Lwt_list.iter_s (function
       | `File (path, _) ->
         let src = src_dir / path in
@@ -124,6 +127,7 @@ let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
   Tar_lwt_unix.write_end to_untar
 
 let send_file ~src_dir ~src_manifest ~dst ~user ~to_untar =
+  let dst = remove_leading_slashes dst in
   begin
     match src_manifest with
     | `File (path, _) ->
