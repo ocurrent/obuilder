@@ -1,7 +1,5 @@
 # OBuilder
 
-Status: **experimental**
-
 OBuilder takes a build script (similar to a Dockerfile) and performs the steps in it in a sandboxed environment.
 
 After each step, OBuild uses the snapshot feature of the filesystem (ZFS or Btrfs) to store the state of the build.
@@ -258,6 +256,11 @@ The dockerfile should work the same way as the spec file, except for these limit
 - All `(network ...)` fields are ignored, as Docker does not allow per-step control of
   networking.
 
+## Licensing
+
+OBuilder is licensed under the Apache License, Version 2.0.
+See [LICENSE][] for the full license text.
 
 [Dockerfile]: https://docs.docker.com/engine/reference/builder/
 [OCluster]: https://github.com/ocurrent/ocluster
+[LICENSE]: ./LICENSE
