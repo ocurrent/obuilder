@@ -80,7 +80,7 @@ let copy_symlink ~src ~target ~dst ~to_untar ~user =
   Tar_lwt_unix.write_block hdr (fun _ -> Lwt.return_unit) to_untar
 
 let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
-  Fmt.pr "Copy dir %S -> %S@." src dst;
+  Log.debug(fun f -> f "Copy dir %S -> %S@." src dst);
   Lwt_unix.LargeFile.lstat (src_dir / src) >>= fun stat ->
   begin 
     let hdr = Tar.Header.make
@@ -106,7 +106,10 @@ let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
         copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
     )
 
+let remove_leading_slashes = Astring.String.drop ~sat:((=) '/')
+
 let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
+  let dst_dir = remove_leading_slashes dst_dir in
   src_manifest |> Lwt_list.iter_s (function
       | `File (path, _) ->
         let src = src_dir / path in
@@ -124,6 +127,7 @@ let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
   Tar_lwt_unix.write_end to_untar
 
 let send_file ~src_dir ~src_manifest ~dst ~user ~to_untar =
+  let dst = remove_leading_slashes dst in
   begin
     match src_manifest with
     | `File (path, _) ->

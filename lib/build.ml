@@ -201,7 +201,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     log `Heading (Fmt.strf "FROM %s" base);
     let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log:_ tmp ->
-        Fmt.pr "Base image not present; importing %S...@." base;
+        Log.info (fun f -> f "Base image not present; importing %S...@." base);
         let rootfs = tmp / "rootfs" in
         Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
         (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
