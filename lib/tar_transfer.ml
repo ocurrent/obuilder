@@ -80,7 +80,7 @@ let copy_symlink ~src ~target ~dst ~to_untar ~user =
   Tar_lwt_unix.write_block hdr (fun _ -> Lwt.return_unit) to_untar
 
 let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
-  Fmt.pr "Copy dir %S -> %S@." src dst;
+  Log.debug(fun f -> f "Copy dir %S -> %S@." src dst);
   Lwt_unix.LargeFile.lstat (src_dir / src) >>= fun stat ->
   begin 
     let hdr = Tar.Header.make
