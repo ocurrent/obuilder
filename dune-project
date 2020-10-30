@@ -8,10 +8,12 @@
 (source (github ocurrent/obuilder))
 (authors "talex5@gmail.com")
 (maintainers "talex5@gmail.com")
+(documentation "https://ocurrent.github.io/obuilder/")
 
 (package
  (name obuilder)
  (synopsis "Run build scripts for CI")
+ (description "OBuilder takes a build script (similar to a Dockerfile) and performs the steps in it in a sandboxed environment.")
  (depends
   lwt
   astring
@@ -34,6 +36,7 @@
 (package
  (name obuilder-spec)
  (synopsis "Build specification format")
+ (description "A library for constructing, reading and writing OBuilder build specification files.")
  (depends
   sexplib
   astring
