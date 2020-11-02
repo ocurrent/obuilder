@@ -17,7 +17,7 @@
  (depends
   lwt
   astring
-  fmt
+  (fmt (>= 0.8.9))
   logs
   cmdliner
   tar-unix
@@ -27,7 +27,6 @@
   ppx_sexp_conv
   sha
   sqlite3
-  dockerfile
   obuilder-spec
   (ocaml (>= 4.10.0))
   (alcotest-lwt :with-test)
@@ -42,6 +41,6 @@
   astring
   ppx_deriving
   ppx_sexp_conv
-  dockerfile
+  (dockerfile (>= 6.6.0))
   (ocaml (>= 4.10.0))
 ))
