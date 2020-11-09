@@ -12,7 +12,7 @@ depends: [
   "dune" {>= "2.7"}
   "lwt"
   "astring"
-  "fmt"
+  "fmt" {>= "0.8.9"}
   "logs"
   "cmdliner"
   "tar-unix"
@@ -22,7 +22,6 @@ depends: [
   "ppx_sexp_conv"
   "sha"
   "sqlite3"
-  "dockerfile"
   "obuilder-spec"
   "ocaml" {>= "4.10.0"}
   "alcotest-lwt" {with-test}
