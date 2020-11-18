@@ -24,10 +24,15 @@ type t = {
 let ( / ) = Filename.concat
 
 module Btrfs = struct
+  (* Avoid doing multiple btrfs operations at once... maybe causes hangs *)
+  let lock = Lwt_mutex.create ()
+
   let btrfs ?(sudo=false) args =
     let args = "btrfs" :: args in
     let args = if sudo && not running_as_root then "sudo" :: args else args in
-    Os.exec ~stdout:`Dev_null args
+    Lwt_mutex.with_lock lock (fun () ->
+        Os.exec ~stdout:`Dev_null args
+      )
 
   let subvolume_create path =
     assert (not (Sys.file_exists path));
