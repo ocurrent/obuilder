@@ -5,7 +5,25 @@ let ( / ) = Filename.concat
 type t = {
   runc_state_dir : string;
   fast_sync : bool;
+  arches : string list;
 }
+
+let get_machine () =
+  let ch = Unix.open_process_in "uname -m" in
+  let arch = input_line ch in
+  match Unix.close_process_in ch with
+  | Unix.WEXITED 0 -> String.trim arch
+  | _ -> failwith "Failed to get arch with 'uname -m'"
+
+let get_arches () =
+  if Sys.unix then (
+    match get_machine () with
+    | "x86_64" -> ["SCMP_ARCH_X86_64"; "SCMP_ARCH_X86"; "SCMP_ARCH_X32"]
+    | "aarch64" -> ["SCMP_ARCH_AARCH64"; "SCMP_ARCH_ARM"]
+    | _ -> []
+  ) else (
+    []
+  )
 
 module Json_config = struct
   let mount ?(options=[]) ~ty ~src dst =
@@ -73,7 +91,15 @@ module Json_config = struct
     ] else [
     ]
 
-  let make {Config.cwd; argv; hostname; user; env; mounts; network} ~fast_sync ~config_dir ~results_dir : Yojson.Safe.t =
+  let seccomp_policy t =
+    let fields = [
+      "defaultAction", `String "SCMP_ACT_ALLOW";
+      "syscalls", `List (seccomp_syscalls ~fast_sync:t.fast_sync);
+    ] @ (if t.arches = [] then [] else ["architectures", strings t.arches])
+    in
+    `Assoc fields
+
+  let make {Config.cwd; argv; hostname; user; env; mounts; network} t ~config_dir ~results_dir : Yojson.Safe.t =
     let user =
       let { Obuilder_spec.uid; gid } = user in
       `Assoc [
@@ -222,10 +248,7 @@ module Json_config = struct
           "/proc/sys";
           "/proc/sysrq-trigger"
         ];
-        "seccomp", `Assoc [
-          "defaultAction", `String "SCMP_ACT_ALLOW";
-          "syscalls", `List (seccomp_syscalls ~fast_sync);
-        ];
+        "seccomp", seccomp_policy t;
       ];
     ]
 end  
@@ -243,7 +266,7 @@ let copy_to_log ~src ~dst =
 
 let run ~cancelled ?stdin:stdin ~log t config results_dir =
   Lwt_io.with_temp_dir ~prefix:"obuilder-runc-" @@ fun tmp ->
-  let json_config = Json_config.make config ~config_dir:tmp ~results_dir ~fast_sync:(t.fast_sync) in
+  let json_config = Json_config.make config ~config_dir:tmp ~results_dir t in
   Os.write_file ~path:(tmp / "config.json") (Yojson.Safe.pretty_to_string json_config ^ "\n") >>= fun () ->
   Os.write_file ~path:(tmp / "hosts") "127.0.0.1 localhost builder" >>= fun () ->
   let id = string_of_int !next_id in
@@ -281,4 +304,6 @@ let run ~cancelled ?stdin:stdin ~log t config results_dir =
 
 let create ?(fast_sync=false) ~runc_state_dir () =
   Os.ensure_dir runc_state_dir;
-  { runc_state_dir; fast_sync }
+  let arches = get_arches () in
+  Log.info (fun f -> f "Architectures for multi-arch system: %a" Fmt.(Dump.list string) arches);
+  { runc_state_dir; fast_sync; arches }
