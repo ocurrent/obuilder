@@ -4,6 +4,7 @@ let ( / ) = Filename.concat
 
 type t = {
   runc_state_dir : string;
+  fast_sync : bool;
 }
 
 module Json_config = struct
@@ -51,7 +52,28 @@ module Json_config = struct
     *)
   ]
 
-  let make {Config.cwd; argv; hostname; user; env; mounts; network} ~config_dir ~results_dir : Yojson.Safe.t =
+  let seccomp_syscalls ~fast_sync =
+    if fast_sync then [
+      `Assoc [
+        (* Sync calls are pointless for the builder, because if the computer crashes then we'll
+           just throw the build dir away and start again. And btrfs sync is really slow.
+           Based on https://bblank.thinkmo.de/using-seccomp-to-filter-sync-operations.html
+           Note: requires runc >= v1.0.0-rc92. *)
+        "names", strings [
+          "fsync";
+          "fdatasync";
+          "msync";
+          "sync";
+          "syncfs";
+          "sync_file_range";
+        ];
+        "action", `String "SCMP_ACT_ERRNO";
+        "errnoRet", `Int 0;                         (* Return error "success" *)
+      ];
+    ] else [
+    ]
+
+  let make {Config.cwd; argv; hostname; user; env; mounts; network} ~fast_sync ~config_dir ~results_dir : Yojson.Safe.t =
     let user =
       let { Obuilder_spec.uid; gid } = user in
       `Assoc [
@@ -199,7 +221,11 @@ module Json_config = struct
           "/proc/irq";
           "/proc/sys";
           "/proc/sysrq-trigger"
-        ]
+        ];
+        "seccomp", `Assoc [
+          "defaultAction", `String "SCMP_ACT_ALLOW";
+          "syscalls", `List (seccomp_syscalls ~fast_sync);
+        ];
       ];
     ]
 end  
@@ -217,7 +243,7 @@ let copy_to_log ~src ~dst =
 
 let run ~cancelled ?stdin:stdin ~log t config results_dir =
   Lwt_io.with_temp_dir ~prefix:"obuilder-runc-" @@ fun tmp ->
-  let json_config = Json_config.make config ~config_dir:tmp ~results_dir in
+  let json_config = Json_config.make config ~config_dir:tmp ~results_dir ~fast_sync:(t.fast_sync) in
   Os.write_file ~path:(tmp / "config.json") (Yojson.Safe.pretty_to_string json_config ^ "\n") >>= fun () ->
   Os.write_file ~path:(tmp / "hosts") "127.0.0.1 localhost builder" >>= fun () ->
   let id = string_of_int !next_id in
@@ -253,6 +279,6 @@ let run ~cancelled ?stdin:stdin ~log t config results_dir =
   if Lwt.is_sleeping cancelled then Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
   else Lwt_result.fail `Cancelled
 
-let create ~runc_state_dir =
+let create ?(fast_sync=false) ~runc_state_dir () =
   Os.ensure_dir runc_state_dir;
-  { runc_state_dir }
+  { runc_state_dir; fast_sync }

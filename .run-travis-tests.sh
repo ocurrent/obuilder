@@ -2,6 +2,9 @@
 set -eux
 export OPAMYES=true
 
+sudo wget https://github.com/opencontainers/runc/releases/download/v1.0.0-rc92/runc.amd64 -O /usr/local/bin/runc
+sudo chmod a+x /usr/local/bin/runc
+
 ZFS_LOOP=$(sudo losetup -f)
 dd if=/dev/zero of=/tmp/zfs.img bs=100M count=50
 sudo losetup -P $ZFS_LOOP /tmp/zfs.img

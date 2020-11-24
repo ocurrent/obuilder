@@ -55,6 +55,13 @@ in the context of some container. The store should therefore be configured so
 that other processes on the host (which might have the same IDs by coincidence)
 cannot reach them, e.g. by `chmod go-rwx /path/to/store`.
 
+Sync operations can be very slow, especially on btrfs. They're also
+unnecessary, since if the computer crashes then we'll just discard the whole
+build and start again. If you have runc version `v1.0.0-rc92` or later, you can
+pass the `--fast-sync` option, which installs a seccomp filter that skips all
+sync syscalls. However, if you attempt to use this with an earlier version of
+runc then sync operations will instead fail with `EPERM`.
+
 ## The build specification language
 
 The spec files are loosly based on the [Dockerfile][] format.
