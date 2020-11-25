@@ -20,16 +20,16 @@ let log tag msg =
   | `Note -> Fmt.pr "%a@." Fmt.(styled (`Fg `Yellow) string) msg
   | `Output -> output_string stdout msg; flush stdout
 
-let create_builder spec =
+let create_builder ?fast_sync spec =
   Obuilder.Store_spec.to_store spec >|= fun (Store ((module Store), store)) -> 
   let module Builder = Obuilder.Builder(Store)(Sandbox) in
-  let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") in
+  let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") ?fast_sync () in
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)
 
-let build store spec src_dir =
+let build fast_sync store spec src_dir =
   Lwt_main.run begin
-    create_builder store >>= fun (Builder ((module Builder), builder)) ->
+    create_builder ~fast_sync store >>= fun (Builder ((module Builder), builder)) ->
     let spec = Obuilder.Spec.stage_of_sexp (Sexplib.Sexp.load_sexp spec) in
     let context = Obuilder.Context.v ~log ~src_dir () in
     Builder.build builder context spec >>= function
@@ -94,9 +94,16 @@ let id =
     ~docv:"ID"
     []
 
+let fast_sync =
+  Arg.value @@
+  Arg.flag @@
+  Arg.info
+    ~doc:"Ignore sync syscalls (requires runc >= 1.0.0-rc92)"
+    ["fast-sync"]
+
 let build =
   let doc = "Build a spec file." in
-  Term.(const build $ store $ spec_file $ src_dir),
+  Term.(const build $ fast_sync $ store $ spec_file $ src_dir),
   Term.info "build" ~doc
 
 let delete =

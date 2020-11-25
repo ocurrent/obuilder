@@ -155,7 +155,7 @@ module Test(Store : S.STORE) = struct
     | Error `Cancelled -> assert false
 
   let stress_builds store =
-    let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") in
+    let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") ~fast_sync:true () in
     let builder = Build.v ~store ~sandbox in
     let pending = ref n_jobs in
     let running = ref 0 in
@@ -194,7 +194,7 @@ module Test(Store : S.STORE) = struct
     else Lwt.return_unit
 
   let prune store =
-    let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") in
+    let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") () in
     let builder = Build.v ~store ~sandbox in
     let log id = Logs.info (fun f -> f "Deleting %S" id) in
     let end_time = Unix.(gettimeofday () +. 60.0 |> gmtime) in
