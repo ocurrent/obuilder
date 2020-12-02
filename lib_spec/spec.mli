@@ -41,3 +41,11 @@ val env : string -> string -> op
 val user : uid:int -> gid:int -> op
 
 val root : user
+
+val pp_stage : stage Fmt.t
+(** [pp_stage f s] is similar to [Sexplib.Sexp.pp_hum f (sexp_of_stage s)], but
+    attempts to improve the layout slightly by putting each operation on its
+    own line. *)
+
+val pp_op : op Fmt.t
+(** [pp_op] formats [op] as an S-expression. *)
