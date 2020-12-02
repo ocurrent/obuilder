@@ -117,3 +117,28 @@ let user ~uid ~gid = `User { uid; gid }
 let root = { uid = 0; gid = 0 }
 
 let stage ~from ops = { from; ops }
+
+let rec pp_no_boxes f : Sexplib.Sexp.t -> unit = function
+  | List xs -> Fmt.pf f "(%a)" (Fmt.list ~sep:Fmt.sp pp_no_boxes) xs
+  | Atom _ as a -> Sexplib.Sexp.pp_hum f a
+
+let pp_one_line = Fmt.hbox pp_no_boxes
+
+let pp_op_sexp f : Sexplib.Sexp.t -> unit = function
+  | List (Atom ("copy") as op :: args) ->
+    Fmt.pf f "(%a @[<hv>%a@])"
+      Sexplib.Sexp.pp_hum op
+      (Fmt.list ~sep:Fmt.sp pp_one_line) args
+  | List (Atom ("run") as op :: args) ->
+    Fmt.pf f "(%a @[<v>%a@])"
+      Sexplib.Sexp.pp_hum op
+      (Fmt.list ~sep:Fmt.sp pp_one_line) args
+  | x -> Sexplib.Sexp.pp_hum f x
+
+let pp_stage f t =
+  match sexp_of_stage t with
+  | List lines ->
+    Fmt.pf f "(@[<v>%a@]@,)" (Fmt.list ~sep:Fmt.cut pp_op_sexp) lines
+  | x -> Sexplib.Sexp.pp_hum f x
+
+let pp_op = Fmt.using sexp_of_op pp_op_sexp

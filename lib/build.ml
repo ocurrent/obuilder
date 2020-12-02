@@ -142,8 +142,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         )
 
   let pp_op ~(context:Context.t) f op =
-    let sexp = Obuilder_spec.sexp_of_op op in
-    Fmt.pf f "@[<v2>%s: %a@]" context.workdir Sexplib.Sexp.pp_hum sexp
+    Fmt.pf f "@[<v2>%s: %a@]" context.workdir Obuilder_spec.pp_op op
 
   let update_workdir ~(context:Context.t) path =
     let workdir =
@@ -198,7 +197,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       (fun () -> Os.exec ["docker"; "rm"; "--"; cid])
 
   let get_base t ~log base =
-    log `Heading (Fmt.strf "FROM %s" base);
+    log `Heading (Fmt.strf "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
     let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log:_ tmp ->
         Log.info (fun f -> f "Base image not present; importing %S...@." base);
