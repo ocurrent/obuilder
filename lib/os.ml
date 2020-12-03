@@ -5,6 +5,23 @@ type env = (string * string) list [@@deriving sexp]
 
 let ( >>!= ) = Lwt_result.bind
 
+type unix_fd = {
+  raw : Unix.file_descr;
+  mutable needs_close : bool;
+}
+
+let close fd =
+  assert (fd.needs_close);
+  Unix.close fd.raw;
+  fd.needs_close <- false
+
+let ensure_closed_unix fd =
+  if fd.needs_close then close fd
+
+let ensure_closed_lwt fd =
+  if Lwt_unix.state fd = Lwt_unix.Closed then Lwt.return_unit
+  else Lwt_unix.close fd
+
 let pp_signal f x =
   let open Sys in
   if x = sigkill then Fmt.string f "kill"
@@ -13,8 +30,28 @@ let pp_signal f x =
 
 let pp_cmd = Fmt.box Fmt.(list ~sep:sp (quote string))
 
+let redirection = function
+  | `FD_move_safely x -> `FD_copy x.raw
+  | `Dev_null -> `Dev_null
+
+let close_redirection (x : [`FD_move_safely of unix_fd | `Dev_null]) =
+  match x with
+  | `FD_move_safely x -> ensure_closed_unix x
+  | `Dev_null -> ()
+
+(* stdin, stdout and stderr are copied to the child and then closed on the host.
+   They are closed at most once, so duplicates are OK. *)
 let default_exec ?cwd ?stdin ?stdout ?stderr ~pp argv =
-  Lwt_process.exec ?cwd ?stdin ?stdout ?stderr argv >|= function
+  let proc =
+    let stdin  = Option.map redirection stdin in
+    let stdout = Option.map redirection stdout in
+    let stderr = Option.map redirection stderr in
+    Lwt_process.exec ?cwd ?stdin ?stdout ?stderr argv
+  in
+  Option.iter close_redirection stdin;
+  Option.iter close_redirection stdout;
+  Option.iter close_redirection stderr;
+  proc >|= function
   | Unix.WEXITED n -> Ok n
   | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %d" pp x
   | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp pp_signal x
@@ -58,23 +95,6 @@ let write_file ~path contents =
   Lwt_io.(with_file ~mode:output) path @@ fun ch ->
   Lwt_io.write ch contents
 
-type unix_fd = {
-  raw : Unix.file_descr;
-  mutable needs_close : bool;
-}
-
-let close fd =
-  assert (fd.needs_close);
-  Unix.close fd.raw;
-  fd.needs_close <- false
-
-let ensure_closed_unix fd =
-  if fd.needs_close then close fd
-
-let ensure_closed_lwt fd =
-  if Lwt_unix.state fd = Lwt_unix.Closed then Lwt.return_unit
-  else Lwt_unix.close fd
-
 let with_pipe_from_child fn =
   let r, w = Lwt_unix.pipe_in () in
   let w = { raw = w; needs_close = true } in
@@ -101,10 +121,21 @@ let with_pipe_to_child fn =
        ensure_closed_lwt w
     )
 
-let pread argv =
+let with_pipe_between_children fn =
+  let r, w = Unix.pipe ~cloexec:true () in
+  let r = { raw = r; needs_close = true } in
+  let w = { raw = w; needs_close = true } in
+  Lwt.finalize
+    (fun () -> fn ~r ~w)
+    (fun () ->
+       ensure_closed_unix r;
+       ensure_closed_unix w;
+       Lwt.return_unit
+    )
+
+let pread ?stderr argv =
   with_pipe_from_child @@ fun ~r ~w ->
-  let child = exec ~stdout:(`FD_copy w.raw) argv in
-  close w;
+  let child = exec ~stdout:(`FD_move_safely w) ?stderr argv in
   let r = Lwt_io.(of_fd ~mode:input) r in
   Lwt.finalize
     (fun () -> Lwt_io.read r)

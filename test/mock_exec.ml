@@ -15,8 +15,9 @@ let base_tar =
 
 let with_fd x f =
   match x with
-  | `FD_copy fd ->
-    let copy = Unix.dup ~cloexec:true fd in
+  | `FD_move_safely fd ->
+    let copy = Unix.dup ~cloexec:true fd.Os.raw in
+    Os.close fd;
     Lwt.finalize
       (fun () -> f copy)
       (fun () -> Unix.close copy; Lwt.return ())
@@ -60,7 +61,21 @@ let mkdir = function
   | ["--mode=755"; "--"; path] -> Unix.mkdir path 0o755; Lwt_result.return 0
   | x -> Fmt.failwith "Unexpected mkdir %a" Fmt.(Dump.list string) x
 
-let exec ?cwd ?stdin ?stdout ?stderr:_ ~pp = function
+let closing redir fn =
+  Lwt.finalize fn
+    (fun () ->
+       begin match redir with
+         | Some (`FD_move_safely fd) -> Os.ensure_closed_unix fd
+         | _ -> ()
+       end;
+       Lwt.return_unit
+    )
+
+let exec ?cwd ?stdin ?stdout ?stderr ~pp cmd =
+  closing stdin @@ fun () ->
+  closing stdout @@ fun () ->
+  closing stderr @@ fun () ->
+  match cmd with
   | ("", argv) ->
     Fmt.pr "exec: %a@." Fmt.(Dump.array string) argv;
     begin match Array.to_list argv with

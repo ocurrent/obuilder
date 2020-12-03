@@ -205,19 +205,9 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
         (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
         with_container base (fun cid ->
-            let r, w = Unix.pipe ~cloexec:true () in
-            let exporter, tar =
-              Fun.protect
-                (fun () ->
-                   let exporter = Os.exec ~stdout:(`FD_copy w) ["docker"; "export"; "--"; cid] in
-                   let tar = Os.sudo ~stdin:(`FD_copy r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
-                   exporter, tar
-                )
-                ~finally:(fun () ->
-                    Unix.close r;
-                    Unix.close w
-                  )
-            in
+            Os.with_pipe_between_children @@ fun ~r ~w ->
+            let exporter = Os.exec ~stdout:(`FD_move_safely w) ["docker"; "export"; "--"; cid] in
+            let tar = Os.sudo ~stdin:(`FD_move_safely r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
             exporter >>= fun () ->
             tar
           ) >>= fun () ->
