@@ -133,7 +133,7 @@ let pp_op_sexp f : Sexplib.Sexp.t -> unit = function
     Fmt.pf f "(%a @[<v>%a@])"
       Sexplib.Sexp.pp_hum op
       (Fmt.list ~sep:Fmt.sp pp_one_line) args
-  | x -> Sexplib.Sexp.pp_hum f x
+  | x -> pp_one_line f x
 
 let pp_stage f t =
   match sexp_of_stage t with

@@ -273,16 +273,14 @@ let run ~cancelled ?stdin:stdin ~log t config results_dir =
   incr next_id;
   Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
   let cmd = ["runc"; "--root"; t.runc_state_dir; "run"; id] in
-  let stdout = `FD_copy out_w.raw in
+  let stdout = `FD_move_safely out_w in
   let stderr = stdout in
   let copy_log = copy_to_log ~src:out_r ~dst:log in
   let proc =
-    let stdin = Option.map (fun x -> `FD_copy x.Os.raw) stdin in
+    let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
     let pp f = Os.pp_cmd f config.argv in
     Os.sudo_result ~cwd:tmp ?stdin ~stdout ~stderr ~pp cmd
   in
-  Os.close out_w;
-  Option.iter Os.close stdin;
   Lwt.on_termination cancelled (fun () ->
       let rec aux () =
         if Lwt.is_sleeping proc then (
