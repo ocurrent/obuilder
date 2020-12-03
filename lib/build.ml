@@ -189,9 +189,23 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
           | Some _ as pair -> pair
       )
 
-  let with_container base fn =
-    Os.pread ["docker"; "create"; "--"; base] >>= fun cid ->
-    let cid = String.trim cid in
+  let copy_to_log ~src ~dst =
+    let buf = Bytes.create 4096 in
+    let rec aux () =
+      Lwt_unix.read src buf 0 (Bytes.length buf) >>= function
+      | 0 -> Lwt.return_unit
+      | n -> Build_log.write dst (Bytes.sub_string buf 0 n) >>= aux
+    in
+    aux ()
+
+  let with_container ~log base fn =
+    Os.with_pipe_from_child (fun ~r ~w ->
+        (* We might need to do a pull here, so log the output to show progress. *)
+        let copy = copy_to_log ~src:r ~dst:log in
+        Os.pread ~stderr:(`FD_move_safely w) ["docker"; "create"; "--"; base] >>= fun cid ->
+        copy >|= fun () ->
+        String.trim cid
+      ) >>= fun cid ->
     Lwt.finalize
       (fun () -> fn cid)
       (fun () -> Os.exec ["docker"; "rm"; "--"; cid])
@@ -199,12 +213,12 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
   let get_base t ~log base =
     log `Heading (Fmt.strf "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
     let id = Sha256.to_hex (Sha256.string base) in
-    Store.build t.store ~id ~log (fun ~cancelled:_ ~log:_ tmp ->
+    Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
         Log.info (fun f -> f "Base image not present; importing %S...@." base);
         let rootfs = tmp / "rootfs" in
         Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
         (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
-        with_container base (fun cid ->
+        with_container ~log base (fun cid ->
             Os.with_pipe_between_children @@ fun ~r ~w ->
             let exporter = Os.exec ~stdout:(`FD_move_safely w) ["docker"; "export"; "--"; cid] in
             let tar = Os.sudo ~stdin:(`FD_move_safely r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
