@@ -25,12 +25,12 @@ type op = [
   | `Env of (string * string)
 ] [@@deriving sexp]
 
-type stage = {
+type t = {
   from : string;
   ops : op list;
 } [@@deriving sexp]
 
-val stage : from:string -> op list -> stage
+val stage : from:string -> op list -> t
 
 val comment : ('a, unit, string, op) format4 -> 'a
 val workdir : string -> op
@@ -42,8 +42,8 @@ val user : uid:int -> gid:int -> op
 
 val root : user
 
-val pp_stage : stage Fmt.t
-(** [pp_stage f s] is similar to [Sexplib.Sexp.pp_hum f (sexp_of_stage s)], but
+val pp : t Fmt.t
+(** [pp f s] is similar to [Sexplib.Sexp.pp_hum f (sexp_of_t s)], but
     attempts to improve the layout slightly by putting each operation on its
     own line. *)
 

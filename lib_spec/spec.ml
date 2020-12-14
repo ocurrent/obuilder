@@ -92,19 +92,19 @@ let op_of_sexp x =
     op_of_sexp (List (Atom name :: args))
   | x -> Fmt.failwith "Invalid op: %a" Sexplib.Sexp.pp_hum x
 
-type stage = {
+type t = {
   from : string;
   ops : op list;
 }
 
-let sexp_of_stage { from; ops } =
+let sexp_of_t { from; ops } =
   let open Sexplib.Sexp in
   List (List [ Atom "from"; Atom from ] :: List.map sexp_of_op ops)
 
-let stage_of_sexp = function
+let t_of_sexp = function
   | Sexplib.Sexp.List (List [ Atom "from"; Atom from ] :: ops) ->
     { from; ops = List.map op_of_sexp ops }
-  | x -> Fmt.failwith "Invalid stage: %a" Sexplib.Sexp.pp_hum x
+  | x -> Fmt.failwith "Invalid spec: %a" Sexplib.Sexp.pp_hum x
 
 let comment fmt = fmt |> Printf.ksprintf (fun c -> `Comment c)
 let workdir x = `Workdir x
@@ -135,8 +135,8 @@ let pp_op_sexp f : Sexplib.Sexp.t -> unit = function
       (Fmt.list ~sep:Fmt.sp pp_one_line) args
   | x -> pp_one_line f x
 
-let pp_stage f t =
-  match sexp_of_stage t with
+let pp f t =
+  match sexp_of_t t with
   | List lines ->
     Fmt.pf f "(@[<v>%a@]@,)" (Fmt.list ~sep:Fmt.cut pp_op_sexp) lines
   | x -> Sexplib.Sexp.pp_hum f x

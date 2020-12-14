@@ -30,7 +30,7 @@ let create_builder ?fast_sync spec =
 let build fast_sync store spec src_dir =
   Lwt_main.run begin
     create_builder ~fast_sync store >>= fun (Builder ((module Builder), builder)) ->
-    let spec = Obuilder.Spec.stage_of_sexp (Sexplib.Sexp.load_sexp spec) in
+    let spec = Obuilder.Spec.t_of_sexp (Sexplib.Sexp.load_sexp spec) in
     let context = Obuilder.Context.v ~log ~src_dir () in
     Builder.build builder context spec >>= function
     | Ok x ->
@@ -52,7 +52,7 @@ let delete store id =
 
 let dockerfile buildkit spec =
   Sexplib.Sexp.load_sexp spec
-  |> Obuilder_spec.stage_of_sexp
+  |> Obuilder_spec.t_of_sexp
   |> Obuilder_spec.Docker.dockerfile_of_spec ~buildkit
   |> Dockerfile.string_of_t
   |> print_endline
