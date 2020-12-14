@@ -1,5 +1,11 @@
 open Sexplib.Std
 
+module Scope = Set.Make(String)         (* Nested builds in scope *)
+
+type sexp = Sexplib.Sexp.t =
+  | Atom of string
+  | List of sexp list
+
 (* Convert fields matched by [p] from (name v1 v2 ...) to (name (v1 v2 ...)) *)
 let inflate_record p =
   let open Sexplib.Sexp in function
@@ -22,7 +28,22 @@ let deflate_record p =
     in
     List (List.map deflate xs)
 
+type data_source = [
+  | `Context
+  | `Build of string
+]
+
+let sexp_of_data_source = function
+  | `Context -> Atom "context"
+  | `Build name -> List [Atom "build"; Atom name]
+
+let data_source_of_sexp = function
+  | Atom "context" -> `Context
+  | List [Atom "build"; Atom name] -> `Build name
+  | x -> Fmt.failwith "Invalid data source: %a" Sexplib.Sexp.pp_hum x
+
 type copy = {
+  from : data_source [@default `Context] [@sexp_drop_default (=)];
   src : string list;
   dst : string;
   exclude : string list [@sexp.list];
@@ -79,7 +100,7 @@ let sexp_of_op x : Sexplib.Sexp.t =
         | _ -> failwith "Inline op must be a record!"
       else args
     in
-    Sexplib.Sexp.List (Sexplib.Sexp.Atom name :: args)
+    List (Atom name :: args)
   | x -> Fmt.failwith "Invalid op: %a" Sexplib.Sexp.pp_hum x
 
 let op_of_sexp x =
@@ -93,30 +114,43 @@ let op_of_sexp x =
   | x -> Fmt.failwith "Invalid op: %a" Sexplib.Sexp.pp_hum x
 
 type t = {
+  child_builds : (string * t) list;
   from : string;
   ops : op list;
 }
 
-let sexp_of_t { from; ops } =
-  let open Sexplib.Sexp in
-  List (List [ Atom "from"; Atom from ] :: List.map sexp_of_op ops)
+let rec sexp_of_t { child_builds; from; ops } =
+  let child_builds =
+    child_builds |> List.map (fun (name, spec) ->
+        List [ Atom "build"; Atom name; sexp_of_t spec ]
+      )
+  in
+  List (child_builds @ List [ Atom "from"; Atom from ] :: List.map sexp_of_op ops)
 
-let t_of_sexp = function
-  | Sexplib.Sexp.List (List [ Atom "from"; Atom from ] :: ops) ->
-    { from; ops = List.map op_of_sexp ops }
-  | x -> Fmt.failwith "Invalid spec: %a" Sexplib.Sexp.pp_hum x
+let rec t_of_sexp = function
+  | Atom _ as x -> Fmt.failwith "Invalid spec: %a" Sexplib.Sexp.pp_hum x
+  | List items ->
+    let rec aux acc = function
+      | List [ Atom "build"; Atom name; child_spec ] :: xs ->
+        let child = (name, t_of_sexp child_spec) in
+        aux (child :: acc) xs
+      | List [ Atom "from"; Atom from ] :: ops ->
+        let child_builds = List.rev acc in
+        { child_builds; from; ops = List.map op_of_sexp ops }
+      | x :: _ -> Fmt.failwith "Invalid spec item: %a" Sexplib.Sexp.pp_hum x
+      | [] -> Fmt.failwith "Invalid spec: missing (from)"
+    in
+    aux [] items
 
 let comment fmt = fmt |> Printf.ksprintf (fun c -> `Comment c)
 let workdir x = `Workdir x
 let shell xs = `Shell xs
 let run ?(cache=[]) ?(network=[]) fmt = fmt |> Printf.ksprintf (fun x -> `Run { shell = x; cache; network })
-let copy ?(exclude=[]) src ~dst = `Copy { src; dst; exclude }
+let copy ?(from=`Context) ?(exclude=[]) src ~dst = `Copy { from; src; dst; exclude }
 let env k v = `Env (k, v)
 let user ~uid ~gid = `User { uid; gid }
 
 let root = { uid = 0; gid = 0 }
-
-let stage ~from ops = { from; ops }
 
 let rec pp_no_boxes f : Sexplib.Sexp.t -> unit = function
   | List xs -> Fmt.pf f "(%a)" (Fmt.list ~sep:Fmt.sp pp_no_boxes) xs
@@ -124,15 +158,20 @@ let rec pp_no_boxes f : Sexplib.Sexp.t -> unit = function
 
 let pp_one_line = Fmt.hbox pp_no_boxes
 
-let pp_op_sexp f : Sexplib.Sexp.t -> unit = function
-  | List (Atom ("copy") as op :: args) ->
+let rec pp_op_sexp f : Sexplib.Sexp.t -> unit = function
+  | List [(Atom "build" as op); (Atom _ as name); List ops] ->
+    Fmt.pf f "(%a @[<v>%a@,(@[<v>%a@])@])"
+      Sexplib.Sexp.pp_hum op
+      Sexplib.Sexp.pp_hum name
+      (Fmt.list ~sep:Fmt.cut pp_op_sexp) ops
+  | List (Atom "copy" as op :: args) ->
     Fmt.pf f "(%a @[<hv>%a@])"
       Sexplib.Sexp.pp_hum op
       (Fmt.list ~sep:Fmt.sp pp_one_line) args
   | List (Atom ("run") as op :: args) ->
     Fmt.pf f "(%a @[<v>%a@])"
       Sexplib.Sexp.pp_hum op
-      (Fmt.list ~sep:Fmt.sp pp_one_line) args
+      (Fmt.list ~sep:Fmt.cut pp_one_line) args
   | x -> pp_one_line f x
 
 let pp f t =
@@ -142,3 +181,30 @@ let pp f t =
   | x -> Sexplib.Sexp.pp_hum f x
 
 let pp_op = Fmt.using sexp_of_op pp_op_sexp
+
+let rec validate ?(scope=Scope.empty) { child_builds; from = _; ops } =
+  let scope =
+    List.fold_left (fun scope (name, spec) ->
+        validate ~scope spec;
+        Scope.add name scope
+      ) scope child_builds in
+  ops |> List.iter (function
+      | `Copy { from = `Build name; src = _; _ } as copy ->
+        if not (Scope.mem name scope) then (
+          let hints = Scope.elements scope in
+          let post f () = Fmt.pf f " in %a" pp_op copy in
+          Fmt.failwith "%a"
+            Fmt.(did_you_mean ~kind:"build" ~post (quote string)) (name, hints)
+        )
+      | _ -> ()
+    )
+
+let stage ?(child_builds=[]) ~from ops =
+  let t = { child_builds; from; ops } in
+  validate t;
+  t
+
+let t_of_sexp sexp =
+  let t = t_of_sexp sexp in
+  validate t;
+  t

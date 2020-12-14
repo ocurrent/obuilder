@@ -1,4 +1,5 @@
 type copy = {
+  from : [`Context | `Build of string];
   src : string list;
   dst : string;
   exclude : string list;
@@ -25,18 +26,19 @@ type op = [
   | `Env of (string * string)
 ] [@@deriving sexp]
 
-type t = {
+type t = private {
+  child_builds : (string * t) list;
   from : string;
   ops : op list;
 } [@@deriving sexp]
 
-val stage : from:string -> op list -> t
+val stage : ?child_builds:(string * t) list -> from:string -> op list -> t
 
 val comment : ('a, unit, string, op) format4 -> 'a
 val workdir : string -> op
 val shell : string list -> op
 val run : ?cache:Cache.t list -> ?network:string list -> ('a, unit, string, op) format4 -> 'a
-val copy : ?exclude:string list -> string list -> dst:string -> op
+val copy : ?from:[`Context | `Build of string] -> ?exclude:string list -> string list -> dst:string -> op
 val env : string -> string -> op
 val user : uid:int -> gid:int -> op
 

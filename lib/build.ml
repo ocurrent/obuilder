@@ -6,19 +6,25 @@ let ( >>!= ) = Lwt_result.bind
 
 let hostname = "builder"
 
+module Scope = Map.Make(String)
+
 module Context = struct
   type t = {
     switch : Lwt_switch.t option;
     env : Os.env;                       (* Environment in which to run commands. *)
     src_dir : string;                   (* Directory with files for copying. *)
-    user : Obuilder_spec.user;                   (* Container user to run as. *)
+    user : Obuilder_spec.user;          (* Container user to run as. *)
     workdir : string;                   (* Directory in the container namespace for cwd. *)
     shell : string list;
     log : S.logger;
+    scope : string Scope.t;             (* Nested builds that are in scope. *)
   }
 
   let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ~log ~src_dir () =
-    { switch; env; src_dir; user; workdir; shell; log }
+    { switch; env; src_dir; user; workdir; shell; log; scope = Scope.empty }
+
+  let with_binding name value t =
+    { t with scope = Scope.add name value t.scope }
 end
 
 module Saved_context = struct
@@ -96,9 +102,22 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     | [item] -> Ok (`Copy_item (item, dst))
     | _ -> Fmt.error_msg "When copying multiple items, the destination must end with '/'"
 
-  let copy t ~context ~base { Obuilder_spec.src; dst; exclude } =
-    let { Context.switch; src_dir; workdir; user; log; shell = _; env = _ } = context in
+  let copy t ~context ~base { Obuilder_spec.from; src; dst; exclude } =
+    let { Context.switch; src_dir; workdir; user; log; shell = _; env = _; scope } = context in
     let dst = if Filename.is_relative dst then workdir / dst else dst in
+    begin
+      match from with
+      | `Context -> Lwt_result.return src_dir
+      | `Build name ->
+        match Scope.find_opt name scope with
+        | None -> Fmt.failwith "Unknown build %S" name   (* (shouldn't happen; gets caught earlier) *)
+        | Some id ->
+          match Store.result t.store id with
+          | None ->
+            Lwt_result.fail (`Msg (Fmt.strf "Build result %S not found" id))
+          | Some dir ->
+            Lwt_result.return (dir / "rootfs")
+    end >>!= fun src_dir ->
     let src_manifest = sequence (List.map (Manifest.generate ~exclude ~src_dir) src) in
     match Result.bind src_manifest (to_copy_op ~dst) with
     | Error _ as e -> Lwt.return e
@@ -162,7 +181,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `User user -> k ~base ~context:{context with user}
       | `Run { shell = cmd; cache; network } ->
         let switch, run_input, log =
-          let { Context.switch; workdir; user; env; shell; log; src_dir = _ } = context in
+          let { Context.switch; workdir; user; env; shell; log; src_dir = _; scope = _ } = context in
           (switch, { base; workdir; user; env; cmd; shell; network }, log)
         in
         run t ~switch ~log ~cache run_input >>!= fun base ->
@@ -235,10 +254,22 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
     Lwt_result.return (id, env)
 
-  let build t context { Obuilder_spec.from = base; ops } =
+  let rec build ~scope t context { Obuilder_spec.child_builds; from = base; ops } =
+    let rec aux context = function
+      | [] -> Lwt_result.return context
+      | (name, child_spec) :: child_builds ->
+        context.Context.log `Heading Fmt.(strf "(build %S ...)" name);
+        build ~scope t context child_spec >>!= fun child_result ->
+        context.Context.log `Note Fmt.(strf "--> finished %S" name);
+        let context = Context.with_binding name child_result context in
+        aux context child_builds
+    in
+    aux context child_builds >>!= fun context ->
     get_base t ~log:context.Context.log base >>!= fun (id, env) ->
     let context = { context with env = context.env @ env } in
     run_steps t ~context ~base:id ops
+
+  let build = build ~scope:[]
 
   let delete ?log t id =
     Store.delete ?log t.store id
