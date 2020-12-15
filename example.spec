@@ -27,7 +27,7 @@
 	 (run
 	  (network host)
 	  (cache (opam-archives (target /home/opam/.opam/download-cache)))
-	  (shell "opam depext -y obuilder"))
+	  (shell "opam depext -yu obuilder"))
 	 ; Install OCaml dependencies
 	 (run
 	  (network host)
