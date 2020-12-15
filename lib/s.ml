@@ -87,7 +87,7 @@ module type BUILDER = sig
   val build :
     t ->
     context ->
-    Obuilder_spec.stage ->
+    Obuilder_spec.t ->
     (id, [`Cancelled | `Msg of string]) Lwt_result.t
 
   val delete : ?log:(id -> unit) -> t -> id -> unit Lwt.t

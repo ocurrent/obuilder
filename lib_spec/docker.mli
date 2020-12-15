@@ -1,4 +1,4 @@
-val dockerfile_of_spec : buildkit:bool -> Spec.stage -> Dockerfile.t
+val dockerfile_of_spec : buildkit:bool -> Spec.t -> Dockerfile.t
 (** [dockerfile_of_spec x] produces a Dockerfile that aims to be equivalent to [x].
 
     However, note that:
