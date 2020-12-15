@@ -71,8 +71,6 @@ which should make it easier to generate and consume it automatically.
 When performing a build, the user gives OBuilder a specification file (as described below),
 and a source directory, containing files which may be copied into the image using `copy`.
 
-At the moment, multi-stage builds are not supported, so a spec file is just a single stage, of the form:
-
 ```sexp
 ((from BASE) OP...)
 ```
@@ -98,6 +96,29 @@ By default:
 - The user is `(uid 0) (gid 0)`.
 - The workdir is `/`.
 - The shell is `/bin/bash -c`.
+
+### Multi-stage builds
+
+You can define nested builds and use the output from them in `copy` operations.
+For example:
+
+```sexp
+((build dev
+        ((from ocaml/opam:alpine-3.12-ocaml-4.11)
+         (user (uid 1000) (gid 1000))
+         (workdir /home/opam)
+         (run (shell "echo 'print_endline {|Hello, world!|}' > main.ml"))
+         (run (shell "opam exec -- ocamlopt -ccopt -static -o hello main.ml"))))
+ (from alpine:3.12)
+ (shell /bin/sh -c)
+ (copy (from (build dev))
+       (src /home/opam/hello)
+       (dst /usr/local/bin/hello))
+ (run (shell "hello")))
+```
+
+At the moment, the `(build ...)` items must appear before the `(from ...)` line.
+
 
 ### workdir
 
@@ -175,6 +196,7 @@ Currently, no other networks can be used, so the only options are `host` or an i
 
 ```sexp
 (copy
+ (from ...)?
  (src SRC...)
  (dst DST)
  (exclude EXCL...)?)
@@ -205,6 +227,9 @@ It has two forms:
 Files whose basenames are listed in `exclude` are ignored.
 If `exclude` is not given, the empty list is used.
 At present, glob patterns or full paths cannot be used here.
+
+If `(from (build NAME))` is given then the source directory is the root directory of the named nested build.
+Otherwise, it is the source directory provided by the user.
 
 Notes:
 

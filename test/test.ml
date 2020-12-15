@@ -444,7 +444,10 @@ let test_sexp () =
     Alcotest.(check string) name s (Fmt.strf "%a" Spec.pp spec)
   in
   test "copy" {|
-     ((from base)
+     ((build tools
+             ((from base)
+              (run (shell "make tools"))))
+      (from base)
       (comment "A test comment")
       (workdir /src)
       (run (shell "a command"))
@@ -452,6 +455,7 @@ let test_sexp () =
            (shell "a very very very very very very very very very very very very very very very long command"))
       (copy (src a b) (dst c))
       (copy (src a b) (dst c) (exclude .git _build))
+      (copy (from (build tools)) (src binary) (dst /usr/local/bin/))
       (env DEBUG 1)
       (user (uid 1) (gid 2))
      )|}
@@ -520,6 +524,18 @@ let test_docker () =
       (env DEBUG 1)
       (user (uid 1) (gid 2))
       (copy (src a b) (dst c))
+     ) |};
+  test ~buildkit:false "Multi-stage"
+    {| FROM base as tools
+       RUN make tools
+       FROM base
+       COPY --from=tools binary /usr/local/bin/
+    |} {|
+     ((build tools
+             ((from base)
+              (run (shell "make tools"))))
+      (from base)
+      (copy (from (build tools)) (src binary) (dst /usr/local/bin/))
      ) |}
 
 let manifest =
