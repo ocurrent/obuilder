@@ -59,7 +59,6 @@ let dockerfile buildkit spec =
   Sexplib.Sexp.load_sexp spec
   |> Obuilder_spec.t_of_sexp
   |> Obuilder_spec.Docker.dockerfile_of_spec ~buildkit
-  |> Dockerfile.string_of_t
   |> print_endline
 
 open Cmdliner
