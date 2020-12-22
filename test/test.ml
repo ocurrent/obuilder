@@ -429,14 +429,13 @@ let remove_line_indents = function
 let remove_indent s =
   String.split_on_char '\n' s
   |> remove_line_indents
-  |> List.filter ((<>) "")
   |> String.concat "\n"
 
 
 (* Check that parsing an S-expression and then serialising it again gets the same result. *)
 let test_sexp () =
   let test name s =
-    let s = remove_indent s in
+    let s = String.trim (remove_indent s) in
     let s1 = Sexplib.Sexp.of_string s in
     let spec = Spec.t_of_sexp s1 in
     let s2 = Spec.sexp_of_t spec in
@@ -463,7 +462,7 @@ let test_sexp () =
 let test_docker () =
   let test ~buildkit name expect sexp =
     let spec = Spec.t_of_sexp (Sexplib.Sexp.of_string sexp) in
-    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit spec |> Dockerfile.string_of_t in
+    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit spec in
     let expect = remove_indent expect in
     Alcotest.(check string) name expect got
   in
@@ -528,6 +527,7 @@ let test_docker () =
   test ~buildkit:false "Multi-stage"
     {| FROM base as tools
        RUN make tools
+
        FROM base
        COPY --from=tools binary /usr/local/bin/
     |} {|
