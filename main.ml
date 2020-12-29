@@ -21,9 +21,9 @@ let log tag msg =
   | `Output -> output_string stdout msg; flush stdout
 
 let create_builder ?fast_sync spec =
-  Obuilder.Store_spec.to_store spec >|= fun (Store ((module Store), store)) -> 
+  Obuilder.Store_spec.to_store spec >>= fun (Store ((module Store), store)) -> 
   let module Builder = Obuilder.Builder(Store)(Sandbox) in
-  let sandbox = Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") ?fast_sync () in
+  Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") ?fast_sync () >|= fun sandbox ->
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)
 

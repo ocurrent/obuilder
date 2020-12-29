@@ -1,6 +1,6 @@
 include S.SANDBOX
 
-val create : ?fast_sync:bool -> runc_state_dir:string -> unit -> t
+val create : ?fast_sync:bool -> runc_state_dir:string -> unit -> t Lwt.t
 (** [create dir] is a runc sandboxing system that keeps state in [dir].
     @param fast_sync Use seccomp to skip all sync syscalls. This is fast (and
                      safe, since we discard builds after a crash), but requires
