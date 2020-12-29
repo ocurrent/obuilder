@@ -88,7 +88,7 @@ module type BUILDER = sig
     t ->
     context ->
     Obuilder_spec.t ->
-    (id, [`Cancelled | `Msg of string]) Lwt_result.t
+    (id, [> `Cancelled | `Msg of string]) Lwt_result.t
 
   val delete : ?log:(id -> unit) -> t -> id -> unit Lwt.t
   (** [delete ?log t id] removes [id] from the store, along with all of its dependencies.
@@ -102,4 +102,9 @@ module type BUILDER = sig
       all of which were last used before [before].
       Returns the number of items removed.
       @param log Called just before deleting each item, so it can be displayed. *)
+
+  val healthcheck : ?timeout:float -> t -> (unit, [> `Msg of string]) Lwt_result.t
+  (** [healthcheck t] performs a check that [t] is working correctly.
+      @param timeout Cancel and report failure after this many seconds.
+                     This excludes the time to fetch the base image. *)
 end

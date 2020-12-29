@@ -49,6 +49,19 @@ let build fast_sync store spec src_dir =
       exit 1
   end
 
+let healthcheck fast_sync verbose store =
+  if verbose then
+    Logs.Src.set_level Obuilder.log_src (Some Logs.Info);
+  Lwt_main.run begin
+    create_builder ~fast_sync store >>= fun (Builder ((module Builder), builder)) ->
+    Builder.healthcheck builder >|= function
+    | Error (`Msg m) ->
+      Fmt.epr "Healthcheck failed: %s@." m;
+      exit 1
+    | Ok () ->
+      Fmt.pr "Healthcheck passed@."
+  end
+
 let delete store id =
   Lwt_main.run begin
     create_builder store >>= fun (Builder ((module Builder), builder)) ->
@@ -127,7 +140,19 @@ let dockerfile =
   Term.(const dockerfile $ buildkit $ spec_file),
   Term.info "dockerfile" ~doc
 
-let cmds = [build; delete; dockerfile]
+let verbose =
+  Arg.value @@
+  Arg.flag @@
+  Arg.info
+    ~doc:"Enable verbose logging"
+    ["verbose"]
+
+let healthcheck =
+  let doc = "Perform a self-test" in
+  Term.(const healthcheck $ fast_sync $ verbose $ store),
+  Term.info "healthcheck" ~doc
+
+let cmds = [build; delete; dockerfile; healthcheck]
 
 let default_cmd =
   let doc = "a command-line interface for OBuilder" in

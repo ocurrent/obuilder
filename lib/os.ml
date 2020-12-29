@@ -61,9 +61,10 @@ let lwt_process_exec = ref default_exec
 
 let exec_result ?cwd ?stdin ?stdout ?stderr ~pp argv =
   Logs.info (fun f -> f "Exec %a" pp_cmd argv);
-  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>!= function
-  | 0 -> Lwt_result.return ()
-  | n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
+  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>= function
+  | Ok 0 -> Lwt_result.return ()
+  | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
+  | Error e -> Lwt_result.fail (e : [`Msg of string] :> [> `Msg of string])
 
 let exec ?cwd ?stdin ?stdout ?stderr argv =
   Logs.info (fun f -> f "Exec %a" pp_cmd argv);

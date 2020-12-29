@@ -6,6 +6,14 @@ let ( >>!= ) = Lwt_result.bind
 
 let hostname = "builder"
 
+let healthcheck_base = "busybox"
+let healthcheck_ops =
+  let open Obuilder_spec in
+  [
+    shell ["/bin/sh"; "-c"];
+    run "echo healthcheck"
+  ]
+
 module Scope = Map.Make(String)
 
 module Context = struct
@@ -227,13 +235,13 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       ) >>= fun cid ->
     Lwt.finalize
       (fun () -> fn cid)
-      (fun () -> Os.exec ["docker"; "rm"; "--"; cid])
+      (fun () -> Os.exec ~stdout:`Dev_null ["docker"; "rm"; "--"; cid])
 
   let get_base t ~log base =
     log `Heading (Fmt.strf "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
     let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
-        Log.info (fun f -> f "Base image not present; importing %S...@." base);
+        Log.info (fun f -> f "Base image not present; importing %S..." base);
         let rootfs = tmp / "rootfs" in
         Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
         (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
@@ -269,13 +277,53 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     let context = { context with env = context.env @ env } in
     run_steps t ~context ~base:id ops
 
-  let build = build ~scope:[]
+  let build t context spec =
+    let r = build ~scope:[] t context spec in
+    (r : (string, [ `Cancelled | `Msg of string ]) Lwt_result.t :> (string, [> `Cancelled | `Msg of string ]) Lwt_result.t)
 
   let delete ?log t id =
     Store.delete ?log t.store id
 
   let prune ?log t ~before limit =
     Store.prune ?log t.store ~before limit
+
+  let log_to buffer tag x =
+    match tag with
+    | `Heading | `Note -> Buffer.add_string buffer (x ^ "\n")
+    | `Output -> Buffer.add_string buffer x
+
+  let healthcheck ?(timeout=10.0) t =
+    Os.with_pipe_from_child (fun ~r ~w ->
+        let pp f = Fmt.string f "docker version" in
+        let result = Os.exec_result ~pp ~stdout:`Dev_null ~stderr:(`FD_move_safely w) ["docker"; "version"] in
+        let r = Lwt_io.(of_fd ~mode:input) r ~close:Lwt.return in
+        Lwt_io.read r >>= fun err ->
+        result >>= function
+        | Ok () -> Lwt_result.return ()
+        | Error (`Msg m) -> Lwt_result.fail (`Msg (Fmt.str "%s@.%s" m (String.trim err)))
+      ) >>!= fun () ->
+    let buffer = Buffer.create 1024 in
+    let log = log_to buffer in
+    (* Get the base image first, before starting the timer. *)
+    let switch = Lwt_switch.create () in
+    let context = Context.v ~switch ~log ~src_dir:"/tmp" () in
+    get_base t ~log healthcheck_base >>= function
+    | Error (`Msg _) as x -> Lwt.return x
+    | Error `Cancelled -> failwith "Cancelled getting base image (shouldn't happen!)"
+    | Ok (id, env) ->
+      let context = { context with env } in
+      (* Start the timer *)
+      Lwt.async (fun () ->
+          Lwt_unix.sleep timeout >>= fun () ->
+          Lwt_switch.turn_off switch
+        );
+      run_steps t ~context ~base:id healthcheck_ops >>= function
+      | Ok id -> Store.delete t.store id >|= Result.ok
+      | Error (`Msg msg) as x ->
+        let log = String.trim (Buffer.contents buffer) in
+        if log = "" then Lwt.return x
+        else Lwt.return (Fmt.error_msg "%s@.%s" msg log)
+      | Error `Cancelled -> Lwt.return (Fmt.error_msg "Timeout running healthcheck")
 
   let v ~store ~sandbox =
     let store = Store.wrap store in

@@ -21,6 +21,8 @@ sudo chown $(whoami) /btrfs
 [ -d ~/.opam/4.11.1 ] || opam init --compiler=4.11.1
 opam install --deps-only -t .
 opam exec -- make
+opam exec -- dune exec -- obuilder healthcheck --store=btrfs:/btrfs
+opam exec -- dune exec -- obuilder healthcheck --store=zfs:zfs
 opam exec -- dune exec -- ./stress/stress.exe btrfs:/btrfs
 opam exec -- dune exec -- ./stress/stress.exe zfs:zfs
 
