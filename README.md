@@ -18,6 +18,12 @@ As present, the initial base image is fetched from Docker Hub using `docker pull
 OBuilder is designed to be used as a component of a build scheduler such as [OCluster][].
 However, there is also a command-line interface for testing.
 
+To check that the system is working correctly, you can run a healthcheck.
+This checks that Docker is running and then does a simple test build (pulling the `busybox` image if not already present):
+
+    $ obuilder healthcheck --store=zfs:tank
+    Healthcheck passed
+
 To build `example.spec` (which builds OBuilder itself) using the ZFS pool `tank` to cache the build results:
 
     $ obuilder build -f example.spec . --store=zfs:tank

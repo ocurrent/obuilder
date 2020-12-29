@@ -15,6 +15,8 @@ module Os = Os
 module Runc_sandbox = Runc_sandbox
 module Store_spec = Store_spec
 
+let log_src = Log.src
+
 (**/**)
 
 (* For unit-tests *)
