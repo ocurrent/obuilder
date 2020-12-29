@@ -300,8 +300,17 @@ let run ~cancelled ?stdin:stdin ~log t config results_dir =
   if Lwt.is_sleeping cancelled then Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
   else Lwt_result.fail `Cancelled
 
+let clean_runc dir =
+  Sys.readdir dir
+  |> Array.to_list
+  |> Lwt_list.iter_s (fun item ->
+      Log.warn (fun f -> f "Removing left-over runc container %S" item);
+      Os.sudo ["runc"; "--root"; dir; "delete"; item]
+    )
+
 let create ?(fast_sync=false) ~runc_state_dir () =
   Os.ensure_dir runc_state_dir;
   let arches = get_arches () in
   Log.info (fun f -> f "Architectures for multi-arch system: %a" Fmt.(Dump.list string) arches);
+  clean_runc runc_state_dir >|= fun () ->
   { runc_state_dir; fast_sync; arches }
