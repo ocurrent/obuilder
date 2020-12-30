@@ -24,7 +24,7 @@
   ppx_sexp_conv
   sha
   sqlite3
-  obuilder-spec
+  (obuilder-spec (= :version))
   (ocaml (>= 4.10.0))
   (alcotest-lwt :with-test)))
 (package
