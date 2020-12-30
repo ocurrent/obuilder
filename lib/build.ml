@@ -292,7 +292,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     | `Heading | `Note -> Buffer.add_string buffer (x ^ "\n")
     | `Output -> Buffer.add_string buffer x
 
-  let healthcheck ?(timeout=10.0) t =
+  let healthcheck ?(timeout=30.0) t =
     Os.with_pipe_from_child (fun ~r ~w ->
         let pp f = Fmt.string f "docker version" in
         let result = Os.exec_result ~pp ~stdout:`Dev_null ~stderr:(`FD_move_safely w) ["docker"; "version"] in
