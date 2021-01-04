@@ -17,7 +17,12 @@ type config = {
   dir : string;
 }[@@deriving sexp]
 
-let sandbox_type = "mock"
+let pp ppf = 
+  let fields = [
+    Fmt.field ~label:Fmt.string "dir" (fun (t : t) -> t.dir) Fmt.string;
+  ] in 
+  let r = Fmt.(braces @@ record fields) in 
+  Fmt.(pf ppf "mock = %a" r)
 
 module Saved_context = struct
   type t = {

@@ -13,7 +13,22 @@ type config = {
   fast_sync : bool;
 } [@@deriving sexp]
 
-let sandbox_type = "runc"
+let pp ppf =
+  let fields =
+    [
+      Fmt.field ~label:Fmt.string "runc_state_dir"
+        (fun (t : t) -> t.runc_state_dir)
+        Fmt.string;
+      Fmt.field ~label:Fmt.string "fast_sync"
+        (fun (t : t) -> t.fast_sync)
+        Fmt.bool;
+      Fmt.field ~label:Fmt.string "arches"
+        (fun (t : t) -> t.arches)
+        Fmt.(brackets @@ list ~sep:(fun ppf _ -> Fmt.string ppf ",") string);
+    ]
+  in
+  let r = Fmt.(braces @@ record fields) in
+  Fmt.(pf ppf "runc state:@, %a" r)
 
 let get_machine () =
   let ch = Unix.open_process_in "uname -m" in
@@ -404,7 +419,7 @@ let fast_sync =
   Arg.value @@
   Arg.opt Arg.bool false @@
   Arg.info
-    ~doc:"Install a seccomp filter that skips allsync syscalls"
+    ~doc:"Install a seccomp filter that skips all synchronous syscalls"
     ~docv:"FAST_SYNC"
     ["fast-sync"]
 
