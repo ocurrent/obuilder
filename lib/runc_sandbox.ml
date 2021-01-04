@@ -24,7 +24,7 @@ let pp ppf =
         Fmt.bool;
       Fmt.field ~label:Fmt.string "arches"
         (fun (t : t) -> t.arches)
-        Fmt.(brackets @@ list ~sep:(fun ppf _ -> Fmt.string ppf ",") string);
+        Fmt.(brackets @@ list ~sep:comma string);
     ]
   in
   let r = Fmt.(braces @@ record fields) in
