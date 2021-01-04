@@ -221,66 +221,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Shell shell ->
         k ~base ~context:{context with shell}
 
-  let export_env base : Config.env Lwt.t =
-    Os.pread ["docker"; "image"; "inspect";
-              "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|};
-              "--"; base] >|= fun env ->
-    String.split_on_char '\x00' env
-    |> List.filter_map (function
-        | "\n" -> None
-        | kv ->
-          match Astring.String.cut ~sep:"=" kv with
-          | None -> Fmt.failwith "Invalid environment in Docker image %S (should be 'K=V')" kv
-          | Some _ as pair -> pair
-      )
-
-  let copy_to_log ~src ~dst =
-    let buf = Bytes.create 4096 in
-    let rec aux () =
-      Lwt_unix.read src buf 0 (Bytes.length buf) >>= function
-      | 0 -> Lwt.return_unit
-      | n -> Build_log.write dst (Bytes.sub_string buf 0 n) >>= aux
-    in
-    aux ()
-
-  let with_container ~log base fn =
-    Os.with_pipe_from_child (fun ~r ~w ->
-        (* We might need to do a pull here, so log the output to show progress. *)
-        let copy = copy_to_log ~src:r ~dst:log in
-        Os.pread ~stderr:(`FD_move_safely w) ["docker"; "create"; "--"; base] >>= fun cid ->
-        copy >|= fun () ->
-        String.trim cid
-      ) >>= fun cid ->
-    Lwt.finalize
-      (fun () -> fn cid)
-      (fun () -> Os.exec ~stdout:`Dev_null ["docker"; "rm"; "--"; cid])
-
-  let get_base t ~log base =
-    log `Heading (Fmt.strf "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
-    let id = Sha256.to_hex (Sha256.string base) in
-    Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
-        Log.info (fun f -> f "Base image not present; importing %S..." base);
-        let rootfs = tmp / "rootfs" in
-        Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
-        (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
-        with_container ~log base (fun cid ->
-            Os.with_pipe_between_children @@ fun ~r ~w ->
-            let exporter = Os.exec ~stdout:(`FD_move_safely w) ["docker"; "export"; "--"; cid] in
-            let tar = Os.sudo ~stdin:(`FD_move_safely r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
-            exporter >>= fun () ->
-            tar
-          ) >>= fun () ->
-        export_env base >>= fun env ->
-        Os.write_file ~path:(tmp / "env")
-          (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
-        Lwt_result.return ()
-      )
-    >>!= fun id ->
-    let path = Option.get (Store.result t.store id) in
-    let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
-    Lwt_result.return (id, env)
-
-  let rec build ~scope t context { Obuilder_spec.child_builds; from = base; ops } =
+  let rec build ~scope t context { Obuilder_spec.child_builds; from; ops } =
     let rec aux context = function
       | [] -> Lwt_result.return context
       | (name, child_spec) :: child_builds ->
@@ -291,7 +232,18 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         aux context child_builds
     in
     aux context child_builds >>!= fun context ->
-    get_base t ~log:context.Context.log base >>!= fun (id, env) ->
+    let log = context.Context.log in 
+    let id = Sha256.to_hex (Sha256.string from) in
+    let f = Sandbox.from ~from ~log t.sandbox in 
+      (Store.build t.store ~id ~log f >>!= fun id -> 
+        (match Store.result t.store id with 
+        | Some path -> 
+            if Sys.file_exists @@ path / "env" then begin 
+              let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
+              Lwt_result.return (id, env)
+            end else Lwt_result.return (id, [])
+        | None -> Lwt_result.return (id, [])))
+      >>!= fun (id, env) ->
     let context = { context with env = context.env @ env } in
     run_steps t ~context ~base:id ops
 
@@ -325,7 +277,12 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     (* Get the base image first, before starting the timer. *)
     let switch = Lwt_switch.create () in
     let context = Context.v ~switch ~log ~src_dir:"/tmp" () in
-    get_base t ~log healthcheck_base >>= function
+    let id = Sha256.to_hex (Sha256.string healthcheck_base) in
+    let f = Sandbox.from ~from:healthcheck_base ~log t.sandbox in 
+    (Store.build t.store ~id ~log f >>!= fun id -> 
+      let path = Option.get (Store.result t.store id) in
+      let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
+      Lwt_result.return (id, env)) >>= function
     | Error (`Msg _) as x -> Lwt.return x
     | Error `Cancelled -> failwith "Cancelled getting base image (shouldn't happen!)"
     | Ok (id, env) ->

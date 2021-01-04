@@ -1,4 +1,5 @@
 open Lwt.Infix
+open Sexplib.Conv
 
 let ( / ) = Filename.concat
 
@@ -7,6 +8,12 @@ type t = {
   fast_sync : bool;
   arches : string list;
 }
+
+type config = {
+  fast_sync : bool;
+} [@@deriving sexp]
+
+let sandbox_type = "runc"
 
 let get_machine () =
   let ch = Unix.open_process_in "uname -m" in
@@ -26,6 +33,12 @@ let get_arches () =
   )
 
 let secret_file id = "secret-" ^ string_of_int id
+
+module Saved_context = struct
+  type t = {
+    env : Config.env;
+  } [@@deriving sexp]
+end
 
 module Json_config = struct
   let mount ?(options=[]) ~ty ~src dst =
@@ -93,7 +106,7 @@ module Json_config = struct
     ] else [
     ]
 
-  let seccomp_policy t =
+  let seccomp_policy (t : t) =
     let fields = [
       "defaultAction", `String "SCMP_ACT_ALLOW";
       "syscalls", `List (seccomp_syscalls ~fast_sync:t.fast_sync);
@@ -279,6 +292,52 @@ let copy_to_log ~src ~dst =
   in
   aux ()
 
+let export_env base : Config.env Lwt.t =
+  Os.pread ["docker"; "image"; "inspect";
+            "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|};
+            "--"; base] >|= fun env ->
+  String.split_on_char '\x00' env
+  |> List.filter_map (function
+      | "\n" -> None
+      | kv ->
+        match Astring.String.cut ~sep:"=" kv with
+        | None -> Fmt.failwith "Invalid environment in Docker image %S (should be 'K=V')" kv
+        | Some _ as pair -> pair
+    )
+
+let with_container ~log base fn =
+  Os.with_pipe_from_child (fun ~r ~w ->
+      (* We might need to do a pull here, so log the output to show progress. *)
+      let copy = copy_to_log ~src:r ~dst:log in
+      Os.pread ~stderr:(`FD_move_safely w) ["docker"; "create"; "--"; base] >>= fun cid ->
+      copy >|= fun () ->
+      String.trim cid
+    ) >>= fun cid ->
+  Lwt.finalize
+    (fun () -> fn cid)
+    (fun () -> Os.exec ~stdout:`Dev_null ["docker"; "rm"; "--"; cid])
+
+let from ~log ~from _t =
+  let base = from in 
+  log `Heading (Fmt.strf "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
+  (fun ~cancelled:_ ~log tmp ->
+      Log.info (fun f -> f "Base image not present; importing %S...@." base);
+      let rootfs = tmp / "rootfs" in
+      Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
+      (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
+      with_container ~log base (fun cid ->
+          Os.with_pipe_between_children @@ fun ~r ~w ->
+          let exporter = Os.exec ~stdout:(`FD_move_safely w) ["docker"; "export"; "--"; cid] in
+          let tar = Os.sudo ~stdin:(`FD_move_safely r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
+          exporter >>= fun () ->
+          tar
+        ) >>= fun () ->
+      export_env base >>= fun env ->
+      Os.write_file ~path:(tmp / "env")
+        (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
+      Lwt_result.return ()
+    )
+
 let run ~cancelled ?stdin:stdin ~log t config results_dir =
   Lwt_io.with_temp_dir ~perm:0o700 ~prefix:"obuilder-runc-" @@ fun tmp ->
   let json_config = Json_config.make config ~config_dir:tmp ~results_dir t in
@@ -329,9 +388,28 @@ let clean_runc dir =
       Os.sudo ["runc"; "--root"; dir; "delete"; item]
     )
 
-let create ?(fast_sync=false) ~runc_state_dir () =
-  Os.ensure_dir runc_state_dir;
-  let arches = get_arches () in
-  Log.info (fun f -> f "Architectures for multi-arch system: %a" Fmt.(Dump.list string) arches);
-  clean_runc runc_state_dir >|= fun () ->
-  { runc_state_dir; fast_sync; arches }
+let create ?state_dir (c : config) =
+  match state_dir with 
+    | None -> Fmt.failwith "Runc requires a state directory"
+    | Some runc_state_dir -> 
+        Os.ensure_dir runc_state_dir;
+        let arches = get_arches () in
+        Log.info (fun f -> f "Architectures for multi-arch system: %a" Fmt.(Dump.list string) arches);
+        clean_runc runc_state_dir >|= fun () -> 
+        { runc_state_dir; fast_sync = c.fast_sync; arches }
+
+open Cmdliner 
+
+let fast_sync =
+  Arg.value @@
+  Arg.opt Arg.bool false @@
+  Arg.info
+    ~doc:"Install a seccomp filter that skips allsync syscalls"
+    ~docv:"FAST_SYNC"
+    ["fast-sync"]
+
+let cmdliner : config Term.t = 
+  let make fast_sync = 
+    { fast_sync }
+  in
+  Term.(const make $ fast_sync)

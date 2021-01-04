@@ -15,10 +15,10 @@ let log tag msg =
   | `Note -> Fmt.pr "%a@." Fmt.(styled (`Fg `Yellow) string) msg
   | `Output -> output_string stdout msg; flush stdout
 
-let create_builder ?fast_sync spec =
+let create_builder spec conf =
   Obuilder.Store_spec.to_store spec >>= fun (Store ((module Store), store)) -> 
   let module Builder = Obuilder.Builder(Store)(Sandbox) in
-  Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") ?fast_sync () >|= fun sandbox ->
+  Sandbox.create ~state_dir:(Store.state_dir store / "runc") conf >|= fun sandbox ->
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)
 
@@ -28,9 +28,10 @@ let read_whole_file path =
   let len = in_channel_length ic in
   really_input_string ic len
 
-let build fast_sync store spec src_dir secrets =
+
+let build store spec conf src_dir secrets =
   Lwt_main.run begin
-    create_builder ~fast_sync store >>= fun (Builder ((module Builder), builder)) ->
+    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
     let spec =
       try Obuilder.Spec.t_of_sexp (Sexplib.Sexp.load_sexp spec)
       with Failure msg ->
@@ -51,11 +52,11 @@ let build fast_sync store spec src_dir secrets =
       exit 1
   end
 
-let healthcheck fast_sync verbose store =
+let healthcheck verbose store conf =
   if verbose then
     Logs.Src.set_level Obuilder.log_src (Some Logs.Info);
   Lwt_main.run begin
-    create_builder ~fast_sync store >>= fun (Builder ((module Builder), builder)) ->
+    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
     Builder.healthcheck builder >|= function
     | Error (`Msg m) ->
       Fmt.epr "Healthcheck failed: %s@." m;
@@ -64,9 +65,9 @@ let healthcheck fast_sync verbose store =
       Fmt.pr "Healthcheck passed@."
   end
 
-let delete store id =
+let delete store conf id =
   Lwt_main.run begin
-    create_builder store >>= fun (Builder ((module Builder), builder)) ->
+    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
     Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
   end
 
@@ -113,29 +114,22 @@ let id =
     ~docv:"ID"
     []
 
-let fast_sync =
-  Arg.value @@
-  Arg.flag @@
-  Arg.info
-    ~doc:"Ignore sync syscalls (requires runc >= 1.0.0-rc92)"
-    ["fast-sync"]
-
 let secrets =
   (Arg.value @@
-   Arg.(opt_all (pair ~sep:':' string file)) [] @@
-   Arg.info
-     ~doc:"Provide a secret under the form id:file"
-     ~docv:"SECRET"
-     ["secret"])
+    Arg.(opt_all (pair ~sep:':' string file)) [] @@
+    Arg.info
+      ~doc:"Provide a secret under the form id:file"
+      ~docv:"SECRET"
+      ["secret"])
 
 let build =
   let doc = "Build a spec file." in
-  Term.(const build $ fast_sync $ store $ spec_file $ src_dir $ secrets),
+  Term.(const build $ store $ spec_file $ Sandbox.cmdliner $ src_dir $ secrets),
   Term.info "build" ~doc
 
 let delete =
   let doc = "Recursively delete a cached build result." in
-  Term.(const delete $ store $ id),
+  Term.(const delete $ store $ Sandbox.cmdliner $ id),
   Term.info "delete" ~doc
 
 let buildkit =
@@ -159,7 +153,7 @@ let verbose =
 
 let healthcheck =
   let doc = "Perform a self-test" in
-  Term.(const healthcheck $ fast_sync $ verbose $ store),
+  Term.(const healthcheck $ verbose $ store  $ Sandbox.cmdliner),
   Term.info "healthcheck" ~doc
 
 let cmds = [build; delete; dockerfile; healthcheck]

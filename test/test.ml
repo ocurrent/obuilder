@@ -24,7 +24,7 @@ let get store path id =
 
 let with_config fn =
   Mock_store.with_store @@ fun store ->
-  let sandbox = Mock_sandbox.create (Mock_store.state_dir store / "sandbox") in
+  let sandbox = Mock_sandbox.mock_create { dir = Mock_store.state_dir store / "sandbox" } in
   let builder = B.v ~store ~sandbox in
   let src_dir = Mock_store.state_dir store / "src" in
   Os.ensure_dir src_dir;
@@ -668,7 +668,7 @@ let () =
         test_case "Cancel 3"   `Quick test_cancel_3;
         test_case "Cancel 4"   `Quick test_cancel_4;
         test_case "Cancel 5"   `Quick test_cancel_5;
-        test_case "Delete"     `Quick test_delete;
+        test_case "Delete"     `Quick test_delete; 
       ];
       "secrets", [
         test_case "Simple"     `Quick test_secrets_simple;

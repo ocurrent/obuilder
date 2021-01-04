@@ -64,6 +64,34 @@ end
 module type SANDBOX = sig
   type t
 
+  val sandbox_type : string
+  (** A string declaring the type of sandboxing environment *)
+
+  type config [@@deriving sexp]
+  (** The type of sandbox configurations *)
+
+  val cmdliner : config Cmdliner.Term.t 
+  (** [cmdliner] is used for command-line interfaces to generate the necessary flags 
+      and parameters to setup a specific sandbox's configuration. *)
+
+  val create : ?state_dir:string -> config -> t Lwt.t   
+  (** [create ?state_dir config] generates a new sandbox -- the state directory is used for 
+      runc environments where the store's state directory can be passed in, otherwise just leave 
+      it out. *)
+
+  val from : 
+    log:logger -> 
+    from:string ->
+    t -> 
+    cancelled:unit Lwt.t ->
+    log:Build_log.t ->
+    string -> (unit, [ `Cancelled | `Msg of string ]) result Lwt.t
+  (** [from t ~log ~from_stage] generates the function to be run as the initial build-step 
+      for the sandboxing environment using Obuilder's from stage. 
+      @param log Used for writing logs.
+      @param from The base template to build a new sandbox from (e.g. docker image hash).
+  *)
+
   val run :
     cancelled:unit Lwt.t ->
     ?stdin:Os.unix_fd ->

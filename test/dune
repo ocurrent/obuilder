@@ -2,6 +2,7 @@
   (name test)
   (package obuilder)
   (deps base.tar)
-  (libraries alcotest-lwt obuilder str))
+  (preprocess (pps ppx_sexp_conv))
+  (libraries alcotest-lwt obuilder str sexplib))
 
 (dirs :standard \ test1)

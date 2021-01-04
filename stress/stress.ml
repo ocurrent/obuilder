@@ -16,6 +16,8 @@ let assert_str expected got =
     exit 1
   )
 
+module Sandbox = Runc_sandbox
+
 module Test(Store : S.STORE) = struct
   let assert_output expected t id =
     match Store.result t id with
@@ -102,7 +104,6 @@ module Test(Store : S.STORE) = struct
       assert (x = Ok ());
       Lwt.return_unit
 
-  module Sandbox = Runc_sandbox
   module Build = Builder(Store)(Sandbox)
 
   let n_steps = 4
@@ -154,8 +155,8 @@ module Test(Store : S.STORE) = struct
     | Error (`Msg m) -> failwith m
     | Error `Cancelled -> assert false
 
-  let stress_builds store =
-    Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") ~fast_sync:true () >>= fun sandbox ->
+  let stress_builds store conf =
+    Sandbox.create ~state_dir:(Store.state_dir store / "runc") conf >>= fun sandbox ->
     let builder = Build.v ~store ~sandbox in
     let pending = ref n_jobs in
     let running = ref 0 in
@@ -193,8 +194,8 @@ module Test(Store : S.STORE) = struct
     if !failures > 0 then Fmt.failwith "%d failures!" !failures
     else Lwt.return_unit
 
-  let prune store =
-    Sandbox.create ~runc_state_dir:(Store.state_dir store / "runc") () >>= fun sandbox ->
+  let prune store conf =
+    Sandbox.create ~state_dir:(Store.state_dir store / "runc") conf >>= fun sandbox ->
     let builder = Build.v ~store ~sandbox in
     let log id = Logs.info (fun f -> f "Deleting %S" id) in
     let end_time = Unix.(gettimeofday () +. 60.0 |> gmtime) in
@@ -207,14 +208,14 @@ module Test(Store : S.STORE) = struct
     aux ()
 end
 
-let stress spec =
+let stress spec conf =
   Lwt_main.run begin
     Store_spec.to_store spec >>= fun (Store ((module Store), store)) ->
     let module T = Test(Store) in
     T.test_store store >>= fun () ->
     T.test_cache store >>= fun () ->
-    T.stress_builds store >>= fun () ->
-    T.prune store
+    T.stress_builds store conf >>= fun () ->
+    T.prune store conf
   end
 
 open Cmdliner
@@ -234,7 +235,7 @@ let store =
 
 let cmd =
   let doc = "Run stress tests." in
-  Term.(const stress $ store),
+  Term.(const stress $ store $ Sandbox.cmdliner),
   Term.info "stress" ~doc
 
 let () =
