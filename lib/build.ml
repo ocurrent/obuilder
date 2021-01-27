@@ -83,7 +83,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
              let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~network in
              Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
              Lwt_unix.close close_me >>= fun () ->
-             Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp
+             let write_log = `Merged (Build_log.write log) in
+             Sandbox.run ~cancelled ~stdin ~log:write_log t.sandbox config result_tmp
           )
           (fun () ->
              !to_release |> Lwt_list.iter_s (fun f -> f ())
@@ -149,6 +150,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
               ~network:[]
           in
           Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
+          let log = `Merged (Build_log.write log) in
           let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
           let send =
             (* If the sending thread finishes (or fails), close the writing socket

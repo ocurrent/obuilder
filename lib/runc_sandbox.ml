@@ -255,27 +255,47 @@ end
 
 let next_id = ref 0
 
+type output_source = [ `Stdout | `Stderr ]
+
+type log_function = string -> unit Lwt.t
+
+type log_handler = [ `Merged of log_function | `Tagged of output_source -> log_function ]
+
 let copy_to_log ~src ~dst =
   let buf = Bytes.create 4096 in
   let rec aux () =
     Lwt_unix.read src buf 0 (Bytes.length buf) >>= function
     | 0 -> Lwt.return_unit
-    | n -> Build_log.write dst (Bytes.sub_string buf 0 n) >>= aux
+    | n -> dst (Bytes.sub_string buf 0 n) >>= aux
   in
   aux ()
 
-let run ~cancelled ?stdin:stdin ~log t config results_dir =
+let run ~cancelled ?stdin:stdin ~(log: log_handler) t config results_dir =
   Lwt_io.with_temp_dir ~prefix:"obuilder-runc-" @@ fun tmp ->
   let json_config = Json_config.make config ~config_dir:tmp ~results_dir t in
   Os.write_file ~path:(tmp / "config.json") (Yojson.Safe.pretty_to_string json_config ^ "\n") >>= fun () ->
   Os.write_file ~path:(tmp / "hosts") "127.0.0.1 localhost builder" >>= fun () ->
   let id = string_of_int !next_id in
   incr next_id;
-  Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
   let cmd = ["runc"; "--root"; t.runc_state_dir; "run"; id] in
-  let stdout = `FD_move_safely out_w in
-  let stderr = stdout in
-  let copy_log = copy_to_log ~src:out_r ~dst:log in
+
+  let with_outputs fn =
+    Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
+    let stdout = `FD_move_safely out_w in
+    (* If we have a separate stderr log, setup a second pipe and log both streams *)
+    match log with
+      | `Merged log ->
+        let copy_stdout = copy_to_log ~src:out_r ~dst:log in
+        fn ~stdout ~stderr:stdout ~copy_log:copy_stdout
+      | `Tagged log ->
+        Os.with_pipe_from_child @@ fun ~r:err_r ~w:err_w ->
+        let stderr = `FD_move_safely err_w in
+        let copy_stdout = copy_to_log ~src:out_r ~dst:(log `Stdout) in
+        let copy_stderr = copy_to_log ~src:err_r ~dst:(log `Stderr) in
+        fn ~stdout ~stderr ~copy_log:(copy_stdout >>= fun () -> copy_stderr)
+  in
+  
+  with_outputs @@ fun ~stdout ~stderr ~copy_log ->
   let proc =
     let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
     let pp f = Os.pp_cmd f config.argv in
