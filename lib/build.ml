@@ -19,7 +19,7 @@ module Scope = Map.Make(String)
 module Context = struct
   type t = {
     switch : Lwt_switch.t option;
-    env : Os.env;                       (* Environment in which to run commands. *)
+    env : Config.env;                   (* Environment in which to run commands. *)
     src_dir : string;                   (* Directory with files for copying. *)
     user : Obuilder_spec.user;          (* Container user to run as. *)
     workdir : string;                   (* Directory in the container namespace for cwd. *)
@@ -37,7 +37,7 @@ end
 
 module Saved_context = struct
   type t = {
-    env : Os.env;
+    env : Config.env;
   } [@@deriving sexp]
 end
 
@@ -55,7 +55,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     base : S.id;
     workdir : string;
     user : Obuilder_spec.user;
-    env : Os.env;
+    env : Config.env;
     cmd : string;
     shell : string list;
     network : string list;
@@ -203,7 +203,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Shell shell ->
         k ~base ~context:{context with shell}
 
-  let export_env base : Os.env Lwt.t =
+  let export_env base : Config.env Lwt.t =
     Os.pread ["docker"; "image"; "inspect";
               "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|};
               "--"; base] >|= fun env ->

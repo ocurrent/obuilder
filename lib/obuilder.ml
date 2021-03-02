@@ -1,24 +1,32 @@
+let log_src = Log.src
+
+(** {2 Types} *)
+
 module S = S
 module Spec = Obuilder_spec
-module Config = Config
 module Context = Build.Context
-module type BUILDER = S.BUILDER with type context := Build.Context.t
-module Builder = Build.Make
-module Build_log = Build_log
+
+(** {2 Stores} *)
 
 module Btrfs_store = Btrfs_store
 module Zfs_store = Zfs_store
-
-module Db = Db
-module Os = Os
-
-module Runc_sandbox = Runc_sandbox
 module Store_spec = Store_spec
 
-let log_src = Log.src
+(** {2 Sandboxes} *)
+
+module Config = Config
+module Runc_sandbox = Runc_sandbox
+
+(** {2 Builders} *)
+
+module type BUILDER = S.BUILDER with type context := Build.Context.t
+module Builder = Build.Make
+module Build_log = Build_log
 
 (**/**)
 
 (* For unit-tests *)
 module Manifest = Manifest
 module Escape = Escape
+module Os = Os
+module Db = Db

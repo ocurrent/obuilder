@@ -1,3 +1,5 @@
+(** Store build results as ZFS snapshots. *)
+
 include S.STORE
 
 val create : pool:string -> t Lwt.t
