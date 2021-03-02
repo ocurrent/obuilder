@@ -1,3 +1,5 @@
+(** Configuration information to set up a store. *)
+
 open Lwt.Infix
 
 type t = [

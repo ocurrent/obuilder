@@ -1,3 +1,5 @@
+(** Sandbox builds using runc Linux containers. *)
+
 include S.SANDBOX
 
 val create : ?fast_sync:bool -> runc_state_dir:string -> unit -> t Lwt.t

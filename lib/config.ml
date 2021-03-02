@@ -1,3 +1,6 @@
+(** Configuration for a single sandboxed build step.
+    This is passed by the builder to the sandbox. *)
+
 open Sexplib.Std
 
 type env = (string * string) list [@@deriving sexp]

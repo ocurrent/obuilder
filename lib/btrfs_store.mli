@@ -1,3 +1,5 @@
+(** Store build results as Btrfs subvolumes. *)
+
 include S.STORE
 
 val create : string -> t Lwt.t
