@@ -1,7 +1,4 @@
 open Lwt.Infix
-open Sexplib.Std
-
-type env = (string * string) list [@@deriving sexp]
 
 let ( >>!= ) = Lwt_result.bind
 
