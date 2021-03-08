@@ -24,8 +24,11 @@ let pp_cache ~ctx f { Cache.id; target; buildkit_options } =
   in
   Fmt.pf f "%a" Fmt.(list ~sep:(unit ",") pp_pair) buildkit_options
 
-let pp_run ~ctx f { Spec.cache; shell; network = _ } =
-  Fmt.pf f "RUN %a%a" Fmt.(list (pp_cache ~ctx ++ const string " ")) cache pp_wrap shell
+let pp_tmpfs f target =
+  Fmt.pf f "--mount=type=tmpfs,target=%s" target
+
+let pp_run ~ctx f { Spec.cache; shell; network = _; tmpfs } =
+  Fmt.pf f "RUN %a%a%a" Fmt.(list (pp_cache ~ctx ++ const string " ")) cache (Fmt.list pp_tmpfs) tmpfs pp_wrap shell
 
 let pp_copy ~ctx f { Spec.from; src; dst; exclude = _ } =
   let from = match from with

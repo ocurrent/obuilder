@@ -59,6 +59,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     cmd : string;
     shell : string list;
     network : string list;
+    tmpfs : string list;
   } [@@deriving sexp_of]
 
   let run t ~switch ~log ~cache run_input =
@@ -68,7 +69,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       |> Sha256.string
       |> Sha256.to_hex
     in
-    let { base; workdir; user; env; cmd; shell; network } = run_input in
+    let { base; workdir; user; env; cmd; shell; network; tmpfs } = run_input in
     Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
         let to_release = ref [] in
         Lwt.finalize
@@ -80,7 +81,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
                )
              >>= fun mounts ->
              let argv = shell @ [cmd] in
-             let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~network in
+             let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~network ~tmpfs in
              Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
              Lwt_unix.close close_me >>= fun () ->
              Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp
@@ -147,6 +148,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
               ~env:["PATH", "/bin:/usr/bin"]
               ~mounts:[]
               ~network:[]
+              ~tmpfs:[]
           in
           Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
           let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
@@ -187,10 +189,10 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Comment _ -> k ~base ~context
       | `Workdir workdir -> k ~base ~context:(update_workdir ~context workdir)
       | `User user -> k ~base ~context:{context with user}
-      | `Run { shell = cmd; cache; network } ->
+      | `Run { shell = cmd; cache; network; tmpfs } ->
         let switch, run_input, log =
           let { Context.switch; workdir; user; env; shell; log; src_dir = _; scope = _ } = context in
-          (switch, { base; workdir; user; env; cmd; shell; network }, log)
+          (switch, { base; workdir; user; env; cmd; shell; network; tmpfs }, log)
         in
         run t ~switch ~log ~cache run_input >>!= fun base ->
         k ~base ~context

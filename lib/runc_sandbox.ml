@@ -99,7 +99,7 @@ module Json_config = struct
     in
     `Assoc fields
 
-  let make {Config.cwd; argv; hostname; user; env; mounts; network} t ~config_dir ~results_dir : Yojson.Safe.t =
+  let make {Config.cwd; argv; hostname; user; env; mounts; network; tmpfs} t ~config_dir ~results_dir : Yojson.Safe.t =
     let user =
       let { Obuilder_spec.uid; gid } = user in
       `Assoc [
@@ -225,6 +225,14 @@ module Json_config = struct
            ]
          else []
         ) @
+        List.map (fun target ->
+          mount target
+            ~ty:"tmpfs"
+            ~src:"tmpfs"
+            ~options:[
+              "size=6G";
+            ]
+        ) tmpfs @
         user_mounts mounts
       );
       "linux", `Assoc [
@@ -251,7 +259,7 @@ module Json_config = struct
         "seccomp", seccomp_policy t;
       ];
     ]
-end  
+end
 
 let next_id = ref 0
 
