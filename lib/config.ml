@@ -20,7 +20,8 @@ type t = {
   env : env;
   mounts : Mount.t list;
   network : string list;
+  tmpfs : string list;
 }
 
-let v ~cwd ~argv ~hostname ~user ~env ~mounts ~network =
-  { cwd; argv; hostname; user; env; mounts; network }
+let v ~cwd ~argv ~hostname ~user ~env ~mounts ~network ~tmpfs =
+  { cwd; argv; hostname; user; env; mounts; network; tmpfs }

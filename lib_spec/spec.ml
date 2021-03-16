@@ -62,11 +62,12 @@ type user = { uid : int; gid : int }
 type run = {
   cache : Cache.t list [@sexp.list];
   network : string list [@sexp.list];
+  tmpfs : string list [@sexp.list];
   shell : string;
 } [@@deriving sexp]
 
 let run_inlined = function
-  | "cache" | "network" -> true
+  | "cache" | "network" | "tmpfs" -> true
   | _ -> false
 
 let run_of_sexp x = run_of_sexp (inflate_record run_inlined x)
@@ -145,7 +146,7 @@ let rec t_of_sexp = function
 let comment fmt = fmt |> Printf.ksprintf (fun c -> `Comment c)
 let workdir x = `Workdir x
 let shell xs = `Shell xs
-let run ?(cache=[]) ?(network=[]) fmt = fmt |> Printf.ksprintf (fun x -> `Run { shell = x; cache; network })
+let run ?(cache=[]) ?(network=[]) ?(tmpfs=[]) fmt = fmt |> Printf.ksprintf (fun x -> `Run { shell = x; cache; network; tmpfs })
 let copy ?(from=`Context) ?(exclude=[]) src ~dst = `Copy { from; src; dst; exclude }
 let env k v = `Env (k, v)
 let user ~uid ~gid = `User { uid; gid }
