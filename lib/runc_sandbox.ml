@@ -211,6 +211,7 @@ module Json_config = struct
           ~ty:"bind"
           ~src:(config_dir / "hosts")
           ~options:[
+            "ro";
             "rbind";
             "rprivate"
           ] ::
@@ -219,6 +220,7 @@ module Json_config = struct
                ~ty:"bind"
                ~src:"/etc/resolv.conf"
                ~options:[
+                 "ro";
                  "rbind";
                  "rprivate"
                ]
