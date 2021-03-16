@@ -1,3 +1,17 @@
+### v0.3
+
+Security fix:
+
+- `resolv.conf` file should be mounted read-only.
+
+Other changes:
+
+- Make `Os` and `Db` modules private. Move the `env` type to `Config`, as that is used externally.
+
+- Fix license. It was copy-pasted from OCurrent, and still mentioned that project's `lib_ansi` library.
+
+- Require obuilder-spec package to be same version.
+
 ### v0.2
 
 - Add support for nested / multi-stage builds (@talex5 #48 #49).  
