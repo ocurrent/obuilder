@@ -62,6 +62,7 @@ type user = { uid : int; gid : int }
 type run = {
   cache : Cache.t list [@sexp.list];
   network : string list [@sexp.list];
+  secrets : Secret.t list [@sexp.list];
   shell : string;
 } [@@deriving sexp]
 
@@ -145,7 +146,7 @@ let rec t_of_sexp = function
 let comment fmt = fmt |> Printf.ksprintf (fun c -> `Comment c)
 let workdir x = `Workdir x
 let shell xs = `Shell xs
-let run ?(cache=[]) ?(network=[]) fmt = fmt |> Printf.ksprintf (fun x -> `Run { shell = x; cache; network })
+let run ?(cache=[]) ?(network=[]) ?(secrets=[]) fmt = fmt |> Printf.ksprintf (fun x -> `Run { shell = x; cache; network; secrets })
 let copy ?(from=`Context) ?(exclude=[]) src ~dst = `Copy { from; src; dst; exclude }
 let env k v = `Env (k, v)
 let user ~uid ~gid = `User { uid; gid }
