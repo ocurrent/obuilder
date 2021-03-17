@@ -537,6 +537,22 @@ let test_docker () =
               (run (shell "make tools"))))
       (from base)
       (copy (from (build tools)) (src binary) (dst /usr/local/bin/))
+     ) |};
+  test ~buildkit:true "Secrets"
+    {| FROM base as tools
+       RUN make tools
+
+       FROM base
+       RUN --mount=type=secret,id=a,target=/secrets/a,uid=0 --mount=type=secret,id=b,target=/secrets/b,uid=0 command1
+    |} {|
+     ((build tools
+            ((from base)
+             (run (shell "make tools"))))
+      (from base)
+      (run
+       (secrets (a (target /secrets/a))
+                (b (target /secrets/b)))
+       (shell "command1"))
      ) |}
 
 let manifest =
