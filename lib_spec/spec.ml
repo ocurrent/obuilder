@@ -67,7 +67,7 @@ type run = {
 } [@@deriving sexp]
 
 let run_inlined = function
-  | "cache" | "network" -> true
+  | "cache" | "network" | "secrets" -> true
   | _ -> false
 
 let run_of_sexp x = run_of_sexp (inflate_record run_inlined x)

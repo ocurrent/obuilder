@@ -615,15 +615,15 @@ let test_cache_id () =
   let test_secrets_simple _switch () =
     with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
     let log = Log.create "b" in
-    let context = Context.v ~src_dir ~log:(Log.add log) ~secrets:["test", "top secret value"] () in
-    let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/run/secrets/test" "test"] "Append" ]) in
+    let context = Context.v ~src_dir ~log:(Log.add log) ~secrets:["test", "top secret value"; "test2", ""] () in
+    let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/testsecret" "test"; Secret.v "test2"] "Append" ]) in
     Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
     B.build builder context spec >>!= get store "output" >>= fun result ->
     Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
     Log.check "Check b log"
       {| (from base)
         ;---> saved as .*
-         /: (run (secrets ((test (target /run/secrets/test))))
+         /: (run (secrets (test (target /testsecret)) (test2 (target /run/secrets/test2)))
          ........(shell Append))
          Append
         ;---> saved as .*
