@@ -181,18 +181,18 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     in
     { context with workdir }
 
-  let mount_secret (values : (string * string) list) (key: Obuilder_spec.Secret.t) =
-    match List.assoc_opt key.id values with
-    | None -> Error (`Msg ("Couldn't find value for requested secret '"^key.id^"'") )
-    | Some value -> Ok Config.Secret.{value; target=key.target}
+  let mount_secret (values : (string * string) list) (secret: Obuilder_spec.Secret.t) =
+    match List.assoc_opt secret.id values with
+    | None -> Error (`Msg ("Couldn't find value for requested secret '"^secret.id^"'") )
+    | Some value -> Ok Config.Secret.{value; target=secret.target}
 
-  let resolve_secrets (values : (string * string) list) (keys: Obuilder_spec.Secret.t list) =
+  let resolve_secrets (values : (string * string) list) (secrets: Obuilder_spec.Secret.t list) =
     let (>>=) = Result.bind in
     let (>>|) x y = Result.map y x in
     List.fold_left (fun result secret ->
       result >>= fun result ->
       mount_secret values secret >>| fun resolved_secret ->
-      (resolved_secret :: result) ) (Ok []) keys
+      (resolved_secret :: result) ) (Ok []) secrets
 
   let rec run_steps t ~(context:Context.t) ~base = function
     | [] -> Lwt_result.return base

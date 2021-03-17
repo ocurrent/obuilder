@@ -201,11 +201,12 @@ networks (if any).
 Currently, no other networks can be used, so the only options are `host` or an isolated private network.
 
 The `(secrets SECRET...)` field can be used to request values for chosen keys, mounted as read-only files in 
-the image. Each `SECRET` entry is under the form `(KEY (target PATH))`, where `KEY` is the secret key, and 
+the image. Each `SECRET` entry is under the form `(ID (target PATH))`, where `ID` selects the secret, and 
 `PATH` is the location of the mounted secret file within the container.
-The sandbox context API contains a `secrets` parameter to provide values to the runtime. If a requested key
-isn't provided with a value, the runtime fails.
-With the command line interface `obuilder`, use the `--secret KEY=VALUE` option to provide values.
+The sandbox context API contains a `secrets` parameter to provide values to the runtime.
+If a requested secret isn't provided with a value, the runtime fails.
+With the command line interface `obuilder`, use the `--secret ID:PATH` option to provide the path of the file
+containing the secret for `ID`.
 When used with Docker, make sure to use the **buildkit** syntax, as only buildkit supports a `--secret` option.
 (See https://docs.docker.com/develop/develop-images/build_enhancements/#new-docker-build-secret-information)
 
