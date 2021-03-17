@@ -233,7 +233,8 @@ module Json_config = struct
             ~src:(config_dir / "secret-" ^ key)
             ~options:[
               "rbind";
-              "rprivate"
+              "rprivate";
+              "ro";
             ]
         ) mount_secrets
          @
