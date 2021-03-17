@@ -26,10 +26,11 @@ module Context = struct
     shell : string list;
     log : S.logger;
     scope : string Scope.t;             (* Nested builds that are in scope. *)
+    secrets : (string * string) list;
   }
 
-  let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ~log ~src_dir () =
-    { switch; env; src_dir; user; workdir; shell; log; scope = Scope.empty }
+  let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ?(secrets=[]) ~log ~src_dir () =
+    { switch; env; src_dir; user; workdir; shell; log; scope = Scope.empty; secrets }
 
   let with_binding name value t =
     { t with scope = Scope.add name value t.scope }
@@ -59,6 +60,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     cmd : string;
     shell : string list;
     network : string list;
+    mount_secrets : Config.Secret.t list;
   } [@@deriving sexp_of]
 
   let run t ~switch ~log ~cache run_input =
@@ -68,7 +70,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       |> Sha256.string
       |> Sha256.to_hex
     in
-    let { base; workdir; user; env; cmd; shell; network } = run_input in
+    let { base; workdir; user; env; cmd; shell; network; mount_secrets } = run_input in
     Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
         let to_release = ref [] in
         Lwt.finalize
@@ -80,7 +82,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
                )
              >>= fun mounts ->
              let argv = shell @ [cmd] in
-             let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~network in
+             let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~mount_secrets ~network in
              Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
              Lwt_unix.close close_me >>= fun () ->
              Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp
@@ -111,7 +113,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     | _ -> Fmt.error_msg "When copying multiple items, the destination must end with '/'"
 
   let copy t ~context ~base { Obuilder_spec.from; src; dst; exclude } =
-    let { Context.switch; src_dir; workdir; user; log; shell = _; env = _; scope } = context in
+    let { Context.switch; src_dir; workdir; user; log; shell = _; env = _; scope; secrets = _ } = context in
     let dst = if Filename.is_relative dst then workdir / dst else dst in
     begin
       match from with
@@ -145,6 +147,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
               ~hostname
               ~user:Obuilder_spec.root
               ~env:["PATH", "/bin:/usr/bin"]
+              ~mount_secrets:[]
               ~mounts:[]
               ~network:[]
           in
@@ -178,6 +181,19 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     in
     { context with workdir }
 
+  let mount_secret (values : (string * string) list) (secret: Obuilder_spec.Secret.t) =
+    match List.assoc_opt secret.id values with
+    | None -> Error (`Msg ("Couldn't find value for requested secret '"^secret.id^"'") )
+    | Some value -> Ok Config.Secret.{value; target=secret.target}
+
+  let resolve_secrets (values : (string * string) list) (secrets: Obuilder_spec.Secret.t list) =
+    let (>>=) = Result.bind in
+    let (>>|) x y = Result.map y x in
+    List.fold_left (fun result secret ->
+      result >>= fun result ->
+      mount_secret values secret >>| fun resolved_secret ->
+      (resolved_secret :: result) ) (Ok []) secrets
+
   let rec run_steps t ~(context:Context.t) ~base = function
     | [] -> Lwt_result.return base
     | op :: ops ->
@@ -187,11 +203,13 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Comment _ -> k ~base ~context
       | `Workdir workdir -> k ~base ~context:(update_workdir ~context workdir)
       | `User user -> k ~base ~context:{context with user}
-      | `Run { shell = cmd; cache; network } ->
-        let switch, run_input, log =
-          let { Context.switch; workdir; user; env; shell; log; src_dir = _; scope = _ } = context in
-          (switch, { base; workdir; user; env; cmd; shell; network }, log)
+      | `Run { shell = cmd; cache; network; secrets = mount_secrets } ->
+        let result =
+          let { Context.switch; workdir; user; env; shell; log; src_dir = _; scope = _; secrets } = context in
+          resolve_secrets secrets mount_secrets |> Result.map @@ fun mount_secrets ->
+          (switch, { base; workdir; user; env; cmd; shell; network; mount_secrets }, log)
         in
+        Lwt.return result >>!= fun (switch, run_input, log) ->
         run t ~switch ~log ~cache run_input >>!= fun base ->
         k ~base ~context
       | `Copy x ->

@@ -7,6 +7,7 @@ module Context : sig
     ?user:Obuilder_spec.user ->
     ?workdir:string ->
     ?shell:string list ->
+    ?secrets:(string * string) list ->
     log:S.logger ->
     src_dir:string ->
     unit -> t
@@ -16,6 +17,7 @@ module Context : sig
       @param user Container user to run as.
       @param workdir Directory in the container namespace for cwd.
       @param shell The command used to run shell commands (default [["/bin/bash"; "-c"]]).
+      @param secrets Provided key-value pairs for secrets.
       @param log Function to receive log data.
   *)
 end

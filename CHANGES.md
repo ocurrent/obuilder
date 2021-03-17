@@ -1,3 +1,10 @@
+### unreleased
+
+- Add support for secrets (@TheLortex #63, reviewed by @talex5).
+  The obuilder spec's `run` command supports a new `secrets` fields, which allows to temporarily
+  mount secret files in an user-specified location. The sandbox build context has an additional
+  `secrets` parameter to provide values for the requested keys.
+
 ### v0.3
 
 Security fix:

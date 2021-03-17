@@ -5,11 +5,6 @@ let () =
 
 let ( / ) = Filename.concat
 
-(*
-module Store = Obuilder.Zfs_store
-let store = Lwt_main.run @@ Store.create ~pool:"tank"
-*)
-
 module Sandbox = Obuilder.Runc_sandbox
 
 type builder = Builder : (module Obuilder.BUILDER with type t = 'a) * 'a -> builder
@@ -27,7 +22,13 @@ let create_builder ?fast_sync spec =
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)
 
-let build fast_sync store spec src_dir =
+let read_whole_file path =
+  let ic = open_in_bin path in
+  Fun.protect ~finally:(fun () -> close_in ic) @@ fun () ->
+  let len = in_channel_length ic in
+  really_input_string ic len
+
+let build fast_sync store spec src_dir secrets =
   Lwt_main.run begin
     create_builder ~fast_sync store >>= fun (Builder ((module Builder), builder)) ->
     let spec =
@@ -36,7 +37,8 @@ let build fast_sync store spec src_dir =
         print_endline msg;
         exit 1
     in
-    let context = Obuilder.Context.v ~log ~src_dir () in
+    let secrets = List.map (fun (id, path) -> id, read_whole_file path) secrets in
+    let context = Obuilder.Context.v ~log ~src_dir ~secrets () in
     Builder.build builder context spec >>= function
     | Ok x ->
       Fmt.pr "Got: %S@." (x :> string);
@@ -118,9 +120,17 @@ let fast_sync =
     ~doc:"Ignore sync syscalls (requires runc >= 1.0.0-rc92)"
     ["fast-sync"]
 
+let secrets =
+  (Arg.value @@
+   Arg.(opt_all (pair ~sep:':' string file)) [] @@
+   Arg.info
+     ~doc:"Provide a secret under the form id:file"
+     ~docv:"SECRET"
+     ["secret"])
+
 let build =
   let doc = "Build a spec file." in
-  Term.(const build $ fast_sync $ store $ spec_file $ src_dir),
+  Term.(const build $ fast_sync $ store $ spec_file $ src_dir $ secrets),
   Term.info "build" ~doc
 
 let delete =

@@ -24,8 +24,21 @@ let pp_cache ~ctx f { Cache.id; target; buildkit_options } =
   in
   Fmt.pf f "%a" Fmt.(list ~sep:(unit ",") pp_pair) buildkit_options
 
-let pp_run ~ctx f { Spec.cache; shell; network = _ } =
-  Fmt.pf f "RUN %a%a" Fmt.(list (pp_cache ~ctx ++ const string " ")) cache pp_wrap shell
+let pp_mount_secret ~ctx f { Secret.id; target; buildkit_options } =
+  let buildkit_options =
+    ("--mount=type", "secret") ::
+    ("id", id) ::
+    ("target", target) ::
+    ("uid", string_of_int ctx.user.uid) ::
+    buildkit_options
+  in
+  Fmt.pf f "%a" Fmt.(list ~sep:(unit ",") pp_pair) buildkit_options
+
+let pp_run ~ctx f { Spec.cache; shell; secrets; network = _ } =
+  Fmt.pf f "RUN %a%a%a"
+    Fmt.(list (pp_mount_secret ~ctx ++ const string " ")) secrets
+    Fmt.(list (pp_cache ~ctx ++ const string " ")) cache
+    pp_wrap shell
 
 let pp_copy ~ctx f { Spec.from; src; dst; exclude = _ } =
   let from = match from with
@@ -50,7 +63,7 @@ let pp_op ~buildkit ctx f : Spec.op -> ctx = function
   | `Workdir x                -> Fmt.pf f "WORKDIR %s" x; ctx
   | `Shell xs                 -> Fmt.pf f "SHELL [ %a ]" Fmt.(list ~sep:comma (quote string)) xs; ctx
   | `Run x when buildkit      -> pp_run ~ctx f x; ctx
-  | `Run x                    -> pp_run ~ctx f { x with cache = [] }; ctx
+  | `Run x                    -> pp_run ~ctx f { x with cache = []; secrets = []}; ctx
   | `Copy x                   -> pp_copy ~ctx f x; ctx
   | `User ({ uid; gid } as u) -> Fmt.pf f "USER %d:%d" uid gid; { user = u }
   | `Env (k, v)               -> Fmt.pf f "ENV %s %s" k v; ctx

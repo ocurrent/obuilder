@@ -63,7 +63,7 @@ let test_simple _switch () =
   Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
   B.build builder context spec >>!= get store "output" >>= fun result ->
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
-  Log.check "Check log" 
+  Log.check "Check log"
     {|(from base)
       ;---> saved as .*
       /: (run (shell Append))
@@ -92,7 +92,7 @@ let test_prune _switch () =
   Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
   B.build builder context spec >>!= get store "output" >>= fun result ->
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
-  Log.check "Check log" 
+  Log.check "Check log"
     {|(from base)
       ;---> saved as .*
       /: (run (shell Append))
@@ -130,7 +130,7 @@ let test_concurrent _switch () =
   b2 >>!= get store "output" >>= fun b2 ->
   Alcotest.(check build_result) "Final result" (Ok "AB") b1;
   Alcotest.(check build_result) "Final result" (Ok "AC") b2;
-  Log.check "Check AB log" 
+  Log.check "Check AB log"
     {| (from base)
       ;---> saved as .*
        /: (run (shell A))
@@ -141,7 +141,7 @@ let test_concurrent _switch () =
       ;---> saved as .*
      |}
     log1;
-  Log.check "Check AC log" 
+  Log.check "Check AC log"
     {| (from base)
       ;---> using .* from cache
        /: (run (shell A))
@@ -174,14 +174,14 @@ let test_concurrent_failure _switch () =
   b2 >>!= get store "output" >>= fun b2 ->
   Alcotest.(check build_result) "B1 result" (Error (`Msg "Mock build failure")) b1;
   Alcotest.(check build_result) "B2 result" (Error (`Msg "Mock build failure")) b2;
-  Log.check "Check AB log" 
+  Log.check "Check AB log"
     {| (from base)
       ;---> saved as .*
        /: (run (shell A))
        A
      |}
     log1;
-  Log.check "Check AC log" 
+  Log.check "Check AC log"
     {| (from base)
       ;---> using .* from cache
        /: (run (shell A))
@@ -211,14 +211,14 @@ let test_concurrent_failure_2 _switch () =
   b2 >>!= get store "output" >>= fun b2 ->
   Alcotest.(check build_result) "B1 result" (Error (`Msg "Mock build failure")) b1;
   Alcotest.(check build_result) "B2 result" (Error (`Msg "Mock build failure")) b2;
-  Log.check "Check AB log" 
+  Log.check "Check AB log"
     {| (from base)
       ;---> saved as .*
        /: (run (shell A))
        A
      |}
     log1;
-  Log.check "Check AC log" 
+  Log.check "Check AC log"
     {| (from base)
       ;---> using .* from cache
        /: (run (shell A))
@@ -240,7 +240,7 @@ let test_cancel _switch () =
   Lwt_switch.turn_off switch >>= fun () ->
   b >>= fun result ->
   Alcotest.(check build_result) "Final result" (Error `Cancelled) result;
-  Log.check "Check log" 
+  Log.check "Check log"
     {|(from base)
       ;---> saved as .*
       /: (run (shell Wait))
@@ -267,7 +267,7 @@ let test_cancel_2 _switch () =
   Lwt_switch.turn_off switch1 >>= fun () ->
   b1 >>= fun result1 ->
   Alcotest.(check build_result) "User 1 result" (Error `Cancelled) result1;
-  Log.check "Check log" 
+  Log.check "Check log"
     {|(from base)
       ;---> saved as .*
       /: (run (shell Wait))
@@ -276,7 +276,7 @@ let test_cancel_2 _switch () =
   Lwt.wakeup set_r (Ok ());
   b2 >>!= get store "output" >>= fun result2 ->
   Alcotest.(check build_result) "Final result" (Ok "ok") result2;
-  Log.check "Check log" 
+  Log.check "Check log"
     {|(from base)
       ;---> using .* from cache
       /: (run (shell Wait))
@@ -304,7 +304,7 @@ let test_cancel_3 _switch () =
   Lwt_switch.turn_off switch1 >>= fun () ->
   b1 >>= fun result1 ->
   Alcotest.(check build_result) "User 1 result" (Error `Cancelled) result1;
-  Log.check "Check log" 
+  Log.check "Check log"
     {|(from base)
       ;---> saved as .*
       /: (run (shell Wait))
@@ -313,7 +313,7 @@ let test_cancel_3 _switch () =
   Lwt_switch.turn_off switch2 >>= fun () ->
   b2 >>!= get store "output" >>= fun result2 ->
   Alcotest.(check build_result) "User 2 result" (Error `Cancelled) result2;
-  Log.check "Check log" 
+  Log.check "Check log"
     {|(from base)
       ;---> using .* from cache
       /: (run (shell Wait))
@@ -451,6 +451,7 @@ let test_sexp () =
       (workdir /src)
       (run (shell "a command"))
       (run (cache (a (target /data)) (b (target /srv)))
+           (secrets (a (target /run/secrets/a)) (b (target /b)))
            (shell "a very very very very very very very very very very very very very very very long command"))
       (copy (src a b) (dst c))
       (copy (src a b) (dst c) (exclude .git _build))
@@ -536,6 +537,22 @@ let test_docker () =
               (run (shell "make tools"))))
       (from base)
       (copy (from (build tools)) (src binary) (dst /usr/local/bin/))
+     ) |};
+  test ~buildkit:true "Secrets"
+    {| FROM base as tools
+       RUN make tools
+
+       FROM base
+       RUN --mount=type=secret,id=a,target=/secrets/a,uid=0 --mount=type=secret,id=b,target=/secrets/b,uid=0 command1
+    |} {|
+     ((build tools
+            ((from base)
+             (run (shell "make tools"))))
+      (from base)
+      (run
+       (secrets (a (target /secrets/a))
+                (b (target /secrets/b)))
+       (shell "command1"))
      ) |}
 
 let manifest =
@@ -602,6 +619,35 @@ let test_cache_id () =
   check "c-foo%3abar" "foo:bar";
   check "c-Az09-id.foo_orig" "Az09-id.foo_orig"
 
+  let test_secrets_not_provided _switch () =
+    with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+    let log = Log.create "b" in
+    let context = Context.v ~src_dir ~log:(Log.add log) () in
+    let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/run/secrets/test" "test"] "Append" ]) in
+    Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
+    B.build builder context spec >>!= get store "output" >>= fun result ->
+    Alcotest.(check build_result) "Final result" (Error (`Msg "Couldn't find value for requested secret 'test'")) result;
+    Lwt.return_unit
+
+  let test_secrets_simple _switch () =
+    with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+    let log = Log.create "b" in
+    let context = Context.v ~src_dir ~log:(Log.add log) ~secrets:["test", "top secret value"; "test2", ""] () in
+    let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/testsecret" "test"; Secret.v "test2"] "Append" ]) in
+    Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
+    B.build builder context spec >>!= get store "output" >>= fun result ->
+    Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
+    Log.check "Check b log"
+      {| (from base)
+        ;---> saved as .*
+         /: (run (secrets (test (target /testsecret)) (test2 (target /run/secrets/test2)))
+         ........(shell Append))
+         Append
+        ;---> saved as .*
+       |}
+      log;
+    Lwt.return_unit
+
 let () =
   let open Alcotest_lwt in
   Lwt_main.run begin
@@ -623,6 +669,10 @@ let () =
         test_case "Cancel 4"   `Quick test_cancel_4;
         test_case "Cancel 5"   `Quick test_cancel_5;
         test_case "Delete"     `Quick test_delete;
+      ];
+      "secrets", [
+        test_case "Simple"     `Quick test_secrets_simple;
+        test_case "No secret provided" `Quick test_secrets_not_provided;
       ];
       "manifest", [
         test_case "Copy"       `Quick test_copy;
