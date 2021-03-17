@@ -162,6 +162,7 @@ The command run will be this list of arguments followed by the single argument `
 (run
  (cache CACHE...)?
  (network NETWORK...)?
+ (secrets SECRET...)?
  (shell COMMAND))
  
 ```
@@ -176,6 +177,7 @@ Examples:
 (run
  (cache (opam-archives (target /home/opam/.opam/download-cache)))
  (network host)
+ (secrets (password (target /secrets/password)))
  (shell "opam install utop"))
 ```
 
@@ -197,6 +199,15 @@ Otherwise, a fresh network namespace is created for the container, with interfac
 networks (if any).
 
 Currently, no other networks can be used, so the only options are `host` or an isolated private network.
+
+The `(secrets SECRET...)` field can be used to request values for chosen keys, mounted as read-only files in 
+the image. Each `SECRET` entry is under the form `(KEY (target PATH))`, where `KEY` is the secret key, and 
+`PATH` is the location of the mounted secret file within the container.
+The sandbox context API contains a `secrets` parameter to provide values to the runtime. If a requested key
+isn't provided with a value, the runtime fails.
+With the command line interface `obuilder`, use the `--secret KEY=VALUE` option to provide values.
+When used with Docker, make sure to use the **buildkit** syntax, as only buildkit supports a `--secret` option.
+(See https://docs.docker.com/develop/develop-images/build_enhancements/#new-docker-build-secret-information)
 
 ### copy
 
@@ -289,7 +300,7 @@ The dockerfile should work the same way as the spec file, except for these limit
 - In `(copy (excludes ...) ...)` the excludes part is ignored.
   You will need to ensure you have a suitable `.dockerignore` file instead.
 
-- If you want to include caches, use `--buildkit` to output in the extended BuildKit syntax.
+- If you want to include caches or to use secrets, use `--buildkit` to output in the extended BuildKit syntax.
 
 - All `(network ...)` fields are ignored, as Docker does not allow per-step control of
   networking.
