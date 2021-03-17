@@ -203,7 +203,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Comment _ -> k ~base ~context
       | `Workdir workdir -> k ~base ~context:(update_workdir ~context workdir)
       | `User user -> k ~base ~context:{context with user}
-      | `Run { shell = cmd; cache; network; secrets= mount_secrets } ->
+      | `Run { shell = cmd; cache; network; secrets = mount_secrets } ->
         let result =
           let { Context.switch; workdir; user; env; shell; log; src_dir = _; scope = _; secrets } = context in
           resolve_secrets secrets mount_secrets |> Result.map @@ fun mount_secrets ->
