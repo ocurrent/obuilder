@@ -182,9 +182,9 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     { context with workdir }
 
   let mount_secret (values : (string * string) list) (key: Obuilder_spec.Secret.t) =
-    match List.find_opt (fun (k, _) -> key.id = k) values with
+    match List.assoc_opt key.id values with
     | None -> Error (`Msg ("Couldn't find value for requested secret '"^key.id^"'") )
-    | Some (_, value) -> Ok (key.id, value, key.target)
+    | Some value -> Ok (key.id, value, key.target)
 
   let resolve_secrets (values : (string * string) list) (keys: Obuilder_spec.Secret.t list) =
     let (>>=) = Result.bind in
