@@ -451,6 +451,7 @@ let test_sexp () =
       (workdir /src)
       (run (shell "a command"))
       (run (cache (a (target /data)) (b (target /srv)))
+           (secrets (a (target /run/secrets/a)) (b (target /b)))
            (shell "a very very very very very very very very very very very very very very very long command"))
       (copy (src a b) (dst c))
       (copy (src a b) (dst c) (exclude .git _build))
