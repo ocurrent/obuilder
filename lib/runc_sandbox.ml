@@ -25,6 +25,8 @@ let get_arches () =
     []
   )
 
+let secret_file id = "secret-" ^ string_of_int id
+
 module Json_config = struct
   let mount ?(options=[]) ~ty ~src dst =
     `Assoc [
@@ -227,10 +229,10 @@ module Json_config = struct
            ]
          else []
         ) @
-        List.map (fun (key, _, target) ->
+        List.mapi (fun id { Config.Secret.target; _} ->
           mount target
             ~ty:"bind"
-            ~src:(config_dir / "secret-" ^ key)
+            ~src:(config_dir / secret_file id)
             ~options:[
               "rbind";
               "rprivate";
@@ -282,11 +284,12 @@ let run ~cancelled ?stdin:stdin ~log t config results_dir =
   let json_config = Json_config.make config ~config_dir:tmp ~results_dir t in
   Os.write_file ~path:(tmp / "config.json") (Yojson.Safe.pretty_to_string json_config ^ "\n") >>= fun () ->
   Os.write_file ~path:(tmp / "hosts") "127.0.0.1 localhost builder" >>= fun () ->
-  List.fold_left
-    (fun r (key, value, _) -> r >>= fun () -> Os.write_file ~path:(tmp / "secret-" ^ key ) value)
-    Lwt.return_unit
-    config.mount_secrets
-  >>= fun () ->
+  Lwt_list.fold_left_s
+    (fun id Config.Secret.{value; _} ->
+      Os.write_file ~path:(tmp / secret_file id) value >|= fun () ->
+      id + 1
+    ) 0 config.mount_secrets
+  >>= fun _ ->
   let id = string_of_int !next_id in
   incr next_id;
   Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->

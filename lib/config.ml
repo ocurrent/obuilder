@@ -12,6 +12,13 @@ module Mount = struct
   }
 end
 
+module Secret = struct
+  type t = {
+    value: string;
+    target: string;
+  } [@@deriving sexp]
+end
+
 type t = {
   cwd : string;
   argv : string list;
@@ -20,7 +27,7 @@ type t = {
   env : env;
   mounts : Mount.t list;
   network : string list;
-  mount_secrets : (string * string * string) list; (* key, value, target *)
+  mount_secrets : Secret.t list;
 }
 
 let v ~cwd ~argv ~hostname ~user ~env ~mounts ~network ~mount_secrets =

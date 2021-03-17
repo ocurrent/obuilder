@@ -60,7 +60,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     cmd : string;
     shell : string list;
     network : string list;
-    mount_secrets : (string * string * string) list; (* key * value * target *)
+    mount_secrets : Config.Secret.t list;
   } [@@deriving sexp_of]
 
   let run t ~switch ~log ~cache run_input =
@@ -184,7 +184,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
   let mount_secret (values : (string * string) list) (key: Obuilder_spec.Secret.t) =
     match List.assoc_opt key.id values with
     | None -> Error (`Msg ("Couldn't find value for requested secret '"^key.id^"'") )
-    | Some value -> Ok (key.id, value, key.target)
+    | Some value -> Ok Config.Secret.{value; target=key.target}
 
   let resolve_secrets (values : (string * string) list) (keys: Obuilder_spec.Secret.t list) =
     let (>>=) = Result.bind in
