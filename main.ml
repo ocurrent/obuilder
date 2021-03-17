@@ -27,7 +27,7 @@ let create_builder ?fast_sync spec =
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)
 
-let build fast_sync store spec src_dir =
+let build fast_sync store spec src_dir secrets =
   Lwt_main.run begin
     create_builder ~fast_sync store >>= fun (Builder ((module Builder), builder)) ->
     let spec =
@@ -36,7 +36,7 @@ let build fast_sync store spec src_dir =
         print_endline msg;
         exit 1
     in
-    let context = Obuilder.Context.v ~log ~src_dir () in
+    let context = Obuilder.Context.v ~log ~src_dir ~secrets () in
     Builder.build builder context spec >>= function
     | Ok x ->
       Fmt.pr "Got: %S@." (x :> string);
@@ -118,9 +118,18 @@ let fast_sync =
     ~doc:"Ignore sync syscalls (requires runc >= 1.0.0-rc92)"
     ["fast-sync"]
 
+let secrets =
+  (Arg.value @@
+  Arg.(opt_all string) [] @@
+  Arg.info
+    ~doc:"Provide a secret under the form key=value"
+    ~docv:"SECRET"
+    ["secret"])
+  |> Term.(app (const (List.filter_map (Astring.String.cut ~sep:"="))))
+
 let build =
   let doc = "Build a spec file." in
-  Term.(const build $ fast_sync $ store $ spec_file $ src_dir),
+  Term.(const build $ fast_sync $ store $ spec_file $ src_dir $ secrets),
   Term.info "build" ~doc
 
 let delete =
