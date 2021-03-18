@@ -64,10 +64,16 @@ end
 module type SANDBOX = sig
   type t
 
+  type output_source = [ `Stdout | `Stderr ]
+  
+  type log_function = string -> unit Lwt.t
+
+  type log_handler = [ `Merged of log_function | `Tagged of output_source -> log_function ]
+
   val run :
     cancelled:unit Lwt.t ->
     ?stdin:Os.unix_fd ->
-    log:Build_log.t ->
+    log:log_handler ->
     t ->
     Config.t ->
     string ->
