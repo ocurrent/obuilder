@@ -315,26 +315,22 @@ let with_container ~log base fn =
     (fun () -> fn cid)
     (fun () -> Os.exec ~stdout:`Dev_null ["docker"; "rm"; "--"; cid])
 
-let from ~log ~from _t =
-  let base = from in 
-  log `Heading (Fmt.strf "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
-  (fun ~cancelled:_ ~log tmp ->
-      Log.info (fun f -> f "Base image not present; importing %S...@." base);
-      let rootfs = tmp / "rootfs" in
-      Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
-      (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
-      with_container ~log base (fun cid ->
-          Os.with_pipe_between_children @@ fun ~r ~w ->
-          let exporter = Os.exec ~stdout:(`FD_move_safely w) ["docker"; "export"; "--"; cid] in
-          let tar = Os.sudo ~stdin:(`FD_move_safely r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
-          exporter >>= fun () ->
-          tar
-        ) >>= fun () ->
-      export_env base >>= fun env ->
-      Os.write_file ~path:(tmp / "env")
-        (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
-      Lwt_result.return ()
-    )
+let from ~log ~base tmp =
+  Log.info (fun f -> f "Base image not present; importing %S...@." base);
+  let rootfs = tmp / "rootfs" in
+  Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
+  (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
+  with_container ~log base (fun cid ->
+      Os.with_pipe_between_children @@ fun ~r ~w ->
+      let exporter = Os.exec ~stdout:(`FD_move_safely w) ["docker"; "export"; "--"; cid] in
+      let tar = Os.sudo ~stdin:(`FD_move_safely r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
+      exporter >>= fun () ->
+      tar
+    ) >>= fun () ->
+  export_env base >>= fun env ->
+  Os.write_file ~path:(tmp / "env")
+    (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
+  Lwt_result.return env
 
 let run ~cancelled ?stdin:stdin ~log t config results_dir =
   Lwt_io.with_temp_dir ~perm:0o700 ~prefix:"obuilder-runc-" @@ fun tmp ->
@@ -402,7 +398,7 @@ let fast_sync =
   Arg.value @@
   Arg.opt Arg.bool false @@
   Arg.info
-    ~doc:"Install a seccomp filter that skips all synchronous syscalls"
+    ~doc:"Ignore sync syscalls (requires runc >= 1.0.0-rc92)"
     ~docv:"FAST_SYNC"
     ["fast-sync"]
 

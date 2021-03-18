@@ -221,7 +221,22 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
       | `Shell shell ->
         k ~base ~context:{context with shell}
 
-  let rec build ~scope t context { Obuilder_spec.child_builds; from; ops } =
+  let get_base t ~log base =
+    log `Heading (Fmt.strf "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
+    let id = Sha256.to_hex (Sha256.string base) in
+    Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
+        Log.info (fun f -> f "Base image not present; importing %S..." base);
+        Sandbox.from ~log ~base tmp >>!= fun env -> 
+        Os.write_file ~path:(tmp / "env")
+          (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
+        Lwt_result.return ()
+      )
+    >>!= fun id ->
+    let path = Option.get (Store.result t.store id) in
+    let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
+    Lwt_result.return (id, env)
+
+  let rec build ~scope t context { Obuilder_spec.child_builds; from = base; ops } =
     let rec aux context = function
       | [] -> Lwt_result.return context
       | (name, child_spec) :: child_builds ->
@@ -232,18 +247,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
         aux context child_builds
     in
     aux context child_builds >>!= fun context ->
-    let log = context.Context.log in 
-    let id = Sha256.to_hex (Sha256.string from) in
-    let f = Sandbox.from ~from ~log t.sandbox in 
-      (Store.build t.store ~id ~log f >>!= fun id -> 
-        (match Store.result t.store id with 
-        | Some path -> 
-            if Sys.file_exists @@ path / "env" then begin 
-              let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
-              Lwt_result.return (id, env)
-            end else Lwt_result.return (id, [])
-        | None -> Lwt_result.return (id, [])))
-      >>!= fun (id, env) ->
+    get_base t ~log:context.Context.log base >>!= fun (id, env) ->
     let context = { context with env = context.env @ env } in
     run_steps t ~context ~base:id ops
 
@@ -277,12 +281,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     (* Get the base image first, before starting the timer. *)
     let switch = Lwt_switch.create () in
     let context = Context.v ~switch ~log ~src_dir:"/tmp" () in
-    let id = Sha256.to_hex (Sha256.string healthcheck_base) in
-    let f = Sandbox.from ~from:healthcheck_base ~log t.sandbox in 
-    (Store.build t.store ~id ~log f >>!= fun id -> 
-      let path = Option.get (Store.result t.store id) in
-      let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
-      Lwt_result.return (id, env)) >>= function
+    get_base t ~log healthcheck_base >>= function
     | Error (`Msg _) as x -> Lwt.return x
     | Error `Cancelled -> failwith "Cancelled getting base image (shouldn't happen!)"
     | Ok (id, env) ->

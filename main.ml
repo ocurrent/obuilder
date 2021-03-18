@@ -18,7 +18,7 @@ let log tag msg =
 let create_builder spec conf =
   Obuilder.Store_spec.to_store spec >>= fun (Store ((module Store), store)) -> 
   let module Builder = Obuilder.Builder(Store)(Sandbox) in
-  Sandbox.create ~state_dir:(Store.state_dir store / "runc") conf >|= fun sandbox ->
+  Sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)
 
