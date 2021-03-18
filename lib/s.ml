@@ -64,9 +64,6 @@ end
 module type SANDBOX = sig
   type t
 
-  val pp : t Fmt.t
-  (** A pretty-printer for sandbox environments *)
-
   type config [@@deriving sexp]
   (** The type of sandbox configurations *)
 

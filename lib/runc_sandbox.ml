@@ -13,23 +13,6 @@ type config = {
   fast_sync : bool;
 } [@@deriving sexp]
 
-let pp ppf =
-  let fields =
-    [
-      Fmt.field ~label:Fmt.string "runc_state_dir"
-        (fun (t : t) -> t.runc_state_dir)
-        Fmt.string;
-      Fmt.field ~label:Fmt.string "fast_sync"
-        (fun (t : t) -> t.fast_sync)
-        Fmt.bool;
-      Fmt.field ~label:Fmt.string "arches"
-        (fun (t : t) -> t.arches)
-        Fmt.(brackets @@ list ~sep:comma string);
-    ]
-  in
-  let r = Fmt.(braces @@ record fields) in
-  Fmt.(pf ppf "runc state:@, %a" r)
-
 let get_machine () =
   let ch = Unix.open_process_in "uname -m" in
   let arch = input_line ch in
