@@ -116,11 +116,11 @@ let id =
 
 let secrets =
   (Arg.value @@
-    Arg.(opt_all (pair ~sep:':' string file)) [] @@
-    Arg.info
-      ~doc:"Provide a secret under the form id:file"
-      ~docv:"SECRET"
-      ["secret"])
+   Arg.(opt_all (pair ~sep:':' string file)) [] @@
+   Arg.info
+     ~doc:"Provide a secret under the form id:file"
+     ~docv:"SECRET"
+     ["secret"])
 
 let build =
   let doc = "Build a spec file." in
@@ -153,7 +153,7 @@ let verbose =
 
 let healthcheck =
   let doc = "Perform a self-test" in
-  Term.(const healthcheck $ verbose $ store  $ Sandbox.cmdliner),
+  Term.(const healthcheck $ verbose $ store $ Sandbox.cmdliner),
   Term.info "healthcheck" ~doc
 
 let cmds = [build; delete; dockerfile; healthcheck]

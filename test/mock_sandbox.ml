@@ -9,13 +9,9 @@ type t = {
      (unit, [`Msg of string | `Cancelled]) Lwt_result.t) Queue.t;
 }
 
-
-
 let expect t x = Queue.add x t.expect
 
-
 let from = Obuilder.Runc_sandbox.from
-
 
 let run ~cancelled ?stdin ~log t (config:Obuilder.Config.t) dir =
   match Queue.take_opt t.expect with

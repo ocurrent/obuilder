@@ -32,12 +32,6 @@ let get_arches () =
 
 let secret_file id = "secret-" ^ string_of_int id
 
-module Saved_context = struct
-  type t = {
-    env : Config.env;
-  } [@@deriving sexp]
-end
-
 module Json_config = struct
   let mount ?(options=[]) ~ty ~src dst =
     `Assoc [
@@ -327,10 +321,7 @@ let from ~log ~base tmp =
       exporter >>= fun () ->
       tar
     ) >>= fun () ->
-  export_env base >>= fun env ->
-  Os.write_file ~path:(tmp / "env")
-    (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
-  Lwt_result.return env
+  export_env base
 
 let run ~cancelled ?stdin:stdin ~log t config results_dir =
   Lwt_io.with_temp_dir ~perm:0o700 ~prefix:"obuilder-runc-" @@ fun tmp ->

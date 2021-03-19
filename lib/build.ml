@@ -226,7 +226,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
         Log.info (fun f -> f "Base image not present; importing %S..." base);
-        Sandbox.from ~log ~base tmp >>!= fun env -> 
+        Sandbox.from ~log ~base tmp >>= fun env -> 
         Os.write_file ~path:(tmp / "env")
           (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
         Lwt_result.return ()

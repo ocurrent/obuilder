@@ -668,7 +668,7 @@ let () =
         test_case "Cancel 3"   `Quick test_cancel_3;
         test_case "Cancel 4"   `Quick test_cancel_4;
         test_case "Cancel 5"   `Quick test_cancel_5;
-        test_case "Delete"     `Quick test_delete; 
+        test_case "Delete"     `Quick test_delete;
       ];
       "secrets", [
         test_case "Simple"     `Quick test_secrets_simple;

@@ -68,11 +68,13 @@ module type SANDBOX = sig
     log:Build_log.t ->
     base:string ->
     string -> 
-    (Config.env, [ `Cancelled | `Msg of string ]) result Lwt.t
-    (** [from ~log ~base tmp] should fetch the [base] image and configure it in [tmp] 
+    Config.env Lwt.t
+  (** [from ~log ~base tmp] should fetch the [base] image and configure it in [tmp] returning
+      a set of environmenet variables.
       @param log Used for writing logs.
       @param base The base template to build a new sandbox from (e.g. docker image hash).
   *)
+
   val run :
     cancelled:unit Lwt.t ->
     ?stdin:Os.unix_fd ->
