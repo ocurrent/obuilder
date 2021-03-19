@@ -373,15 +373,12 @@ let clean_runc dir =
       Os.sudo ["runc"; "--root"; dir; "delete"; item]
     )
 
-let create ?state_dir (c : config) =
-  match state_dir with 
-    | None -> Fmt.failwith "Runc requires a state directory"
-    | Some runc_state_dir -> 
-        Os.ensure_dir runc_state_dir;
-        let arches = get_arches () in
-        Log.info (fun f -> f "Architectures for multi-arch system: %a" Fmt.(Dump.list string) arches);
-        clean_runc runc_state_dir >|= fun () -> 
-        { runc_state_dir; fast_sync = c.fast_sync; arches }
+let create ~state_dir (c : config) =
+  Os.ensure_dir state_dir;
+  let arches = get_arches () in
+  Log.info (fun f -> f "Architectures for multi-arch system: %a" Fmt.(Dump.list string) arches);
+  clean_runc state_dir >|= fun () -> 
+  { runc_state_dir = state_dir; fast_sync = c.fast_sync; arches }
 
 open Cmdliner 
 
