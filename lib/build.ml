@@ -42,7 +42,7 @@ module Saved_context = struct
   } [@@deriving sexp]
 end
 
-module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
+module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = struct
   module Store = Db_store.Make(Raw_store)
 
   type t = {
@@ -226,7 +226,9 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) = struct
     let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
         Log.info (fun f -> f "Base image not present; importing %S..." base);
-        Sandbox.from ~log ~base tmp >>= fun env -> 
+        let rootfs = tmp / "rootfs" in
+        Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
+        Fetch.fetch ~log ~rootfs base >>= fun env -> 
         Os.write_file ~path:(tmp / "env")
           (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
         Lwt_result.return ()

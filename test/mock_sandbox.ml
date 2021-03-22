@@ -11,8 +11,6 @@ type t = {
 
 let expect t x = Queue.add x t.expect
 
-let from = Obuilder.Runc_sandbox.from
-
 let run ~cancelled ?stdin ~log t (config:Obuilder.Config.t) dir =
   match Queue.take_opt t.expect with
   | None -> Fmt.failwith "Unexpected sandbox execution: %a" Fmt.(Dump.list string) config.argv

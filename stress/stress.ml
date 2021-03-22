@@ -17,6 +17,7 @@ let assert_str expected got =
   )
 
 module Sandbox = Runc_sandbox
+module Fetcher = Docker
 
 module Test(Store : S.STORE) = struct
   let assert_output expected t id =
@@ -104,7 +105,7 @@ module Test(Store : S.STORE) = struct
       assert (x = Ok ());
       Lwt.return_unit
 
-  module Build = Builder(Store)(Sandbox)
+  module Build = Builder(Store)(Sandbox)(Fetcher)
 
   let n_steps = 4
   let n_values = 3

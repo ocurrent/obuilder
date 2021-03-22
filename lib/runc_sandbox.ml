@@ -275,54 +275,6 @@ end
 
 let next_id = ref 0
 
-let copy_to_log ~src ~dst =
-  let buf = Bytes.create 4096 in
-  let rec aux () =
-    Lwt_unix.read src buf 0 (Bytes.length buf) >>= function
-    | 0 -> Lwt.return_unit
-    | n -> Build_log.write dst (Bytes.sub_string buf 0 n) >>= aux
-  in
-  aux ()
-
-let export_env base : Config.env Lwt.t =
-  Os.pread ["docker"; "image"; "inspect";
-            "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|};
-            "--"; base] >|= fun env ->
-  String.split_on_char '\x00' env
-  |> List.filter_map (function
-      | "\n" -> None
-      | kv ->
-        match Astring.String.cut ~sep:"=" kv with
-        | None -> Fmt.failwith "Invalid environment in Docker image %S (should be 'K=V')" kv
-        | Some _ as pair -> pair
-    )
-
-let with_container ~log base fn =
-  Os.with_pipe_from_child (fun ~r ~w ->
-      (* We might need to do a pull here, so log the output to show progress. *)
-      let copy = copy_to_log ~src:r ~dst:log in
-      Os.pread ~stderr:(`FD_move_safely w) ["docker"; "create"; "--"; base] >>= fun cid ->
-      copy >|= fun () ->
-      String.trim cid
-    ) >>= fun cid ->
-  Lwt.finalize
-    (fun () -> fn cid)
-    (fun () -> Os.exec ~stdout:`Dev_null ["docker"; "rm"; "--"; cid])
-
-let from ~log ~base tmp =
-  Log.info (fun f -> f "Base image not present; importing %S...@." base);
-  let rootfs = tmp / "rootfs" in
-  Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
-  (* Lwt_process.exec ("", [| "docker"; "pull"; "--"; base |]) >>= fun _ -> *)
-  with_container ~log base (fun cid ->
-      Os.with_pipe_between_children @@ fun ~r ~w ->
-      let exporter = Os.exec ~stdout:(`FD_move_safely w) ["docker"; "export"; "--"; cid] in
-      let tar = Os.sudo ~stdin:(`FD_move_safely r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
-      exporter >>= fun () ->
-      tar
-    ) >>= fun () ->
-  export_env base
-
 let run ~cancelled ?stdin:stdin ~log t config results_dir =
   Lwt_io.with_temp_dir ~perm:0o700 ~prefix:"obuilder-runc-" @@ fun tmp ->
   let json_config = Json_config.make config ~config_dir:tmp ~results_dir t in
@@ -340,7 +292,7 @@ let run ~cancelled ?stdin:stdin ~log t config results_dir =
   let cmd = ["runc"; "--root"; t.runc_state_dir; "run"; id] in
   let stdout = `FD_move_safely out_w in
   let stderr = stdout in
-  let copy_log = copy_to_log ~src:out_r ~dst:log in
+  let copy_log = Build_log.copy ~src:out_r ~dst:log in
   let proc =
     let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
     let pp f = Os.pp_cmd f config.argv in

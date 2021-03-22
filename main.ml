@@ -6,6 +6,7 @@ let () =
 let ( / ) = Filename.concat
 
 module Sandbox = Obuilder.Runc_sandbox
+module Fetcher = Obuilder.Docker
 
 type builder = Builder : (module Obuilder.BUILDER with type t = 'a) * 'a -> builder
 
@@ -17,7 +18,7 @@ let log tag msg =
 
 let create_builder spec conf =
   Obuilder.Store_spec.to_store spec >>= fun (Store ((module Store), store)) -> 
-  let module Builder = Obuilder.Builder(Store)(Sandbox) in
+  let module Builder = Obuilder.Builder(Store)(Sandbox)(Fetcher) in
   Sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)

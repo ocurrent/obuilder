@@ -112,3 +112,12 @@ let empty = {
   state = `Empty;
   len = 0;
 }
+
+let copy ~src ~dst =
+  let buf = Bytes.create 4096 in
+  let rec aux () =
+    Lwt_unix.read src buf 0 (Bytes.length buf) >>= function
+    | 0 -> Lwt.return_unit
+    | n -> write dst (Bytes.sub_string buf 0 n) >>= aux
+  in
+  aux ()

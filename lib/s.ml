@@ -64,17 +64,6 @@ end
 module type SANDBOX = sig
   type t
 
-  val from : 
-    log:Build_log.t ->
-    base:string ->
-    string -> 
-    Config.env Lwt.t
-  (** [from ~log ~base tmp] should fetch the [base] image and configure it in [tmp] returning
-      a set of environmenet variables.
-      @param log Used for writing logs.
-      @param base The base template to build a new sandbox from (e.g. docker image hash).
-  *)
-
   val run :
     cancelled:unit Lwt.t ->
     ?stdin:Os.unix_fd ->
@@ -119,3 +108,12 @@ module type BUILDER = sig
       @param timeout Cancel and report failure after this many seconds.
                      This excludes the time to fetch the base image. *)
 end
+
+module type FETCHER = sig 
+  val fetch : log:Build_log.t -> rootfs:string -> string -> Config.env Lwt.t
+  (** [fetch ~log ~rootfs base] initialises the [rootfs] directory by
+      fetching and extracting the [base] image. 
+      Returns the image's environment. 
+      @param log Used for outputting the progress of the fetch 
+      @param rootfs The directory in which to extract the base image *)
+end 
