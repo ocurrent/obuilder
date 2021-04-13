@@ -71,7 +71,7 @@ let exec ?cwd ?stdin ?stdout ?stderr argv =
   | Ok n -> Lwt.fail_with (Fmt.strf "%t failed with exit status %d" pp n)
   | Error (`Msg m) -> Lwt.fail (Failure m)
 
-let running_as_root = Unix.getuid () = 0
+let running_as_root = not (Sys.unix) || Unix.getuid () = 0
 
 let sudo ?stdin args =
   let args = if running_as_root then args else "sudo" :: args in
