@@ -43,15 +43,19 @@ let default_exec ?cwd ?stdin ?stdout ?stderr ~pp argv =
     let stdin  = Option.map redirection stdin in
     let stdout = Option.map redirection stdout in
     let stderr = Option.map redirection stderr in
-    Lwt_process.exec ?cwd ?stdin ?stdout ?stderr argv
+    try Lwt_result.ok (Lwt_process.exec ?cwd ?stdin ?stdout ?stderr argv)
+    with e -> Lwt_result.fail e
   in
   Option.iter close_redirection stdin;
   Option.iter close_redirection stdout;
   Option.iter close_redirection stderr;
-  proc >|= function
-  | Unix.WEXITED n -> Ok n
-  | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %d" pp x
-  | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp pp_signal x
+  proc >|= fun proc ->
+  Result.fold ~ok:(function
+      | Unix.WEXITED n -> Ok n
+      | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %d" pp x
+      | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp pp_signal x)
+    ~error:(fun e ->
+        Fmt.error_msg "%t raised %s\n%s" pp (Printexc.to_string e) (Printexc.get_backtrace ())) proc
 
 (* Similar to default_exec except using open_process_none in order to get the
    pid of the forked process. On macOS this allows for cleaner job cancellations *)
