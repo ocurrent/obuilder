@@ -87,7 +87,27 @@ let purge path =
       Btrfs.subvolume_delete item
     )
 
+let check_kernel_version () =
+  Os.pread ["uname"; "-r"] >>= fun kver ->
+  match String.split_on_char '.' kver with
+  | maj :: min :: _ ->
+      begin match int_of_string_opt maj, int_of_string_opt min with
+      | Some maj, Some min when (maj, min) >= (5, 8) ->
+          Lwt.return_unit
+      | Some maj, Some min ->
+          Lwt.fail_with
+            (Fmt.str
+               "You need at least linux 5.8 to use the btrfs backend, \
+                but current kernel version is '%d.%d'"
+               maj min)
+      | _, _ ->
+          Lwt.fail_with "Could not parse kernel version"
+      end
+  | _ ->
+      Lwt.fail_with "Could not parse output of 'uname -r'"
+
 let create root =
+  check_kernel_version () >>= fun () ->
   Os.ensure_dir (root / "result");
   Os.ensure_dir (root / "result-tmp");
   Os.ensure_dir (root / "state");
