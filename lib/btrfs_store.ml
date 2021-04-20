@@ -101,10 +101,10 @@ let check_kernel_version () =
                 but current kernel version is '%d.%d'"
                maj min)
       | _, _ ->
-          Lwt.fail_with "Could not parse kernel version"
+          Fmt.failwith "Could not parse kernel version %S" kver
       end
   | _ ->
-      Lwt.fail_with "Could not parse output of 'uname -r'"
+      Fmt.failwith "Could not parse output of 'uname -r' (%S)" kver
 
 let create root =
   check_kernel_version () >>= fun () ->
