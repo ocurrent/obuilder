@@ -9,7 +9,7 @@ sudo sh -c "cat > /usr/local/bin/uname" << EOF
 #!/bin/sh
 
 if test "\$1" = '-r'; then
-  echo '5.8'
+  echo '5.08.0-6-amd64'
 else
   /usr/bin/uname \$@
 fi
