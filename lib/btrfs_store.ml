@@ -24,15 +24,10 @@ type t = {
 let ( / ) = Filename.concat
 
 module Btrfs = struct
-  (* Avoid doing multiple btrfs operations at once... maybe causes hangs *)
-  let lock = Lwt_mutex.create ()
-
   let btrfs ?(sudo=false) args =
     let args = "btrfs" :: args in
     let args = if sudo && not running_as_root then "sudo" :: args else args in
-    Lwt_mutex.with_lock lock (fun () ->
-        Os.exec ~stdout:`Dev_null args
-      )
+    Os.exec ~stdout:`Dev_null args
 
   let subvolume_create path =
     assert (not (Sys.file_exists path));
@@ -87,7 +82,27 @@ let purge path =
       Btrfs.subvolume_delete item
     )
 
+let check_kernel_version () =
+  Os.pread ["uname"; "-r"] >>= fun kver ->
+  match String.split_on_char '.' kver with
+  | maj :: min :: _ ->
+      begin match int_of_string_opt maj, int_of_string_opt min with
+      | Some maj, Some min when (maj, min) >= (5, 8) ->
+          Lwt.return_unit
+      | Some maj, Some min ->
+          Lwt.fail_with
+            (Fmt.str
+               "You need at least linux 5.8 to use the btrfs backend, \
+                but current kernel version is '%d.%d'"
+               maj min)
+      | _, _ ->
+          Fmt.failwith "Could not parse kernel version %S" kver
+      end
+  | _ ->
+      Fmt.failwith "Could not parse output of 'uname -r' (%S)" kver
+
 let create root =
+  check_kernel_version () >>= fun () ->
   Os.ensure_dir (root / "result");
   Os.ensure_dir (root / "result-tmp");
   Os.ensure_dir (root / "state");

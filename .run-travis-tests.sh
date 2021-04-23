@@ -5,6 +5,17 @@ export OPAMYES=true
 sudo wget https://github.com/opencontainers/runc/releases/download/v1.0.0-rc92/runc.amd64 -O /usr/local/bin/runc
 sudo chmod a+x /usr/local/bin/runc
 
+sudo sh -c "cat > /usr/local/bin/uname" << EOF
+#!/bin/sh
+
+if test "\$1" = '-r'; then
+  echo '5.08.0-6-amd64'
+else
+  /usr/bin/uname \$@
+fi
+EOF
+sudo chmod a+x /usr/local/bin/uname
+
 dd if=/dev/zero of=/tmp/zfs.img bs=100M count=50
 ZFS_LOOP=$(sudo losetup -f)
 sudo losetup -P $ZFS_LOOP /tmp/zfs.img
