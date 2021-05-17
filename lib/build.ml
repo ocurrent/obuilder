@@ -122,7 +122,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
         match Scope.find_opt name scope with
         | None -> Fmt.failwith "Unknown build %S" name   (* (shouldn't happen; gets caught earlier) *)
         | Some id ->
-          match Store.result t.store id with
+          Store.result t.store id >>= function
           | None ->
             Lwt_result.fail (`Msg (Fmt.strf "Build result %S not found" id))
           | Some dir ->
@@ -233,8 +233,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
           (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
         Lwt_result.return ()
       )
-    >>!= fun id ->
-    let path = Option.get (Store.result t.store id) in
+    >>!= fun id -> Store.result t.store id
+    >|= Option.get >>= fun path ->
     let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
     Lwt_result.return (id, env)
 

@@ -21,21 +21,22 @@ module Fetcher = Docker
 
 module Test(Store : S.STORE) = struct
   let assert_output expected t id =
-    match Store.result t id with
+    Store.result t id >>= function
     | None -> Fmt.failwith "%S not in store!" id
     | Some path ->
       let ch = open_in (path / "output") in
       let data = really_input_string ch (in_channel_length ch) in
       close_in ch;
-      assert_str expected data
+      assert_str expected data;
+      Lwt.return_unit
 
   let test_store t =
-    assert (Store.result t "unknown" = None);
+    Store.result t "unknown" >>= fun r -> assert (r = None);
     (* Build without a base *)
     Store.delete t "base" >>= fun () ->
     Store.build t ~id:"base" (fun tmpdir -> write ~path:(tmpdir / "output") "ok" >|= Result.ok) >>= fun r ->
     assert (r = Ok ());
-    assert_output "ok" t "base";
+    assert_output "ok" t "base" >>= fun () ->
     (* Build with a base *)
     Store.delete t "sub" >>= fun () ->
     Store.build t ~base:"base" ~id:"sub" (fun tmpdir ->
@@ -43,16 +44,16 @@ module Test(Store : S.STORE) = struct
         write ~path:(tmpdir / "output") (orig ^ "+") >|= Result.ok
       ) >>= fun r ->
     assert (r = Ok ());
-    assert_output "ok+" t "sub";
+    assert_output "ok+" t "sub" >>= fun () ->
     (* Test deletion *)
-    assert (Store.result t "sub" <> None);
+    Store.result t "sub" >>= fun r -> assert (r <> None);
     Store.delete t "sub" >>= fun () ->
-    assert (Store.result t "sub" = None);
+    Store.result t "sub" >>= fun r -> assert (r = None);
     (* A failing build isn't saved *)
     Store.delete t "fail" >>= fun () ->
     Store.build t ~id:"fail" (fun _tmpdir -> Lwt_result.fail `Failed) >>= fun r ->
     assert (r = Error `Failed);
-    assert (Store.result t "fail" = None);
+    Store.result t "fail" >>= fun r -> assert (r = None);
     Lwt.return_unit
 
   let test_cache t =
@@ -127,7 +128,7 @@ module Test(Store : S.STORE) = struct
     let ops = ops @ [Spec.run {|[ `cat output` = %S ] || exit 1|} expected] in
     let check_log data =
       data |> String.split_on_char '\n' |> List.filter_map (fun line ->
-          match Astring.String.cut ~sep:":" line with 
+          match Astring.String.cut ~sep:":" line with
           | Some ("added", x) -> Some x
           | _ -> None
         )

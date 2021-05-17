@@ -61,8 +61,8 @@ let path t id = t.dir / id
 let result t id =
   let dir = path t id in
   match Os.check_dir dir with
-  | `Present -> Some dir
-  | `Missing -> None
+  | `Present -> Lwt.return_some dir
+  | `Missing -> Lwt.return_none
 
 let rec finish t =
   if t.builds > 0 then (
@@ -80,7 +80,7 @@ let with_store fn =
     (fun () -> finish t)
 
 let delete t id =
-  match result t id with
+  result t id >>= function
   | Some path -> rm_r path; Lwt.return_unit
   | None -> Lwt.return_unit
 
