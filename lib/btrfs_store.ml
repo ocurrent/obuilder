@@ -142,8 +142,8 @@ let build t ?base ~id fn =
 let result t id =
   let dir = Path.result t id in
   match Os.check_dir dir with
-  | `Present -> Some dir
-  | `Missing -> None
+  | `Present -> Lwt.return_some dir
+  | `Missing -> Lwt.return_none
 
 let get_cache t name =
   match Hashtbl.find_opt t.caches name with

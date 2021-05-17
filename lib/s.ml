@@ -34,7 +34,7 @@ module type STORE = sig
   val delete : t -> id -> unit Lwt.t
   (** [delete t id] removes [id] from the store, if present. *)
 
-  val result : t -> id -> string option
+  val result : t -> id -> string option Lwt.t
   (** [result t id] is the path of the build result for [id], if present. *)
 
   val state_dir : t -> string
