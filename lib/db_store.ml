@@ -46,7 +46,7 @@ module Make (Raw : S.STORE) = struct
      or by doing a new build using [fn]. We only run one instance of this
      at a time for a single [id]. *)
   let get_build t ~base ~id ~cancelled ~set_log fn =
-    match Raw.result t.raw id with
+    Raw.result t.raw id >>= function
     | Some dir ->
       let now = Unix.(gmtime (gettimeofday ())) in
       Dao.set_used t.dao ~id ~now;
