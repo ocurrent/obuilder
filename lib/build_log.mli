@@ -31,3 +31,9 @@ val tail : ?switch:Lwt_switch.t -> t -> (string -> unit) -> (unit, [> `Cancelled
 (** [tail t dst] streams data from the log to [dst].
     This can be called at any time before [finish] is called.
     @param switch Abort if this is turned off. *)
+
+(* {2 Copying to logs} *)
+
+val copy : src:Lwt_unix.file_descr -> dst:t -> unit Lwt.t
+(** [copy ~src ~dst] reads bytes from the [src] file descriptor and
+    writes them to the build log [dst]. *)

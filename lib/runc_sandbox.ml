@@ -1,4 +1,5 @@
 open Lwt.Infix
+open Sexplib.Conv
 
 let ( / ) = Filename.concat
 
@@ -7,6 +8,10 @@ type t = {
   fast_sync : bool;
   arches : string list;
 }
+
+type config = {
+  fast_sync : bool;
+} [@@deriving sexp]
 
 let get_machine () =
   let ch = Unix.open_process_in "uname -m" in
@@ -93,7 +98,7 @@ module Json_config = struct
     ] else [
     ]
 
-  let seccomp_policy t =
+  let seccomp_policy (t : t) =
     let fields = [
       "defaultAction", `String "SCMP_ACT_ALLOW";
       "syscalls", `List (seccomp_syscalls ~fast_sync:t.fast_sync);
@@ -270,15 +275,6 @@ end
 
 let next_id = ref 0
 
-let copy_to_log ~src ~dst =
-  let buf = Bytes.create 4096 in
-  let rec aux () =
-    Lwt_unix.read src buf 0 (Bytes.length buf) >>= function
-    | 0 -> Lwt.return_unit
-    | n -> Build_log.write dst (Bytes.sub_string buf 0 n) >>= aux
-  in
-  aux ()
-
 let run ~cancelled ?stdin:stdin ~log t config results_dir =
   Lwt_io.with_temp_dir ~perm:0o700 ~prefix:"obuilder-runc-" @@ fun tmp ->
   let json_config = Json_config.make config ~config_dir:tmp ~results_dir t in
@@ -296,7 +292,7 @@ let run ~cancelled ?stdin:stdin ~log t config results_dir =
   let cmd = ["runc"; "--root"; t.runc_state_dir; "run"; id] in
   let stdout = `FD_move_safely out_w in
   let stderr = stdout in
-  let copy_log = copy_to_log ~src:out_r ~dst:log in
+  let copy_log = Build_log.copy ~src:out_r ~dst:log in
   let proc =
     let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
     let pp f = Os.pp_cmd f config.argv in
@@ -329,9 +325,25 @@ let clean_runc dir =
       Os.sudo ["runc"; "--root"; dir; "delete"; item]
     )
 
-let create ?(fast_sync=false) ~runc_state_dir () =
-  Os.ensure_dir runc_state_dir;
+let create ~state_dir (c : config) =
+  Os.ensure_dir state_dir;
   let arches = get_arches () in
   Log.info (fun f -> f "Architectures for multi-arch system: %a" Fmt.(Dump.list string) arches);
-  clean_runc runc_state_dir >|= fun () ->
-  { runc_state_dir; fast_sync; arches }
+  clean_runc state_dir >|= fun () -> 
+  { runc_state_dir = state_dir; fast_sync = c.fast_sync; arches }
+
+open Cmdliner 
+
+let fast_sync =
+  Arg.value @@
+  Arg.opt Arg.bool false @@
+  Arg.info
+    ~doc:"Ignore sync syscalls (requires runc >= 1.0.0-rc92)"
+    ~docv:"FAST_SYNC"
+    ["fast-sync"]
+
+let cmdliner : config Term.t = 
+  let make fast_sync = 
+    { fast_sync }
+  in
+  Term.(const make $ fast_sync)

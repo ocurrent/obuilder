@@ -1,7 +1,7 @@
 open Lwt.Infix
 open Obuilder
 
-module B = Builder(Mock_store)(Mock_sandbox)
+module B = Builder(Mock_store)(Mock_sandbox)(Docker)
 
 let ( / ) = Filename.concat
 let ( >>!= ) = Lwt_result.bind
