@@ -64,8 +64,8 @@ let generate ~exclude ~src_dir src =
   | Ok src' ->
     try
       List.rev src'
-      |> String.concat Filename.dir_sep 
-      |> generate ~exclude ~src_dir 
+      |> String.concat Filename.dir_sep
+      |> generate ~exclude ~src_dir
       |> Result.ok
     with Failure m ->
       Error (`Msg m)

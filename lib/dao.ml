@@ -18,13 +18,13 @@ let format_timestamp time =
   Fmt.strf "%04d-%02d-%02d %02d:%02d:%02d" (tm_year + 1900) (tm_mon + 1) tm_mday tm_hour tm_min tm_sec
 
 let create db =
-  Sqlite3.exec db {| CREATE TABLE IF NOT EXISTS builds ( 
-                       id       TEXT PRIMARY KEY, 
-                       created  DATETIME NOT NULL, 
-                       used     DATETIME NOT NULL, 
+  Sqlite3.exec db {| CREATE TABLE IF NOT EXISTS builds (
+                       id       TEXT PRIMARY KEY,
+                       created  DATETIME NOT NULL,
+                       used     DATETIME NOT NULL,
                        rc       INTEGER NOT NULL,
                        parent   TEXT,
-                       FOREIGN KEY (parent) REFERENCES builds (id) ON DELETE RESTRICT 
+                       FOREIGN KEY (parent) REFERENCES builds (id) ON DELETE RESTRICT
                      ) |} |> Db.or_fail ~cmd:"create builds";
   Sqlite3.exec db {| CREATE INDEX IF NOT EXISTS lru
                      ON builds (rc, used) |} |> Db.or_fail ~cmd:"create lru index";

@@ -329,10 +329,10 @@ let create ~state_dir (c : config) =
   Os.ensure_dir state_dir;
   let arches = get_arches () in
   Log.info (fun f -> f "Architectures for multi-arch system: %a" Fmt.(Dump.list string) arches);
-  clean_runc state_dir >|= fun () -> 
+  clean_runc state_dir >|= fun () ->
   { runc_state_dir = state_dir; fast_sync = c.fast_sync; arches }
 
-open Cmdliner 
+open Cmdliner
 
 let fast_sync =
   Arg.value @@
@@ -341,8 +341,8 @@ let fast_sync =
     ~doc:"Ignore sync syscalls (requires runc >= 1.0.0-rc92)"
     ["fast-sync"]
 
-let cmdliner : config Term.t = 
-  let make fast_sync = 
+let cmdliner : config Term.t =
+  let make fast_sync =
     { fast_sync }
   in
   Term.(const make $ fast_sync)

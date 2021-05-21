@@ -109,11 +109,11 @@ module type BUILDER = sig
                      This excludes the time to fetch the base image. *)
 end
 
-module type FETCHER = sig 
+module type FETCHER = sig
   val fetch : log:Build_log.t -> rootfs:string -> string -> Config.env Lwt.t
   (** [fetch ~log ~rootfs base] initialises the [rootfs] directory by
-      fetching and extracting the [base] image. 
-      Returns the image's environment. 
-      @param log Used for outputting the progress of the fetch 
+      fetching and extracting the [base] image.
+      Returns the image's environment.
+      @param log Used for outputting the progress of the fetch
       @param rootfs The directory in which to extract the base image *)
-end 
+end

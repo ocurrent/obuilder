@@ -228,7 +228,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
         Log.info (fun f -> f "Base image not present; importing %S..." base);
         let rootfs = tmp / "rootfs" in
         Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
-        Fetch.fetch ~log ~rootfs base >>= fun env -> 
+        Fetch.fetch ~log ~rootfs base >>= fun env ->
         Os.write_file ~path:(tmp / "env")
           (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
         Lwt_result.return ()
