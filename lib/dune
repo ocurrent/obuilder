@@ -1,5 +1,30 @@
+(rule
+ (target sandbox.detected.ml)
+ (enabled_if
+  (= %{os_type} Win32))
+ (action
+  (copy# sandbox.docker.ml %{target})))
+
+(rule
+ (target sandbox.detected.ml)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (action
+  (copy# sandbox.runc.ml %{target})))
+
+(rule
+ (target sandbox.ml)
+ (mode fallback)
+ (action
+  (copy sandbox.detected.ml %{target})))
+
 (library
-  (name obuilder)
-  (public_name obuilder)
-  (preprocess (pps ppx_sexp_conv))
-  (libraries lwt lwt.unix fmt yojson tar-unix sexplib sqlite3 astring logs sha obuilder-spec cmdliner))
+ (name obuilder)
+ (public_name obuilder)
+ (preprocess
+  (pps ppx_sexp_conv))
+  (modules Btrfs_store Build Build_log Config Dao Db Db_store Docker
+   Docker_store Escape Log Manifest Obuilder Os S Sandbox Store_spec
+   Tar_transfer Zfs_store)
+ (libraries lwt lwt.unix fmt yojson tar-unix sexplib sqlite3 astring logs sha
+   obuilder-spec cmdliner))

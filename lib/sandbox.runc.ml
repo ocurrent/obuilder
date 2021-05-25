@@ -1,6 +1,8 @@
 open Lwt.Infix
 open Sexplib.Conv
 
+let backend = `Runc
+
 let ( / ) = Filename.concat
 
 type t = {

@@ -6,11 +6,11 @@ let ( >>!= ) = Lwt_result.bind
 
 let hostname = "builder"
 
-let healthcheck_base = "busybox"
+let healthcheck_base = if Sys.win32 then "mcr.microsoft.com/windows/servercore:20H2" else "busybox"
 let healthcheck_ops =
   let open Obuilder_spec in
   [
-    shell ["/bin/sh"; "-c"];
+    shell (if Sys.win32 then ["cmd"; "/S"; "/C"] else ["/bin/sh"; "-c"]);
     run "echo healthcheck"
   ]
 
@@ -29,7 +29,8 @@ module Context = struct
     secrets : (string * string) list;
   }
 
-  let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ?(secrets=[]) ~log ~src_dir () =
+  let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?(workdir="/") ?shell ?(secrets=[]) ~log ~src_dir () =
+    let shell = Option.value ~default:(if Sys.win32 then ["cmd"; "/S"; "/C"] else ["/bin/bash"; "-c"]) shell in
     { switch; env; src_dir; user; workdir; shell; log; scope = Scope.empty; secrets }
 
   let with_binding name value t =
@@ -63,6 +64,13 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     mount_secrets : Config.Secret.t list;
   } [@@deriving sexp_of]
 
+  let docker_teardown_sandbox id ~commit =
+    let container = Docker.docker_container id in
+    let base_image = Docker.docker_image ~tmp:true id in
+    let target_image = Docker.docker_image id in
+    if commit then Docker.commit base_image container target_image else Lwt.return_unit >>= fun () ->
+    Docker.rm [container]
+
   let run t ~switch ~log ~cache run_input =
     let id =
       sexp_of_run_input run_input
@@ -85,7 +93,10 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
              let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~mount_secrets ~network () in
              Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
              Lwt_unix.close close_me >>= fun () ->
-             Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp
+             Lwt_result.bind_lwt
+               (Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp)
+               (fun () -> if Sandbox.backend = `Docker then docker_teardown_sandbox id ~commit:true
+                          else Lwt.return_unit)
           )
           (fun () ->
              !to_release |> Lwt_list.iter_s (fun f -> f ())
@@ -222,21 +233,31 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       | `Shell shell ->
         k ~base ~context:{context with shell}
 
+  let tag_base base id =
+    if Sandbox.backend = `Docker then
+      Docker.tag (`Docker_image base) (Docker.docker_image id)
+    else
+      Lwt.return_unit
+
   let get_base t ~log base =
     log `Heading (Fmt.strf "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
     let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
         Log.info (fun f -> f "Base image not present; importing %S..." base);
         let rootfs = tmp / "rootfs" in
-        Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
+        Os.sudo ["mkdir"; "--mode=755"; "-p"; "--"; rootfs] >>= fun () ->
         Fetch.fetch ~log ~rootfs base >>= fun env ->
         Os.write_file ~path:(tmp / "env")
           (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
+        tag_base base id >>= fun () ->
         Lwt_result.return ()
       )
     >>!= fun id -> Store.result t.store id
     >|= Option.get >>= fun path ->
-    let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
+    Lwt_unix.file_exists (path / "env") >>= fun b -> begin
+    if b then Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env"))
+    else { Saved_context.env = [] } end |> Lwt.return
+    >>= fun { Saved_context.env } ->
     Lwt_result.return (id, env)
 
   let rec build ~scope t context { Obuilder_spec.child_builds; from = base; ops } =

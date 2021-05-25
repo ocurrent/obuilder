@@ -146,6 +146,17 @@ let pread ?stderr argv =
   child >>= fun () ->
   Lwt.return data
 
+let pread_result ?stderr ~pp argv =
+  with_pipe_from_child @@ fun ~r ~w ->
+  let child = exec_result ~stdout:(`FD_move_safely w) ?stderr ~pp argv in
+  let r = Lwt_io.(of_fd ~mode:input) r in
+  Lwt.finalize
+    (fun () -> Lwt_io.read r)
+    (fun () -> Lwt_io.close r)
+  >>= fun data ->
+  child >>= fun r ->
+  Result.map (fun () -> data) r |> Lwt_result.lift
+
 let check_dir x =
   match Unix.lstat x with
   | Unix.{ st_kind = S_DIR; _ } -> `Present
@@ -156,3 +167,46 @@ let ensure_dir path =
   match check_dir path with
   | `Present -> ()
   | `Missing -> Unix.mkdir path 0o777
+
+(** delete_recursively code taken from Lwt. *)
+
+let win32_unlink fn =
+  Lwt.catch
+    (fun () -> Lwt_unix.unlink fn)
+    (function
+     | Unix.Unix_error (Unix.EACCES, _, _) as exn ->
+       Lwt_unix.lstat fn >>= fun {st_perm; _} ->
+       (* Try removing the read-only attribute *)
+       Lwt_unix.chmod fn 0o666 >>= fun () ->
+       Lwt.catch
+         (fun () -> Lwt_unix.unlink fn)
+         (function _ ->
+            (* Restore original permissions *)
+            Lwt_unix.chmod fn st_perm >>= fun () ->
+            Lwt.fail exn)
+     | exn -> Lwt.fail exn)
+
+let unlink =
+  if Sys.win32 then
+    win32_unlink
+  else
+    Lwt_unix.unlink
+
+(* This is likely VERY slow for directories with many files. That is probably
+   best addressed by switching to blocking calls run inside a worker thread,
+   i.e. with Lwt_preemptive. *)
+let rec delete_recursively directory =
+  Lwt_unix.files_of_directory directory
+  |> Lwt_stream.iter_s begin fun entry ->
+    if entry = Filename.current_dir_name ||
+       entry = Filename.parent_dir_name then
+      Lwt.return ()
+    else
+      let path = Filename.concat directory entry in
+      Lwt_unix.lstat path >>= fun stat ->
+      if stat.Lwt_unix.st_kind = Lwt_unix.S_DIR then
+        delete_recursively path
+      else
+        unlink path
+  end >>= fun () ->
+  Lwt_unix.rmdir directory

@@ -18,7 +18,7 @@ module Docker = Docker
 (** {2 Sandboxes} *)
 
 module Config = Config
-module Runc_sandbox = Runc_sandbox
+module Sandbox = Sandbox
 
 (** {2 Builders} *)
 
