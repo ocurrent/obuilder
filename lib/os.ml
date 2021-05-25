@@ -5,6 +5,16 @@ let ( >>!= ) = Lwt_result.bind
 type unix_fd = {
   raw : Unix.file_descr;
   mutable needs_close : bool;
+  }
+
+let stdout = {
+  raw = Unix.stdout;
+  needs_close = false;
+  }
+
+let stderr = {
+  raw = Unix.stderr;
+  needs_close = false;
 }
 
 let close fd =
@@ -13,7 +23,8 @@ let close fd =
   fd.needs_close <- false
 
 let ensure_closed_unix fd =
-  if fd.needs_close then close fd
+  if fd.needs_close then
+    close fd
 
 let ensure_closed_lwt fd =
   if Lwt_unix.state fd = Lwt_unix.Closed then Lwt.return_unit
@@ -95,6 +106,14 @@ let rec write_all fd buf ofs len =
     write_all fd buf (ofs + n) (len - n)
   )
 
+let rec write_all_string fd buf ofs len =
+  assert (len >= 0);
+  if len = 0 then Lwt.return_unit
+  else (
+    Lwt_unix.write_string fd buf ofs len >>= fun n ->
+    write_all_string fd buf (ofs + n) (len - n)
+  )
+
 let write_file ~path contents =
   let flags = [Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
   Lwt_io.(with_file ~mode:output ~flags) path @@ fun ch ->
@@ -139,9 +158,34 @@ let pread ?stderr argv =
   Lwt.finalize
     (fun () -> Lwt_io.read r)
     (fun () -> Lwt_io.close r)
-  >>= fun data ->
-  child >>= fun () ->
-  Lwt.return data
+  >>= fun data -> child >|= fun () -> data
+
+let pread_result ?cwd ?stdin ?stderr ~pp ?is_success ?cmd argv =
+  with_pipe_from_child @@ fun ~r ~w ->
+  let child = exec_result ?cwd ?stdin ~stdout:(`FD_move_safely w) ?stderr ~pp ?is_success ?cmd argv in
+  let r = Lwt_io.(of_fd ~mode:input) r in
+  Lwt.finalize
+    (fun () -> Lwt_io.read r)
+    (fun () -> Lwt_io.close r)
+  >>= fun data -> child >|= fun r -> Result.map (fun () -> data) r
+
+let pread_all ?stdin ~pp ?(cmd="") argv =
+  with_pipe_from_child @@ fun ~r:r1 ~w:w1 ->
+  with_pipe_from_child @@ fun ~r:r2 ~w:w2 ->
+  let child =
+    Logs.info (fun f -> f "Exec %a" pp_cmd (cmd, argv));
+    !lwt_process_exec ?stdin ~stdout:(`FD_move_safely w1) ~stderr:(`FD_move_safely w2) ~pp
+      (cmd, Array.of_list argv)
+  in
+  let r1 = Lwt_io.(of_fd ~mode:input) r1 in
+  let r2 = Lwt_io.(of_fd ~mode:input) r2 in
+  Lwt.finalize
+    (fun () -> Lwt.both (Lwt_io.read r1) (Lwt_io.read r2))
+    (fun () -> Lwt.both (Lwt_io.close r1) (Lwt_io.close r2) >>= fun _ -> Lwt.return_unit)
+  >>= fun (stdin, stdout) ->
+  child >>= function
+  | Ok i -> Lwt.return (i, stdin, stdout)
+  | Error (`Msg m) -> Lwt.fail (Failure m)
 
 let check_dir x =
   match Unix.lstat x with
@@ -149,10 +193,10 @@ let check_dir x =
   | _ -> Fmt.failwith "Exists, but is not a directory: %S" x
   | exception Unix.Unix_error(Unix.ENOENT, _, _) -> `Missing
 
-let ensure_dir path =
+let ensure_dir ?(mode=0o777) path =
   match check_dir path with
   | `Present -> ()
-  | `Missing -> Unix.mkdir path 0o777
+  | `Missing -> Unix.mkdir path mode
 
 let copy ?(superuser=false) ~src dst =
   if Sys.win32 then
@@ -162,3 +206,51 @@ let copy ?(superuser=false) ~src dst =
     sudo ["cp"; "-a"; "--"; src; dst ]
   else
     exec ["cp"; "-a"; "--"; src; dst ]
+
+(** delete_recursively code taken from Lwt. *)
+
+let win32_unlink fn =
+  Lwt.catch
+    (fun () -> Lwt_unix.unlink fn)
+    (function
+      | Unix.Unix_error (Unix.EACCES, _, _) as exn ->
+        Lwt_unix.lstat fn >>= fun {st_perm; _} ->
+        (* Try removing the read-only attribute *)
+        Lwt_unix.chmod fn 0o666 >>= fun () ->
+        Lwt.catch
+          (fun () -> Lwt_unix.unlink fn)
+          (function _ ->
+             (* Restore original permissions *)
+             Lwt_unix.chmod fn st_perm >>= fun () ->
+             Lwt.fail exn)
+      | exn -> Lwt.fail exn)
+
+let unlink =
+  if Sys.win32 then
+    win32_unlink
+  else
+    Lwt_unix.unlink
+
+(* This is likely VERY slow for directories with many files. That is probably
+   best addressed by switching to blocking calls run inside a worker thread,
+   i.e. with Lwt_preemptive. *)
+let rec delete_recursively directory =
+  Lwt_unix.files_of_directory directory
+  |> Lwt_stream.iter_s begin fun entry ->
+    if entry = Filename.current_dir_name ||
+       entry = Filename.parent_dir_name then
+      Lwt.return ()
+    else
+      let path = Filename.concat directory entry in
+      Lwt_unix.lstat path >>= fun {Lwt_unix.st_kind; _} ->
+      match st_kind with
+      | S_DIR -> delete_recursively path
+      | S_LNK when (Sys.win32 || Sys.cygwin) ->
+        Lwt_unix.stat path >>= fun {Lwt_unix.st_kind; _} ->
+        begin match st_kind with
+          | S_DIR -> Lwt_unix.rmdir path
+          | _ -> unlink path
+        end
+      | _ -> unlink path
+  end >>= fun () ->
+  Lwt_unix.rmdir directory

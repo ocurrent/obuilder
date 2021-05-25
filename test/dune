@@ -1,3 +1,5 @@
+(copy_files ../static/manifest.bash)
+
 (executable
  (name dummy)
  (public_name dummy)
@@ -7,7 +9,7 @@
 (test
  (name test)
  (package obuilder)
- (deps base.tar %{bin:dummy})
+ (deps base.tar manifest.bash %{bin:dummy})
  (libraries alcotest-lwt obuilder str logs.fmt)
  (modules log mock_exec mock_sandbox mock_store test))
 

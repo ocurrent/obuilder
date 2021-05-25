@@ -6,11 +6,21 @@ let ( / ) = Filename.concat
 
 let strf = Printf.sprintf
 
+let unix_path path =
+  if Sys.win32 then
+    Lwt_process.pread ("", [| "cygpath"; "-u"; path|]) >|= fun str -> String.trim str
+  else
+    Lwt.return path
+
 let next_container_id = ref 0
 
 let base_tar =
   let mydir = Sys.getcwd () in
-  Lwt_main.run (Lwt_io.(with_file ~mode:input) (mydir / "base.tar") Lwt_io.read)
+  Lwt_main.run begin
+    let base_tar = mydir / "base.tar" in
+    (* unix_path (mydir / "base.tar") >>= fun base_tar -> *)
+    Lwt_io.(with_file ~mode:input) base_tar Lwt_io.read
+  end
   |> Bytes.of_string
 
 let with_fd x f =
@@ -54,7 +64,7 @@ let exec_docker ?stdout = function
   | ["create"; "--"; base] -> docker_create ?stdout base
   | ["export"; "--"; id] -> docker_export ?stdout id
   | ["image"; "inspect"; "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|}; "--"; base] -> docker_inspect ?stdout base
-  | ["rm"; "--"; id] -> Fmt.pr "docker rm %S@." id; Lwt_result.return 0
+  | ["rm"; "--force"; "--"; id] -> Fmt.pr "docker rm --force %S@." id; Lwt_result.return 0
   | x -> Fmt.failwith "Unknown mock docker command %a" Fmt.(Dump.list string) x
 
 let mkdir = function
@@ -80,9 +90,14 @@ let exec ?cwd ?stdin ?stdout ?stderr ~pp cmd =
     Fmt.pr "exec: %a@." Fmt.(Dump.array string) argv;
     begin match Array.to_list argv with
       | "docker" :: args -> exec_docker ?stdout args
-      | "sudo" :: "--" :: ("tar" :: _ as tar) -> Os.default_exec ?cwd ?stdin ?stdout ~pp ("", Array.of_list tar)
-      | "sudo" :: "--" :: "mkdir" :: args
-      | "mkdir" :: args -> mkdir args
+      | "sudo" :: "--" :: ("tar" :: _ as tar) when not Os.running_as_root ->
+        Os.default_exec ?cwd ?stdin ?stdout ~pp ("", Array.of_list tar)
+      | "tar" :: "-C" :: path :: opts when Os.running_as_root ->
+        unix_path path >>= fun path ->
+        let tar = (if Sys.win32 then "C:\\cygwin64\\bin\\tar.exe" else "tar") :: "-C" :: path :: opts in
+        Os.default_exec ?cwd ?stdin ?stdout ~pp ("", Array.of_list tar)
+      | "mkdir" :: args when Os.running_as_root -> mkdir args
+      | "sudo" :: "--" :: "mkdir" :: args when not Os.running_as_root -> mkdir args
       | x -> Fmt.failwith "Unknown mock command %a" Fmt.(Dump.list string) x
     end
   | (x, _) -> Fmt.failwith "Unexpected absolute path: %S" x

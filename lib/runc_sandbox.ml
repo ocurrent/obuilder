@@ -334,10 +334,12 @@ let create ~state_dir (c : config) =
 
 open Cmdliner
 
+let docs = "RUNC SANDBOX"
+
 let fast_sync =
   Arg.value @@
   Arg.flag @@
-  Arg.info
+  Arg.info ~docs
     ~doc:"Ignore sync syscalls (requires runc >= 1.0.0-rc92)."
     ["fast-sync"]
 

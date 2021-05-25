@@ -7,11 +7,14 @@
 
 OBuilder takes a build script (similar to a Dockerfile) and performs the steps in it in a sandboxed environment.
 
-After each step, OBuild uses the snapshot feature of the filesystem (ZFS or Btrfs) to store the state of the build. There is also an Rsync backend that copies the build state.
+After each step, OBuilder uses the snapshot feature of the filesystem (ZFS or
+Btrfs) to store the state of the build. There is also an Rsync backend that
+copies the build state. On Linux, it uses `runc` to sandbox the build steps, but
+any system that can run a command safely in a chroot could be used.
 Repeating a build will reuse the cached results where possible.
 
-OBuilder aims to be portable, although currently only Linux support is present.
-On Linux, it uses `runc` to sandbox the build steps, but any system that can run a command safely in a chroot could be used.
+OBuilder can also use Docker as a backend (fully replacing of `runc` and the
+snapshotting filesystem) on any system supported by Docker (Linux, Windows, …).
 
 OBuilder stores the log output of each build step.
 This is useful for CI, where you may still want to see the output even if the result was cached from some other build.
@@ -73,9 +76,14 @@ pass the `--fast-sync` option, which installs a seccomp filter that skips all
 sync syscalls. However, if you attempt to use this with an earlier version of
 runc then sync operations will instead fail with `EPERM`.
 
+### Windows
+
+The user running OBuilder must have access to `%PROGRAMDATA%\Docker\volumes`,
+because copying caches and maintaining internal tools is done directly on the host.
+
 ## The build specification language
 
-The spec files are loosly based on the [Dockerfile][] format.
+The spec files are loosely based on the [Dockerfile][] format.
 The main difference is that the format uses S-expressions rather than a custom format,
 which should make it easier to generate and consume it automatically.
 
@@ -105,8 +113,8 @@ The initial context is supplied by the user (see [build.mli](lib/build.mli) for 
 By default:
 - The environment is taken from the Docker configuration of `BASE`.
 - The user is `(uid 0) (gid 0)` on Linux, `(name ContainerAdministrator)` on Windows.
-- The workdir is `/`.
-- The shell is `/bin/bash -c`.
+- The workdir is `/`, `C:/` on Windows.
+- The shell is `/bin/bash -c`, `C:\Windows\System32\cmd.exe /S /C` on Windows.
 
 ### Multi-stage builds
 
@@ -129,7 +137,6 @@ For example:
 ```
 
 At the moment, the `(build ...)` items must appear before the `(from ...)` line.
-
 
 ### workdir
 
@@ -169,7 +176,6 @@ The command run will be this list of arguments followed by the single argument `
  (network NETWORK...)?
  (secrets SECRET...)?
  (shell COMMAND))
-
 ```
 
 Examples:
@@ -210,9 +216,9 @@ the image. Each `SECRET` entry is under the form `(ID (target PATH))`, where `ID
 `PATH` is the location of the mounted secret file within the container.
 The sandbox context API contains a `secrets` parameter to provide values to the runtime.
 If a requested secret isn't provided with a value, the runtime fails.
-With the command line interface `obuilder`, use the `--secret ID:PATH` option to provide the path of the file
-containing the secret for `ID`.
-When used with Docker, make sure to use the **buildkit** syntax, as only buildkit supports a `--secret` option.
+Use the `--secret ID:PATH` option to provide the path of the file containing the
+secret for `ID`.
+When used with Docker, make sure to use the **BuildKit** syntax, as only BuildKit supports a `--secret` option.
 (See https://docs.docker.com/develop/develop-images/build_enhancements/#new-docker-build-secret-information)
 
 ### copy
@@ -261,8 +267,14 @@ Notes:
 
 - Both `SRC` and `DST` use `/` as the directory separator on all platforms.
 
-- The copy is currently done by running `tar` inside the container to receive the files.
-  Therefore, the filesystem must have a working `tar` binary.
+- The copy is currently done by running `tar` inside the container to receive
+  the files. Therefore, the filesystem must have a working `tar` binary. On
+  Windows when using the Docker backend, OBuilder provides a `tar` binary.
+
+- On Windows, copying from a build step image based on [Nano Server][nanoserver]
+  isn't supported.
+
+[nanoserver]: https://hub.docker.com/_/microsoft-windows-nanoserver
 
 ### user
 

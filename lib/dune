@@ -1,3 +1,10 @@
+(rule
+ (target Static_files.ml)
+ (deps
+  (source_tree ../static))
+ (action
+  (run %{bin:ocaml-crunch} ../static --mode=plain -o %{target})))
+
 (library
   (name obuilder)
   (public_name obuilder)

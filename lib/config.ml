@@ -22,6 +22,7 @@ end
 
 type t = {
   cwd : string;
+  entrypoint : string option;
   argv : string list;
   hostname : string;
   user : Obuilder_spec.user;
@@ -29,7 +30,6 @@ type t = {
   mounts : Mount.t list;
   network : string list;
   mount_secrets : Secret.t list;
-  entrypoint : string option;
 }
 
 let v ~cwd ~argv ~hostname ~user ~env ~mounts ~network ~mount_secrets ?entrypoint () =

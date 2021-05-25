@@ -5,12 +5,15 @@ let ( / ) = Filename.concat
 type hash = Sha256.t
 
 let sexp_of_hash t = Sexplib.Sexp.Atom (Sha256.to_hex t)
+let hash_of_sexp = function
+  | Sexplib.Sexp.Atom hash -> Sha256.of_hex hash
+  | x -> Fmt.failwith "Invalid data source: %a" Sexplib.Sexp.pp_hum x
 
 type t = [
   | `File of (string * hash)
   | `Symlink of (string * string)
   | `Dir of (string * t list)
-] [@@deriving sexp_of]
+] [@@deriving sexp]
 
 let rec generate ~exclude ~src_dir src : t =
   let path = src_dir / src in
@@ -69,3 +72,13 @@ let generate ~exclude ~src_dir src =
       |> Result.ok
     with Failure m ->
       Error (`Msg m)
+
+let to_from_files ?(null=false) t =
+  let sep = if null then '\000' else '\n' in
+  let buf = Buffer.create 64 in
+  let rec aux = function
+    | `File (name, _) | `Symlink (name, _) -> Buffer.add_string buf name; Buffer.add_char buf sep
+    | `Dir (name, entries) -> Buffer.add_string buf name; Buffer.add_char buf sep; List.iter aux entries
+  in
+  aux t;
+  Buffer.contents buf

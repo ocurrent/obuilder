@@ -16,9 +16,6 @@ let assert_str expected got =
     exit 1
   )
 
-module Sandbox = Runc_sandbox
-module Fetcher = Docker
-
 module Test(Store : S.STORE) = struct
   let assert_output expected t id =
     Store.result t id >>= function
@@ -106,7 +103,13 @@ module Test(Store : S.STORE) = struct
       assert (x = Ok ());
       Lwt.return_unit
 
-  module Build = Builder(Store)(Sandbox)(Fetcher)
+  type builder = Builder : (module Obuilder.BUILDER with type t = 'a) * 'a -> builder
+
+  let create_builder store conf =
+    let module Builder = Obuilder.Builder(Store)(Runc_sandbox)(Obuilder.Docker_extract) in
+    Runc_sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
+    let builder = Builder.v ~store ~sandbox in
+    Builder ((module Builder), builder)
 
   let n_steps = 4
   let n_values = 3
@@ -138,7 +141,7 @@ module Test(Store : S.STORE) = struct
     in
     check_log, Spec.stage ~from:"busybox" ops
 
-  let do_build builder =
+  let do_build (Builder ((module Builder), builder)) =
     let src_dir = "/root" in
     let buf = Buffer.create 100 in
     let log t x =
@@ -150,7 +153,7 @@ module Test(Store : S.STORE) = struct
     in
     let ctx = Context.v ~shell:["/bin/sh"; "-c"] ~log ~src_dir () in
     let check_log, spec = random_build () in
-    Build.build builder ctx spec >>= function
+    Builder.build builder ctx spec >>= function
     | Ok _ ->
       check_log (Buffer.contents buf);
       Lwt.return_unit
@@ -158,8 +161,8 @@ module Test(Store : S.STORE) = struct
     | Error `Cancelled -> assert false
 
   let stress_builds store conf =
-    Sandbox.create ~state_dir:(Store.state_dir store / "runc") conf >>= fun sandbox ->
-    let builder = Build.v ~store ~sandbox in
+    create_builder store conf >>= fun builder ->
+    let (Builder ((module Builder), _)) = builder in
     let pending = ref n_jobs in
     let running = ref 0 in
     let cond = Lwt_condition.create () in
@@ -197,13 +200,12 @@ module Test(Store : S.STORE) = struct
     else Lwt.return_unit
 
   let prune store conf =
-    Sandbox.create ~state_dir:(Store.state_dir store / "runc") conf >>= fun sandbox ->
-    let builder = Build.v ~store ~sandbox in
+    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
     let log id = Logs.info (fun f -> f "Deleting %S" id) in
     let end_time = Unix.(gettimeofday () +. 60.0 |> gmtime) in
     let rec aux () =
       Fmt.pr "Pruning...@.";
-      Build.prune ~log builder ~before:end_time 1000 >>= function
+      Builder.prune ~log builder ~before:end_time 1000 >>= function
       | 0 -> Lwt.return_unit
       | _ -> aux ()
     in
@@ -212,6 +214,7 @@ end
 
 let stress spec conf =
   Lwt_main.run begin
+    let spec = Option.get spec in
     spec >>= fun (Store_spec.Store ((module Store), store)) ->
     let module T = Test(Store) in
     T.test_store store >>= fun () ->
@@ -226,8 +229,7 @@ let cmd =
   let doc = "Run stress tests." in
   let info = Cmd.info ~doc "stress" in
   Cmd.v info
-    Term.(const stress $ Store_spec.cmdliner $ Sandbox.cmdliner)
-
+    Term.(const stress $ Store_spec.cmdliner $ Runc_sandbox.cmdliner)
 
 let () =
   (* Logs.(set_level (Some Info)); *)

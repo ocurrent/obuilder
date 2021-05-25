@@ -42,7 +42,7 @@ let store_t = Arg.conv (of_string, pp)
 let store names =
   Arg.opt Arg.(some store_t) None @@
   Arg.info
-    ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path) or $(b,zfs:pool) for the OBuilder cache."
+    ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path), $(b,zfs:pool) or $(b,docker:path) for the OBuilder cache."
     ~docv:"STORE"
     names
 
