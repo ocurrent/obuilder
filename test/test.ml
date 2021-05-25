@@ -1,7 +1,7 @@
 open Lwt.Infix
 open Obuilder
 
-module B = Builder(Mock_store)(Mock_sandbox)(Docker)
+module B = Builder(Mock_store)(Mock_sandbox)(Docker_extract)
 
 let ( / ) = Filename.concat
 let ( >>!= ) = Lwt_result.bind
@@ -705,6 +705,38 @@ let test_copy generate =
 let test_copy_ocaml _switch () =
   test_copy (fun ~exclude ~src_dir src -> Lwt_result.lift (Manifest.generate ~exclude ~src_dir src))
 
+(* Test the manifest.bash script. *)
+let test_copy_bash _switch () =
+  let generate ~exclude ~src_dir src =
+    begin if Sys.win32 then
+        Os.pread ["cygpath"; "-m"; "/usr/bin/bash"] >>= fun bash ->
+        Os.pread ["cygpath"; "-m"; src_dir] >>= fun src_dir ->
+        Lwt.return (String.trim bash, String.trim src_dir)
+      else
+        Lwt.return ("/bin/bash", src_dir)
+    end >>= fun (bash, src_dir) ->
+    let manifest_bash =
+      Printf.sprintf "exec %s %S %S %d %s %d %s"
+        "./manifest.bash"
+        src_dir
+        "/"
+        (List.length exclude)
+        (String.concat " " (List.map Filename.quote exclude))
+        1
+        (Filename.quote src)
+    in
+    let argv = [ "--login"; "-c"; manifest_bash ] in
+    let pp f = Os.pp_cmd f (bash, argv) in
+    Os.pread_all ~pp ~cmd:bash argv >>= fun (n, stdout, stderr) ->
+    if n = 0 then
+      Lwt_result.return @@ Manifest.t_of_sexp (Sexplib.Sexp.of_string stdout)
+    else if n = 1 then
+      Lwt_result.fail (`Msg stderr)
+    else
+      Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
+  in
+  with_default_exec (fun () -> test_copy generate)
+
 let test_cache_id () =
   let check expected id =
     Alcotest.(check string) ("ID-" ^ id) expected (Escape.cache id)
@@ -798,11 +830,12 @@ let () =
     match Sys.getenv "CI", Sys.getenv "GITHUB_ACTIONS", Sys.win32 with
     | "true", "true", true -> true
     | _ | exception _ -> false in
+  let manifest =
+    test_case "Copy using manifest.bash" `Quick test_copy_bash
+    :: if not Sys.win32 then [test_case "Copy using Manifest" `Quick test_copy_ocaml]
+       else []
+  in
   Lwt_main.run begin
-    let manifest =
-      if not Sys.win32 then [test_case "Copy using Manifest" `Quick test_copy_ocaml]
-      else []
-    in
     run "OBuilder" ([
       "spec", [
         test_case_sync "Sexp"     `Quick test_sexp;

@@ -42,7 +42,8 @@ module Json_config = struct
     ]
 
   let user_mounts =
-    List.map @@ fun { Config.Mount.src; dst; readonly } ->
+    List.map @@ fun { Config.Mount.ty; src; dst; readonly } ->
+    assert (ty = `Bind);
     let options = [ "bind"; "nosuid"; "nodev"; ] in
     mount ~ty:"bind" ~src dst
       ~options:(if readonly then "ro" :: options else options)
@@ -334,10 +335,12 @@ let create ~state_dir (c : config) =
 
 open Cmdliner
 
+let docs = "RUNC SANDBOX"
+
 let fast_sync =
   Arg.value @@
   Arg.flag @@
-  Arg.info
+  Arg.info ~docs
     ~doc:"Ignore sync syscalls (requires runc >= 1.0.0-rc92)."
     ["fast-sync"]
 

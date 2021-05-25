@@ -27,3 +27,9 @@ module Make (Store : S.STORE) (Sandbox : S.SANDBOX) (_ : S.FETCHER) : sig
 
   val v : store:Store.t -> sandbox:Sandbox.t -> t
 end
+
+module Make_Docker (Store : S.STORE) : sig
+  include S.BUILDER with type context := Context.t
+
+  val v : store:Store.t -> sandbox:Docker_sandbox.t -> t
+end

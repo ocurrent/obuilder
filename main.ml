@@ -2,8 +2,10 @@ open Lwt.Infix
 
 let ( / ) = Filename.concat
 
-module Sandbox = Obuilder.Sandbox
-module Fetcher = Obuilder.Docker
+module Native_sandbox = Obuilder.Native_sandbox
+module Docker_sandbox = Obuilder.Docker_sandbox
+module Docker_store = Obuilder.Docker_store
+module Docker_extract = Obuilder.Docker_extract
 module Store_spec = Obuilder.Store_spec
 
 type builder = Builder : (module Obuilder.BUILDER with type t = 'a) * 'a -> builder
@@ -14,10 +16,17 @@ let log tag msg =
   | `Note -> Fmt.pr "%a@." Fmt.(styled (`Fg `Yellow) string) msg
   | `Output -> output_string stdout msg; flush stdout
 
-let create_builder spec conf =
-  spec >>= fun (Store_spec.Store ((module Store), store)) ->
-  let module Builder = Obuilder.Builder(Store)(Sandbox)(Fetcher) in
-  Sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
+let create_builder store_spec conf =
+  store_spec >>= fun (Store_spec.Store ((module Store), store)) ->
+  let module Builder = Obuilder.Builder (Store) (Native_sandbox) (Docker_extract) in
+  Native_sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
+  let builder = Builder.v ~store ~sandbox in
+  Builder ((module Builder), builder)
+
+let create_docker_builder store_spec conf =
+  store_spec >>= fun (Store_spec.Store ((module Store), store)) ->
+  let module Builder = Obuilder.Docker_builder (Store) in
+  Docker_sandbox.create conf >|= fun sandbox ->
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)
 
@@ -27,9 +36,15 @@ let read_whole_file path =
   let len = in_channel_length ic in
   really_input_string ic len
 
-let build () store spec conf src_dir secrets =
+let select_backend (sandbox, store_spec) native_conf docker_conf =
+  match sandbox with
+  | `Native -> create_builder store_spec native_conf
+  | `Docker -> create_docker_builder store_spec docker_conf
+
+let build () store spec native_conf docker_conf src_dir secrets =
   Lwt_main.run begin
-    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+    select_backend store native_conf docker_conf
+    >>= fun (Builder ((module Builder), builder)) ->
     Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     let spec =
       try Obuilder.Spec.t_of_sexp (Sexplib.Sexp.load_sexp spec)
@@ -51,9 +66,10 @@ let build () store spec conf src_dir secrets =
       exit 1
   end
 
-let healthcheck () store conf =
+let healthcheck () store native_conf docker_conf =
   Lwt_main.run begin
-    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+    select_backend store native_conf docker_conf
+    >>= fun (Builder ((module Builder), builder)) ->
     Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     Builder.healthcheck builder >|= function
     | Error (`Msg m) ->
@@ -63,16 +79,18 @@ let healthcheck () store conf =
       Fmt.pr "Healthcheck passed@."
   end
 
-let delete () store conf id =
+let delete () store native_conf docker_conf id =
   Lwt_main.run begin
-    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+    select_backend store native_conf docker_conf
+    >>= fun (Builder ((module Builder), builder)) ->
     Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
   end
 
-let clean () store conf =
+let clean () store native_conf docker_conf =
   Lwt_main.run begin
-    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+    select_backend store native_conf docker_conf
+    >>= fun (Builder ((module Builder), builder)) ->
     Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ begin fun () ->
       let now = Unix.(gmtime (gettimeofday ())) in
       Builder.prune builder ~before:now max_int ~log:(fun id -> Fmt.pr "Removing %s@." id)
@@ -137,19 +155,22 @@ let build =
   let doc = "Build a spec file." in
   let info = Cmd.info "build" ~doc in
   Cmd.v info
-    Term.(const build $ setup_log $ store $ spec_file $ Obuilder.Sandbox.cmdliner $ src_dir $ secrets)
+    Term.(const build $ setup_log $ store $ spec_file $ Native_sandbox.cmdliner
+          $ Docker_sandbox.cmdliner $ src_dir $ secrets)
 
 let delete =
   let doc = "Recursively delete a cached build result." in
   let info = Cmd.info "delete" ~doc in
   Cmd.v info
-    Term.(const delete $ setup_log $ store $ Obuilder.Sandbox.cmdliner $ id)
+    Term.(const delete $ setup_log $ store $ Native_sandbox.cmdliner
+          $ Docker_sandbox.cmdliner $ id)
 
 let clean =
   let doc = "Clean all cached build results." in
   let info = Cmd.info "clean" ~doc in
   Cmd.v info
-    Term.(const clean $ setup_log $ store $ Obuilder.Sandbox.cmdliner)
+    Term.(const clean $ setup_log $ store $ Native_sandbox.cmdliner
+          $ Docker_sandbox.cmdliner)
 
 let buildkit =
   Arg.value @@
@@ -177,7 +198,8 @@ let healthcheck =
   let doc = "Perform a self-test" in
   let info = Cmd.info "healthcheck" ~doc in
   Cmd.v info
-    Term.(const healthcheck $ setup_log $ store $ Obuilder.Sandbox.cmdliner)
+    Term.(const healthcheck $ setup_log $ store $ Native_sandbox.cmdliner
+          $ Docker_sandbox.cmdliner)
 
 let cmds = [build; delete; clean; dockerfile; healthcheck]
 
