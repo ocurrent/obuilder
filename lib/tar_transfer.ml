@@ -55,11 +55,12 @@ let copy_to ~dst src =
 
 let copy_file ~src ~dst ~to_untar ~user =
   Lwt_unix.LargeFile.lstat src >>= fun stat ->
+  let user_id, group_id = match user with `Unix user -> Obuilder_spec.(Some user.uid, Some user.gid) | _ -> None, None in
   let hdr = Tar.Header.make
       ~file_mode:(if stat.Lwt_unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
       ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
-      ~user_id:user.Obuilder_spec.uid
-      ~group_id:user.Obuilder_spec.gid
+      ?user_id
+      ?group_id
       dst stat.Lwt_unix.LargeFile.st_size
   in
   Tar_lwt_unix.write_block hdr (fun ofd ->
@@ -68,13 +69,14 @@ let copy_file ~src ~dst ~to_untar ~user =
 
 let copy_symlink ~src ~target ~dst ~to_untar ~user =
   Lwt_unix.LargeFile.lstat src >>= fun stat ->
+  let user_id, group_id = match user with `Unix user -> Obuilder_spec.(Some user.uid, Some user.gid) | _ -> None, None in
   let hdr = Tar.Header.make
       ~file_mode:0o777
       ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
       ~link_indicator:Tar.Header.Link.Symbolic
       ~link_name:target
-      ~user_id:user.Obuilder_spec.uid
-      ~group_id:user.Obuilder_spec.gid
+      ?user_id
+      ?group_id
       dst 0L
   in
   Tar_lwt_unix.write_block hdr (fun _ -> Lwt.return_unit) to_untar
@@ -83,11 +85,12 @@ let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
   Log.debug(fun f -> f "Copy dir %S -> %S@." src dst);
   Lwt_unix.LargeFile.lstat (src_dir / src) >>= fun stat ->
   begin
+    let user_id, group_id = match user with `Unix user -> Obuilder_spec.(Some user.uid, Some user.gid) | _ -> None, None in
     let hdr = Tar.Header.make
         ~file_mode:0o755
         ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
-        ~user_id:user.Obuilder_spec.uid
-        ~group_id:user.Obuilder_spec.gid
+        ?user_id
+        ?group_id
         (dst ^ "/") 0L
     in
     Tar_lwt_unix.write_block hdr (fun _ -> Lwt.return_unit) to_untar
