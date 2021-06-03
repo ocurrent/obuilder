@@ -86,18 +86,18 @@ let process_result ~pp proc =
 (* Overridden in unit-tests *)
 let lwt_process_exec = ref default_exec
 
-let exec_result ?cwd ?stdin ?stdout ?stderr ~pp argv =
+let exec_result ?cwd ?stdin ?stdout ?stderr ~pp ?(is_success=((=) 0)) argv =
   Logs.info (fun f -> f "Exec %a" pp_cmd argv);
   !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>= function
-  | Ok 0 -> Lwt_result.return ()
+  | Ok n when is_success n -> Lwt_result.return ()
   | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
   | Error e -> Lwt_result.fail (e : [`Msg of string] :> [> `Msg of string])
 
-let exec ?cwd ?stdin ?stdout ?stderr argv =
+let exec ?cwd ?stdin ?stdout ?stderr ?(is_success=((=) 0)) argv =
   Logs.info (fun f -> f "Exec %a" pp_cmd argv);
   let pp f = pp_cmd f argv in
   !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>= function
-  | Ok 0 -> Lwt.return_unit
+  | Ok n when is_success n -> Lwt.return_unit
   | Ok n -> Lwt.fail_with (Fmt.str "%t failed with exit status %d" pp n)
   | Error (`Msg m) -> Lwt.fail (Failure m)
 
