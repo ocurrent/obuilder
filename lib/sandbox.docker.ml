@@ -23,7 +23,6 @@ module Docker_config = struct
   let make
         ({docker_cpus; docker_isolation; _} : t)
         {Config.cwd; argv; hostname; user; env; mounts; network; mount_secrets; entrypoint} =
-    ignore cwd;
     ignore user;
     ignore network;
     ignore mount_secrets;
@@ -36,6 +35,7 @@ module Docker_config = struct
         "--cpus"; string_of_int docker_cpus;
         "--isolation"; (List.assoc docker_isolation isolations);
         "--hostname"; hostname;
+        "--workdir"; cwd;
       ] @ env @ mounts @ entrypoint in
     docker_argv, argv
 end

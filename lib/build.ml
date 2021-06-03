@@ -29,7 +29,8 @@ module Context = struct
     secrets : (string * string) list;
   }
 
-  let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?(workdir="/") ?shell ?(secrets=[]) ~log ~src_dir () =
+  let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?workdir ?shell ?(secrets=[]) ~log ~src_dir () =
+    let workdir = Option.value ~default:(if Sys.win32 then {|C:\|} else "/") workdir in
     let shell = Option.value ~default:(if Sys.win32 then ["cmd"; "/S"; "/C"] else ["/bin/bash"; "-c"]) shell in
     { switch; env; src_dir; user; workdir; shell; log; scope = Scope.empty; secrets }
 
@@ -153,7 +154,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
           let argv = ["tar"; "-xf"; "-"] in
           let config = Config.v
-              ~cwd:"/"
+              ~cwd:(if Sys.win32 then {|C:\|} else "/")
               ~argv
               ~hostname
               ~user:Obuilder_spec.root
@@ -188,8 +189,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
 
   let update_workdir ~(context:Context.t) path =
     let workdir =
-      if Astring.String.is_prefix ~affix:"/" path then path
-      else context.workdir ^ "/" ^ path
+      if Astring.String.is_prefix ~affix:(if Sys.win32 then {|C:\|} else "/") path then path
+      else Filename.concat context.workdir path
     in
     { context with workdir }
 
