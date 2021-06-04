@@ -28,11 +28,11 @@ module Docker_config = struct
   let make {Config.cwd; argv; hostname; user; env; mounts; network; mount_secrets; entrypoint}
         ~config_dir ({docker_cpus; docker_isolation; _} : t) =
     ignore user;
-    ignore network;
     let mounts = mounts |> List.concat_map (fun mount ->
       [ "--mount"; Config.Mount.(Printf.sprintf "type=volume,src=%s,dst=%s%s"
           mount.src mount.dst (if mount.readonly then ",readonly" else "")) ]) in
     let env = env |> List.concat_map (fun (k, v) -> [ "--env"; Printf.sprintf "%s=%s" k v ]) in
+    let network = network |> List.concat_map (fun network -> ["--network"; network]) in
     let (_, mount_secrets) =
       List.fold_left (fun (id, mount_secrets) _ ->
           let host, guest = config_dir / secret_dir id, secrets_guest_root / secret_dir id in
@@ -45,7 +45,7 @@ module Docker_config = struct
         "--isolation"; (List.assoc docker_isolation isolations);
         "--hostname"; hostname;
         "--workdir"; cwd;
-      ] @ env @ mounts @ mount_secrets @ entrypoint in
+      ] @ env @ mounts @ mount_secrets @ network @ entrypoint in
     docker_argv, argv
 end
 
