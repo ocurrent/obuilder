@@ -3,6 +3,8 @@ open Sexplib.Conv
 
 let backend = `Docker
 
+let ( / ) = Filename.concat
+
 type isolation = [ `HyperV | `Process | `Default ] [@@deriving sexp]
 let isolations : (isolation * string) list = [(`HyperV, "hyperv"); (`Process, "process"); (`Default, "default")]
 
@@ -17,39 +19,96 @@ type config = {
   docker_isolation : isolation;
 } [@@deriving sexp]
 
+let secrets_guest_root = if Sys.win32 then {|C:\ProgramData\obuilder\|} else "/run/secrets/obuilder"
+let secret_dir id = "secrets" / string_of_int id
+
 module Docker_config = struct
   (** [make config] returns the docker CLI arguments and the command
      to execute. *)
-  let make
-        ({docker_cpus; docker_isolation; _} : t)
-        {Config.cwd; argv; hostname; user; env; mounts; network; mount_secrets; entrypoint} =
+  let make {Config.cwd; argv; hostname; user; env; mounts; network; mount_secrets; entrypoint}
+        ~config_dir ({docker_cpus; docker_isolation; _} : t) =
     ignore user;
     ignore network;
-    ignore mount_secrets;
     let mounts = mounts |> List.concat_map (fun mount ->
       [ "--mount"; Config.Mount.(Printf.sprintf "type=volume,src=%s,dst=%s%s"
           mount.src mount.dst (if mount.readonly then ",readonly" else "")) ]) in
     let env = env |> List.concat_map (fun (k, v) -> [ "--env"; Printf.sprintf "%s=%s" k v ]) in
+    let (_, mount_secrets) =
+      List.fold_left (fun (id, mount_secrets) _ ->
+          let host, guest = config_dir / secret_dir id, secrets_guest_root / secret_dir id in
+          let argv = "--mount" :: (Printf.sprintf "type=bind,src=%s,dst=%s,readonly" host guest) :: mount_secrets in
+          id + 1, argv)
+        (0, []) mount_secrets in
     let entrypoint = Option.fold ~none:[] ~some:(fun exe -> ["--entrypoint"; exe]) entrypoint in
     let docker_argv = [
         "--cpus"; string_of_int docker_cpus;
         "--isolation"; (List.assoc docker_isolation isolations);
         "--hostname"; hostname;
         "--workdir"; cwd;
-      ] @ env @ mounts @ entrypoint in
+      ] @ env @ mounts @ mount_secrets @ entrypoint in
     docker_argv, argv
 end
+
+let secrets_layer mount_secrets base_image container docker_argv =
+  (* FIXME: the shell, mkdir mklink/ln should come from a trusted
+     volume rather than the container itself. *)
+  let link id link =
+    let target = secrets_guest_root / secret_dir id / "secret" in
+    if Sys.win32 then
+      ["mkdir"; Filename.dirname link; "&&";
+       "mklink"; link; target]
+    else
+      ["mkdir"; "-p"; Filename.(dirname link |> quote); "&&";
+       "ln"; "-s"; "--"; Filename.quote target; Filename.quote link]
+  in
+  let (_, argv) =
+    List.fold_left (fun (id, argv) {Config.Secret.target; _} ->
+        let argv = if argv = [] then link id target else argv @ "&&" :: link id target in
+        id + 1, argv)
+      (0, []) mount_secrets
+  in
+  if mount_secrets = [] then
+    Lwt_result.ok Lwt.return_unit
+  else
+    let docker_argv, argv =
+      if Sys.win32 then
+        docker_argv @ ["--entrypoint"; {|C:\Windows\System32\cmd.exe|}],
+        ["/S"; "/C"; String.concat " " argv]
+      else
+        docker_argv @ ["--entrypoint"; {|/bin/sh|}],
+        ["-c"; String.concat " " argv]
+    in
+    let pp f = Os.pp_cmd f ("docker" :: "run" :: docker_argv @ argv) in
+    Lwt_result.bind_lwt
+      (Docker.run_result ~pp ~name:container docker_argv base_image argv)
+      (fun () ->
+        let* () = Docker.commit base_image container base_image in
+        Docker.rm [container])
 
 let run ~cancelled ?stdin ~log t config results_dir =
   (* I get broken pipes and clear_nonblock errors *)
   ignore stdin;
   ignore log;
+  Lwt_io.with_temp_dir ~perm:0o700 ~prefix:"obuilder-docker-" @@ fun tmp ->
+  let docker_argv, argv = Docker_config.make config ~config_dir:tmp t in
+  let* _ = Lwt_list.fold_left_s
+    (fun id Config.Secret.{value; _} ->
+      Os.ensure_dir (tmp / "secrets");
+      Os.ensure_dir (tmp / secret_dir id);
+      let+ () = Os.write_file ~path:(tmp / secret_dir id / "secret") value in
+      id + 1
+    ) 0 config.mount_secrets
+  in
   let id = Filename.basename results_dir in
-  let docker_argv, argv = Docker_config.make t config in
-  let pp f = Os.pp_cmd f ("docker" :: "run" :: docker_argv @ argv) in
   let container = Docker.docker_container id in
   let base_image = Docker.docker_image ~tmp:true id in
-  let proc = Docker.run_result ~pp ~name:container docker_argv base_image argv in
+  let proc =
+    Lwt_result.bind
+      (secrets_layer config.Config.mount_secrets base_image container docker_argv)
+      (fun () ->
+        let pp f = Os.pp_cmd f ("docker" :: "run" :: docker_argv @ argv) in
+        Docker.run_result ~pp ~name:container docker_argv base_image argv)
+  in
   Lwt.on_termination cancelled (fun () ->
       let rec aux () =
         if Lwt.is_sleeping proc then (
