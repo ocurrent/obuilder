@@ -6,7 +6,7 @@ type t = [
   | `File of (string * string)
   | `Symlink of (string * string)
   | `Dir of (string * t list)
-] [@@deriving sexp_of]
+] [@@deriving sexp]
 
 let rec generate ~exclude ~src_dir src : t =
   let path = src_dir / src in
@@ -65,3 +65,11 @@ let generate ~exclude ~src_dir src =
       |> Result.ok
     with Failure m ->
       Error (`Msg m)
+
+let to_list t =
+  let rec aux l = function
+    | `File (name, _hash) -> name :: l
+    | `Symlink (name, _target) -> name :: l
+    | `Dir (name, entries) -> name :: List.fold_left aux l entries
+  in
+  aux [] t

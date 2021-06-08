@@ -6,6 +6,7 @@ type ids = [
   | `Obuilder_id of string
 ]
 
+val obuilder_volume : string
 val image_name : ?tmp:bool -> S.id -> string
 val container_name : S.id -> string
 
@@ -35,19 +36,33 @@ val commit : ?stdout:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
              unit Lwt.t
 val volume : string list -> [< `Docker_volume of string ] ->
              string Lwt.t
-val run : ?name:[< `Docker_container of string ] ->
+val mount_point : [< `Docker_volume of string ] -> string Lwt.t
+val build : string list -> [< `Docker_image of string ] -> string -> unit Lwt.t
+val run : ?stdin:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+          ?stdout:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+          ?stderr:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+          ?name:[< `Docker_container of string ] ->
           ?rm:bool ->
           string list ->
           [< `Docker_image of string ] ->
           string list ->
           unit Lwt.t
-val run_result : pp:(Format.formatter -> unit) ->
+val run_result : ?stdin:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+                 pp:(Format.formatter -> unit) ->
                  ?name:[< `Docker_container of string ] ->
                  ?rm:bool ->
                  string list ->
                  [< `Docker_image of string ] ->
                  string list ->
                  (unit, [> `Msg of string ]) Result.result Lwt.t
+val run_pread_result : ?stderr:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+                       pp:(Format.formatter -> unit) ->
+                       ?name:[< `Docker_container of string ] ->
+                       ?rm:bool ->
+                       string list ->
+                       [< `Docker_image of string ] ->
+                       string list ->
+                       (string, [> `Msg of string ]) Result.result Lwt.t
 val stop : pp:(Format.formatter -> unit) ->
            [< `Docker_container of string ] ->
            (unit, [> `Msg of string ]) Result.result Lwt.t

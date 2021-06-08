@@ -46,10 +46,6 @@ end = struct
   let cache name = `Docker_volume (volume_prefix ^ Escape.cache name)
   let cache_tmp i name = `Docker_volume (volume_tmp_prefix ^ Printf.sprintf "%d-%s" i (Escape.cache name))
 
-  let mount_point name =
-    let* path = Docker.volume ["inspect"; "--format"; "{{ .Mountpoint }}"] name in
-    Lwt.return (String.trim path)
-
   let name (`Docker_volume name) = name
 
   let exists volume =
@@ -66,8 +62,8 @@ end = struct
   let snapshot ~src dst =
     Log.debug (fun f -> f "CACHE SNAPSHOT src: %s dst: %s" (name src) (name dst));
     let* () = create dst in
-    let* src = mount_point src in
-    let* dst = mount_point dst in
+    let* src = Docker.mount_point src in
+    let* dst = Docker.mount_point dst in
     if Sys.win32 then
       Os.exec ["robocopy"; src; dst; "/MIR"; "/NFL"; "/NDL"; "/NJH"; "/NJS"; "/NC"; "/NS"; "/NP"]
         ~is_success:(fun n -> n = 0 || n = 1)

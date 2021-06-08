@@ -91,9 +91,7 @@ let secrets_layer mount_secrets base_image container docker_argv =
         Docker.rm [container])
 
 let run ~cancelled ?stdin ~log t config results_dir =
-  (* I get broken pipes and clear_nonblock errors *)
-  ignore stdin;
-  ignore log;
+  ignore log; (* FIXME: I get broken pipe errors *)
   Lwt_io.with_temp_dir ~perm:0o700 ~prefix:"obuilder-docker-" @@ fun tmp ->
   let docker_argv, argv = Docker_config.make config ~config_dir:tmp t in
   let* _ = Lwt_list.fold_left_s
@@ -111,8 +109,9 @@ let run ~cancelled ?stdin ~log t config results_dir =
     Lwt_result.bind
       (secrets_layer config.Config.mount_secrets base_image container docker_argv)
       (fun () ->
+        let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
         let pp f = Os.pp_cmd f ("docker" :: "run" :: docker_argv @ argv) in
-        Docker.run_result ~pp ~name:container docker_argv base_image argv)
+        Docker.run_result ?stdin ~pp ~name:container docker_argv base_image argv)
   in
   Lwt.on_termination cancelled (fun () ->
       let rec aux () =
@@ -152,11 +151,56 @@ let clean_docker dir =
          Os.delete_recursively item
        )
 
+(* Windows ships a bsdtar that doesn't support symlinks (neither when
+   creating the tar archive, nor when extracting it). We need a
+   working tar for copying files in and out Docker images, so we pull
+   Cygwin, install it, and extract tar and its dependencies in a
+   Docker volume that is mounted each time we need tar.
+
+   On Linux, we assume a tar is always present in /usr/bin/tar.
+
+   We use `manifest.sh', an implementation of {!Manifest} in Bash, to
+   extract the tar manifest from the Docker image. *)
+let create_tar_volume isolation =
+  Log.info (fun f -> f "Preparing tar volume...");
+  let* _ = Docker.volume ["create"] (`Docker_volume Docker.obuilder_volume) in
+  let* () = if Sys.win32 then begin
+    let cygwin_root = {|C:\cygwin64|} in
+    let* () = Lwt_io.(with_temp_dir ~perm:0o700 @@ fun temp_dir ->
+      let* () = Lwt_list.iter_p (fun name ->
+        with_file ~perm:0o400 ~mode:Output (temp_dir / name) @@ fun ch ->
+        fprint ch (Option.get (Static_files.read name))) ["Dockerfile"; "extract.cmd"] in
+      Array.iter (fun s -> Log.debug (fun f -> f "%s"s )) (Sys.readdir temp_dir);
+      let docker_argv = [
+        "--isolation"; List.assoc isolation isolations;
+        Printf.sprintf "--build-arg=CYGWIN_ROOT=%s" cygwin_root;
+      ] in
+      Docker.build docker_argv (`Docker_image Docker.obuilder_volume) temp_dir) in
+    let destination = Printf.sprintf {|C:\%s|} Docker.obuilder_volume in
+    let docker_argv = [
+      "--isolation"; List.assoc isolation isolations;
+      "--mount"; Printf.sprintf "type=volume,src=%s,dst=%s" Docker.obuilder_volume destination;
+      "--env"; Printf.sprintf "CYGWIN_ROOT=%s" cygwin_root;
+      "--env"; Printf.sprintf "DESTINATION=%s" destination;
+      "--entrypoint"; {|C:\Windows\System32\cmd.exe|};
+    ] in
+    Docker.run ~rm:true docker_argv (`Docker_image Docker.obuilder_volume) ["/S"; "/C"; {|C:\extract.cmd|}]
+  end else Lwt.return_unit in
+  let* mount_point = Docker.mount_point (`Docker_volume Docker.obuilder_volume) in
+  let name = "manifest.sh" in
+  let write_manifest_sh ch = Lwt_io.fprint ch (Option.get (Static_files.read name)) in
+  if Sys.win32 then
+    Lwt_io.(with_file ~perm:0o500 ~mode:Output (mount_point / name) write_manifest_sh)
+  else
+    Lwt_io.(with_temp_file ~perm:0o500 @@ fun (temp_name, ch) ->
+      let* () = write_manifest_sh ch in
+      Os.sudo ["cp"; "--"; temp_name; mount_point / name])
+
 let create ~state_dir (c : config) =
-  ignore c;
   Log.debug (fun f -> f "Docker sandbox: create %s" state_dir);
   Os.ensure_dir state_dir;
   let* () = clean_docker state_dir in
+  let* () = create_tar_volume c.docker_isolation in
   Lwt.return { state_dir; docker_cpus = c.docker_cpus; docker_isolation = c.docker_isolation }
 
 open Cmdliner

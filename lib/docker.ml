@@ -10,6 +10,7 @@ let image_prefix = prefix ^ "image-"
 let image_tmp_prefix = prefix ^ "tmp-image-"
 let container_prefix = prefix ^ "container-"
 
+let obuilder_volume = prefix ^ "volume"
 let image_name ?(tmp=false) name = (if tmp then image_tmp_prefix else image_prefix) ^ name
 let container_name name = container_prefix ^ name
 
@@ -23,8 +24,11 @@ let extract_name = function `Docker_image name | `Docker_container name -> name
 let pread' ?stderr argv =
   Os.pread ?stderr ("docker" :: argv)
 
-let exec' ?stdout ?stderr argv =
-  Os.exec ?stdout ?stderr ("docker" :: argv)
+let pread_result' ~pp ?stderr argv =
+  Os.pread_result ~pp ?stderr ("docker" :: argv)
+
+let exec' ?stdin ?stdout ?stderr argv =
+  Os.exec ?stdin ?stdout ?stderr ("docker" :: argv)
 
 let exec_result' ?stdin ?stdout ?stderr ~pp argv =
   Os.exec_result ?stdin ?stdout ?stderr ~pp ("docker" :: argv)
@@ -67,23 +71,37 @@ let exists id =
   in
   exec_result' ~stdout:`Dev_null ~stderr:`Dev_null ~pp argv
 
-let run ?name ?(rm=false) docker_argv (`Docker_image image) argv =
-  let docker_argv = if rm then "--rm" :: docker_argv else docker_argv in
-  let docker_argv = Option.fold ~none:docker_argv ~some:(fun (`Docker_container name) -> "--name" :: name :: docker_argv) name in
-  let argv = docker_argv @ image :: argv in
-  exec' ("run" :: argv)
+let build docker_argv (`Docker_image image) context_path =
+  exec' ("build" :: docker_argv @ ["-t"; image; context_path])
 
-let run_result ~pp ?name ?(rm=false) docker_argv (`Docker_image image) argv =
+let run ?stdin ?stdout ?stderr ?name ?(rm=false) docker_argv (`Docker_image image) argv =
   let docker_argv = if rm then "--rm" :: docker_argv else docker_argv in
   let docker_argv = Option.fold ~none:docker_argv ~some:(fun (`Docker_container name) -> "--name" :: name :: docker_argv) name in
   let argv = docker_argv @ image :: argv in
-  exec_result' ~pp ("run" :: argv)
+  exec' ?stdin ?stdout ?stderr ("run" :: argv)
+
+let run_result ?stdin ~pp ?name ?(rm=false) docker_argv (`Docker_image image) argv =
+  let docker_argv = if rm then "--rm" :: docker_argv else docker_argv in
+  let docker_argv = Option.fold ~none:docker_argv ~some:(fun (`Docker_container name) -> "--name" :: name :: docker_argv) name in
+  let docker_argv = if Option.is_some stdin then "-i" :: docker_argv else docker_argv in
+  let argv = docker_argv @ image :: argv in
+  exec_result' ?stdin ~pp ("run" :: argv)
+
+let run_pread_result ?stderr ~pp ?name ?(rm=false) docker_argv (`Docker_image image) argv =
+  let docker_argv = if rm then "--rm" :: docker_argv else docker_argv in
+  let docker_argv = Option.fold ~none:docker_argv ~some:(fun (`Docker_container name) -> "--name" :: name :: docker_argv) name in
+  let argv = docker_argv @ image :: argv in
+  pread_result' ?stderr ~pp ("run" :: argv)
 
 let stop ~pp (`Docker_container name) =
   exec_result' ~pp ["stop"; name]
 
 let volume cmd (`Docker_volume name) =
   pread' ("volume" :: cmd @ ["--"; name])
+
+let mount_point name =
+  let* s = volume ["inspect"; "--format"; "{{ .Mountpoint }}"] name in
+  Lwt.return (String.trim s)
 
 let rmi ?stdout images =
   (* let images = List.map (fun (`Docker_image image) -> image) in *)
