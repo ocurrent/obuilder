@@ -42,13 +42,10 @@ module Json_config = struct
     ]
 
   let user_mounts =
-    List.map @@ fun { Config.Mount.src; dst } ->
+    List.map @@ fun { Config.Mount.src; dst; readonly } ->
+    let options = [ "bind"; "nosuid"; "nodev"; ] in
     mount ~ty:"bind" ~src dst
-          ~options:[
-            "bind";
-            "nosuid";
-            "nodev";
-          ]
+      ~options:(if readonly then "ro" :: options else options)
 
   let strings xs = `List ( List.map (fun x -> `String x) xs)
 

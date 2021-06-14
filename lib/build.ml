@@ -78,7 +78,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
              cache |> Lwt_list.map_s (fun { Obuilder_spec.Cache.id; target; buildkit_options = _ } ->
                  Store.cache ~user t.store id >|= fun (src, release) ->
                  to_release := release :: !to_release;
-                 { Config.Mount.src; dst = target }
+                 { Config.Mount.src; dst = target; readonly = false }
                )
              >>= fun mounts ->
              let argv = shell @ [cmd] in
