@@ -9,6 +9,7 @@ module Mount = struct
   type t = { (* TODO: options *)
     src : string;              (* In host namespace *)
     dst : string;              (* In container namespace *)
+    readonly : bool;
   }
 end
 
