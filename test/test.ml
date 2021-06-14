@@ -567,7 +567,7 @@ let test_copy _switch () =
   Lwt_io.with_temp_dir ~prefix:"test-copy-" @@ fun src_dir ->
   Lwt_io.(with_file ~mode:output) (src_dir / "file") (fun ch -> Lwt_io.write ch "file-data") >>= fun () ->
   (* Files *)
-  let f1hash = Sha256.string "file-data" in
+  let f1hash = Sha256.(string "file-data" |> to_hex) in
   Alcotest.(check manifest) "File" (Ok (`File ("file", f1hash)))
   @@ Manifest.generate ~exclude:[] ~src_dir "file";
   Alcotest.(check manifest) "File" (Ok (`File ("file", f1hash)))
@@ -597,7 +597,7 @@ let test_copy _switch () =
   Unix.mkdir (src_dir / "dir1") 0o700;
   Unix.mkdir (src_dir / "dir1" / "dir2") 0o700;
   Lwt_io.(with_file ~mode:output) (src_dir / "dir1" / "dir2" / "file2") (fun ch -> Lwt_io.write ch "file2") >>= fun () ->
-  let f2hash = Sha256.string "file2" in
+  let f2hash = Sha256.(string "file2" |> to_hex) in
   Alcotest.(check manifest) "Nested file" (Ok (`File ("dir1/dir2/file2", f2hash)))
   @@ Manifest.generate ~exclude:[] ~src_dir "dir1/dir2/file2";
   Alcotest.(check manifest) "Tree"

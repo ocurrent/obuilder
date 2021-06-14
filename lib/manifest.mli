@@ -1,5 +1,5 @@
 type t = [
-  | `File of (string * Sha256.t)
+  | `File of (string * string)  (** name * sha256 hexadecimal string *)
   | `Symlink of (string * string)
   | `Dir of (string * t list)
 ] [@@deriving sexp_of]

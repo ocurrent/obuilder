@@ -2,12 +2,8 @@ open Sexplib.Std
 
 let ( / ) = Filename.concat
 
-type hash = Sha256.t
-
-let sexp_of_hash t = Sexplib.Sexp.Atom (Sha256.to_hex t)
-
 type t = [
-  | `File of (string * hash)
+  | `File of (string * string)
   | `Symlink of (string * string)
   | `Dir of (string * t list)
 ] [@@deriving sexp_of]
@@ -26,7 +22,7 @@ let rec generate ~exclude ~src_dir src : t =
     in
     `Dir (src, items)
   | Unix.{ st_kind = S_REG; _ } ->
-    let hash = Sha256.file path in
+    let hash = Sha256.(file path |> to_hex) in
     `File (src, hash)
   | Unix.{ st_kind = S_LNK; _ } ->
     let target = Unix.readlink path in
