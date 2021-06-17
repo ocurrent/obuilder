@@ -7,6 +7,10 @@ val create : string -> t Lwt.t
 (** [create path] creates a new log file at temporary location [path].
     Call [finish] when done to release the file descriptor. *)
 
+val create_fd : Lwt_unix.file_descr -> t
+(** [create fd] creates a new log writing to file descriptor [fd].
+    Call [finish] when done to release the file descriptor. *)
+
 val finish : t -> unit Lwt.t
 (** [finish t] marks log [t] as finished.
     If it was open for writing, this closes the file descriptor.
