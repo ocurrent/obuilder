@@ -66,13 +66,16 @@ let tail ?switch t dst =
     Lwt_switch.add_hook_or_exec switch (fun () -> Lwt.cancel th; Lwt.return_unit) >>= fun () ->
     th
 
-let create path =
-  Lwt_unix.openfile path Lwt_unix.[O_CREAT; O_TRUNC; O_RDWR; O_CLOEXEC] 0o666 >|= fun fd ->
+let create_fd fd =
   let cond = Lwt_condition.create () in
   {
     state = `Open (fd, cond);
     len = 0;
   }
+
+let create path =
+  Lwt_unix.openfile path Lwt_unix.[O_CREAT; O_TRUNC; O_RDWR; O_CLOEXEC] 0o666 >|= fun fd ->
+  create_fd fd
 
 let finish t =
   match t.state with
