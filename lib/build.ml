@@ -82,7 +82,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
                )
              >>= fun mounts ->
              let argv = shell @ [cmd] in
-             let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~mount_secrets ~network in
+             let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~mount_secrets ~network () in
              Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
              Lwt_unix.close close_me >>= fun () ->
              Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp
@@ -150,6 +150,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
               ~mount_secrets:[]
               ~mounts:[]
               ~network:[]
+              ()
           in
           Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
           let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
