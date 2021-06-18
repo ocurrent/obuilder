@@ -103,7 +103,8 @@ module Json_config = struct
     in
     `Assoc fields
 
-  let make {Config.cwd; argv; hostname; user; env; mounts; network; mount_secrets} t ~config_dir ~results_dir : Yojson.Safe.t =
+  let make {Config.cwd; argv; hostname; user; env; mounts; network; mount_secrets; entrypoint} t ~config_dir ~results_dir : Yojson.Safe.t =
+    assert (entrypoint = None);
     let user =
       let { Obuilder_spec.uid; gid } = match user with
         | `Unix user -> user
