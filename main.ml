@@ -1,8 +1,5 @@
 open Lwt.Infix
 
-let () =
-  Logs.set_reporter (Logs_fmt.reporter ())
-
 let ( / ) = Filename.concat
 
 module Sandbox = Obuilder.Runc_sandbox
@@ -29,8 +26,7 @@ let read_whole_file path =
   let len = in_channel_length ic in
   really_input_string ic len
 
-
-let build store spec conf src_dir secrets =
+let build () store spec conf src_dir secrets =
   Lwt_main.run begin
     create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
     let spec =
@@ -53,9 +49,7 @@ let build store spec conf src_dir secrets =
       exit 1
   end
 
-let healthcheck verbose store conf =
-  if verbose then
-    Logs.Src.set_level Obuilder.log_src (Some Logs.Info);
+let healthcheck () store conf =
   Lwt_main.run begin
     create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
     Builder.healthcheck builder >|= function
@@ -66,19 +60,29 @@ let healthcheck verbose store conf =
       Fmt.pr "Healthcheck passed@."
   end
 
-let delete store conf id =
+let delete () store conf id =
   Lwt_main.run begin
     create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
     Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
   end
 
-let dockerfile buildkit spec =
+let dockerfile () buildkit spec =
   Sexplib.Sexp.load_sexp spec
   |> Obuilder_spec.t_of_sexp
   |> Obuilder_spec.Docker.dockerfile_of_spec ~buildkit
   |> print_endline
 
 open Cmdliner
+
+let setup_log style_renderer level =
+  Fmt_tty.setup_std_outputs ?style_renderer ();
+  Logs.set_level level;
+  Logs.Src.set_level Obuilder.log_src level;
+  Logs.set_reporter (Logs_fmt.reporter ());
+  ()
+
+let setup_log =
+  Term.(const setup_log $ Fmt_cli.style_renderer () $ Logs_cli.level ())
 
 let spec_file =
   Arg.required @@
@@ -125,12 +129,12 @@ let secrets =
 
 let build =
   let doc = "Build a spec file." in
-  Term.(const build $ store $ spec_file $ Sandbox.cmdliner $ src_dir $ secrets),
+  Term.(const build $ setup_log $ store $ spec_file $ Sandbox.cmdliner $ src_dir $ secrets),
   Term.info "build" ~doc
 
 let delete =
   let doc = "Recursively delete a cached build result." in
-  Term.(const delete $ store $ Sandbox.cmdliner $ id),
+  Term.(const delete $ setup_log $ store $ Sandbox.cmdliner $ id),
   Term.info "delete" ~doc
 
 let buildkit =
@@ -142,19 +146,12 @@ let buildkit =
 
 let dockerfile =
   let doc = "Convert a spec to Dockerfile format" in
-  Term.(const dockerfile $ buildkit $ spec_file),
+  Term.(const dockerfile $ setup_log $ buildkit $ spec_file),
   Term.info "dockerfile" ~doc
-
-let verbose =
-  Arg.value @@
-  Arg.flag @@
-  Arg.info
-    ~doc:"Enable verbose logging"
-    ["verbose"]
 
 let healthcheck =
   let doc = "Perform a self-test" in
-  Term.(const healthcheck $ verbose $ store $ Sandbox.cmdliner),
+  Term.(const healthcheck $ setup_log $ store $ Sandbox.cmdliner),
   Term.info "healthcheck" ~doc
 
 let cmds = [build; delete; dockerfile; healthcheck]
@@ -167,6 +164,4 @@ let default_cmd =
 let term_exit (x : unit Term.result) = Term.exit x
 
 let () =
-  (* Logs.(set_level (Some Info)); *)
-  Fmt_tty.setup_std_outputs ();
   term_exit @@ Term.eval_choice default_cmd cmds
