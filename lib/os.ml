@@ -104,11 +104,11 @@ let exec ?cwd ?stdin ?stdout ?stderr ?(is_success=((=) 0)) argv =
 let running_as_root = not (Sys.unix) || Unix.getuid () = 0
 
 let sudo ?stdin args =
-  let args = if running_as_root then args else "sudo" :: args in
+  let args = if running_as_root then args else "sudo" :: "--" :: args in
   exec ?stdin args
 
 let sudo_result ?cwd ?stdin ?stdout ?stderr ~pp args =
-  let args = if running_as_root then args else "sudo" :: args in
+  let args = if running_as_root then args else "sudo" :: "--" :: args in
   exec_result ?cwd ?stdin ?stdout ?stderr ~pp args
 
 let rec write_all fd buf ofs len =
