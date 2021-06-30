@@ -163,7 +163,7 @@ let clean_docker dir =
    extract the tar manifest from the Docker image. *)
 let create_tar_volume isolation =
   Log.info (fun f -> f "Preparing tar volume...");
-  let* _ = Docker.volume ["create"] (`Docker_volume Docker.obuilder_volume) in
+  let* _ = Docker.volume ["create"] (`Docker_volume (Docker.obuilder_volume ())) in
   let* () = if Sys.win32 then begin
     let cygwin_root = {|C:\cygwin64|} in
     let* () = Lwt_io.(with_temp_dir ~perm:0o700 @@ fun temp_dir ->
@@ -175,18 +175,18 @@ let create_tar_volume isolation =
         "--isolation"; List.assoc isolation isolations;
         Printf.sprintf "--build-arg=CYGWIN_ROOT=%s" cygwin_root;
       ] in
-      Docker.build docker_argv (`Docker_image Docker.obuilder_volume) temp_dir) in
-    let destination = Printf.sprintf {|C:\%s|} Docker.obuilder_volume in
+      Docker.build docker_argv (`Docker_image (Docker.obuilder_volume ())) temp_dir) in
+    let destination = Printf.sprintf {|C:\%s|} (Docker.obuilder_volume ()) in
     let docker_argv = [
       "--isolation"; List.assoc isolation isolations;
-      "--mount"; Printf.sprintf "type=volume,src=%s,dst=%s" Docker.obuilder_volume destination;
+      "--mount"; Printf.sprintf "type=volume,src=%s,dst=%s" (Docker.obuilder_volume ()) destination;
       "--env"; Printf.sprintf "CYGWIN_ROOT=%s" cygwin_root;
       "--env"; Printf.sprintf "DESTINATION=%s" destination;
       "--entrypoint"; {|C:\Windows\System32\cmd.exe|};
     ] in
-    Docker.run ~rm:true docker_argv (`Docker_image Docker.obuilder_volume) ["/S"; "/C"; {|C:\extract.cmd|}]
+    Docker.run ~rm:true docker_argv (`Docker_image (Docker.obuilder_volume ())) ["/S"; "/C"; {|C:\extract.cmd|}]
   end else Lwt.return_unit in
-  let* mount_point = Docker.mount_point (`Docker_volume Docker.obuilder_volume) in
+  let* mount_point = Docker.mount_point (`Docker_volume (Docker.obuilder_volume ())) in
   let name = "manifest.sh" in
   let write_manifest_sh ch = Lwt_io.fprint ch (Option.get (Static_files.read name)) in
   if Sys.win32 then

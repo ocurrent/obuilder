@@ -129,7 +129,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
   let mount_point_inside_native = if Sys.win32 then {|C:\|} else mount_point_inside_unix
 
   let docker_manifest_from_build ~base ~exclude src user =
-    let obuilder_volume = Docker.obuilder_volume in
+    let obuilder_volume = Docker.obuilder_volume () in
     let docker_argv = [
         "--mount"; Printf.sprintf "type=volume,src=%s,dst=%s,readonly" obuilder_volume (mount_point_inside_native / obuilder_volume);
         "--entrypoint"; if Sys.win32 then mount_point_inside_native / obuilder_volume / "bash.exe" else "bash";
@@ -141,7 +141,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     let manifest_sh =
       (* FIXME: does Filename.quote always use Bash quoting rules? *)
       Printf.sprintf "exec %s %S %S %d %s %d %s"
-        (mount_point_inside_unix // Docker.obuilder_volume // "manifest.sh")
+        (mount_point_inside_unix // obuilder_volume // "manifest.sh")
         "."
         "/"
         (List.length exclude)
@@ -215,18 +215,19 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
           @ tar_argv)]
     in
     let config =
+      let obuilder_volume = Docker.obuilder_volume () in
       Config.v
         ~cwd:(if Sys.win32 then {|C:\|} else "/")
         ~argv
         ~hostname
         ~user
-        ~env:["PATH", if Sys.win32 then mount_point_inside_unix // Docker.obuilder_volume else "/bin:/usr/bin"]
+        ~env:["PATH", if Sys.win32 then mount_point_inside_unix // obuilder_volume else "/bin:/usr/bin"]
         ~mount_secrets:[]
         ~mounts:Config.Mount.[
           {src = volume; dst = mount_point_inside_native / ("obuilder-" ^ volume); readonly = false};
-          {src = Docker.obuilder_volume; dst = mount_point_inside_native / Docker.obuilder_volume; readonly = true}]
+          {src = obuilder_volume; dst = mount_point_inside_native / obuilder_volume; readonly = true}]
         ~network:[]
-        ~entrypoint:(if Sys.win32 then mount_point_inside_native / Docker.obuilder_volume / "bash.exe" else "/bin/bash")
+        ~entrypoint:(if Sys.win32 then mount_point_inside_native / obuilder_volume / "bash.exe" else "/bin/bash")
         ()
     in
     let from_tmp = Docker.docker_image ~tmp:true from in
@@ -274,16 +275,17 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
                    |> if not Sys.win32 then List.cons "tar" else Fun.id
                in
                let config =
+                 let obuilder_volume = Docker.obuilder_volume () in
                  let mounts =
                    [Config.Mount.{ src = id; dst = mount_point_inside_native / id; readonly = false }]
                    |> if Sys.win32 then List.cons Config.Mount.{
-                          src = Docker.obuilder_volume;
-                          dst = mount_point_inside_native / Docker.obuilder_volume;
+                          src = obuilder_volume;
+                          dst = mount_point_inside_native / obuilder_volume;
                           readonly = true; }
                       else Fun.id
                  in
                  let entrypoint =
-                   if Sys.win32 then Printf.sprintf {|C:\%s\tar.exe|} Docker.obuilder_volume
+                   if Sys.win32 then Printf.sprintf {|C:\%s\tar.exe|} obuilder_volume
                    else "/usr/bin/env" in
                  Config.v
                    ~cwd:(if Sys.win32 then {|C:\|} else "/")

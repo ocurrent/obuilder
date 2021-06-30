@@ -5,14 +5,16 @@ type ids = [
   | `Docker_volume of string | `Obuilder_id of string
 ]
 
-let prefix = "obuilder-"
-let image_prefix = prefix ^ "image-"
-let image_tmp_prefix = prefix ^ "tmp-image-"
-let container_prefix = prefix ^ "container-"
+let prefix = ref "obuilder-"
+let set_prefix prefix' = prefix := prefix'
 
-let obuilder_volume = prefix ^ "volume"
-let image_name ?(tmp=false) name = (if tmp then image_tmp_prefix else image_prefix) ^ name
-let container_name name = container_prefix ^ name
+let image_prefix () = !prefix ^ "image-"
+let image_tmp_prefix () = !prefix ^ "tmp-image-"
+let container_prefix () = !prefix ^ "container-"
+
+let obuilder_volume () = !prefix ^ "volume"
+let image_name ?(tmp=false) name = (if tmp then image_tmp_prefix () else image_prefix ()) ^ name
+let container_name name = container_prefix () ^ name
 
 let result root id = Filename.concat root id
 
@@ -108,13 +110,13 @@ let rmi ?stdout images =
   exec' ?stdout ("rmi" :: (List.map extract_name images))
 
 let obuilder_images () =
-  let* images = pread' ["images"; "--format={{ .Repository }}"; prefix ^ "*"] in
+  let* images = pread' ["images"; "--format={{ .Repository }}"; !prefix ^ "*"] in
   String.split_on_char '\n' images
   |> List.filter_map (function "" -> None | id -> Some (`Docker_image id))
   |> Lwt.return
 
 let obuilder_containers () =
-  let* containers = pread' ["container"; "ls"; "--all"; "--filter"; "name=^" ^ prefix; "-q"] in
+  let* containers = pread' ["container"; "ls"; "--all"; "--filter"; "name=^" ^ !prefix; "-q"] in
   String.split_on_char '\n' containers
   |> List.filter_map (function "" -> None | id -> Some (`Docker_container id))
   |> Lwt.return

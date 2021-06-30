@@ -77,7 +77,9 @@ end = struct
 end
 
 let create root =
-  Log.debug (fun f -> f "Docker store: create %s" root);
+  let prefix = Printf.sprintf "obuilder-%d-" (Hashtbl.hash root) in
+  Docker.set_prefix prefix;
+  Log.debug (fun f -> f "Docker store: create %s %s" root prefix);
   let t = { root; caches = Hashtbl.create 10; next = 0 } in
   Os.ensure_dir root;
   Os.ensure_dir (Cache.empty t);

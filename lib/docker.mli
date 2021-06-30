@@ -6,7 +6,11 @@ type ids = [
   | `Obuilder_id of string
 ]
 
-val obuilder_volume : string
+val set_prefix : string -> unit
+(** Set the prefix for Docker images, containers, and volumes managed
+   by the current OBuilder instance. *)
+
+val obuilder_volume : unit -> string
 val image_name : ?tmp:bool -> S.id -> string
 val container_name : S.id -> string
 
