@@ -39,12 +39,9 @@ module Cache : sig
   val snapshot : src:[< `Docker_volume of string] -> [< `Docker_volume of string] -> unit Lwt.t
   val delete : [`Docker_volume of string] -> unit Lwt.t
 end = struct
-  let volume_prefix = "obuilder-cache-"
-  let volume_tmp_prefix = "obuilder-cache-tmp-"
-
   let empty t = t.root / "empty"
-  let cache name = `Docker_volume (volume_prefix ^ Escape.cache name)
-  let cache_tmp i name = `Docker_volume (volume_tmp_prefix ^ Printf.sprintf "%d-%s" i (Escape.cache name))
+  let cache name = Docker.docker_volume_cache (Escape.cache name)
+  let cache_tmp i name = Docker.docker_volume_cache ~tmp:true (Printf.sprintf "%d-%s" i (Escape.cache name))
 
   let name (`Docker_volume name) = name
 

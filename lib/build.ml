@@ -208,10 +208,10 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       ["--login"; "-c";
        String.concat " "
          ([ if Sys.win32 then "tar.exe" else "tar";
-            "-cf"; mount_point_inside_unix // ("obuilder-" ^ volume) // "archive.tar";
+            "-cf"; mount_point_inside_unix // volume // "archive.tar";
             "--absolute-names"; "--no-recursion";
             "--show-transformed-names"; "-v"; (* for debugging *)
-            "--files-from"; mount_point_inside_unix // ("obuilder-" ^ volume) // "manifest" ]
+            "--files-from"; mount_point_inside_unix // volume // "manifest" ]
           @ tar_argv)]
     in
     let config =
@@ -224,7 +224,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
         ~env:["PATH", if Sys.win32 then mount_point_inside_unix // obuilder_volume else "/bin:/usr/bin"]
         ~mount_secrets:[]
         ~mounts:Config.Mount.[
-          {src = volume; dst = mount_point_inside_native / ("obuilder-" ^ volume); readonly = false};
+          {src = volume; dst = mount_point_inside_native / volume; readonly = false};
           {src = obuilder_volume; dst = mount_point_inside_native / obuilder_volume; readonly = true}]
         ~network:[]
         ~entrypoint:(if Sys.win32 then mount_point_inside_native / obuilder_volume / "bash.exe" else "/bin/bash")
@@ -260,7 +260,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
        Log.debug (fun f -> f "COPY: %a@." Sexplib.Sexp.pp_hum (sexp_of_copy_details details));
        let id = Sha256.to_hex (Sha256.string (Sexplib.Sexp.to_string (sexp_of_copy_details details))) in
        Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
-           let volume = `Docker_volume id in
+           let volume = Docker.docker_volume_copy id in
            Docker.volume ["create"] volume >>= fun _ ->
            Lwt.finalize
              (fun () ->
@@ -277,7 +277,10 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
                let config =
                  let obuilder_volume = Docker.obuilder_volume () in
                  let mounts =
-                   [Config.Mount.{ src = id; dst = mount_point_inside_native / id; readonly = false }]
+                   [ Config.Mount.{
+                       src = Docker.volume_copy_name id;
+                       dst = mount_point_inside_native / id;
+                       readonly = false }]
                    |> if Sys.win32 then List.cons Config.Mount.{
                           src = obuilder_volume;
                           dst = mount_point_inside_native / obuilder_volume;

@@ -9,17 +9,22 @@ let prefix = ref "obuilder-"
 let set_prefix prefix' = prefix := prefix'
 
 let image_prefix () = !prefix ^ "image-"
-let image_tmp_prefix () = !prefix ^ "tmp-image-"
 let container_prefix () = !prefix ^ "container-"
+let cache_prefix () = !prefix ^ "cache-"
+let volume_prefix () = !prefix ^ "copy-"
 
 let obuilder_volume () = !prefix ^ "volume"
-let image_name ?(tmp=false) name = (if tmp then image_tmp_prefix () else image_prefix ()) ^ name
+let image_name ?(tmp=false) name = image_prefix () ^ (if tmp then "tmp-" else "") ^ name
 let container_name name = container_prefix () ^ name
+let volume_cache_name ?(tmp=false) name = cache_prefix () ^ (if tmp then "tmp-" else "") ^ name
+let volume_copy_name ?(tmp=false) name = volume_prefix () ^ (if tmp then "tmp-" else "") ^ name
 
 let result root id = Filename.concat root id
 
 let docker_image ?(tmp=false) id = `Docker_image (image_name ~tmp id)
 let docker_container id = `Docker_container (container_name id)
+let docker_volume_cache ?(tmp=false) id = `Docker_volume (volume_cache_name ~tmp id)
+let docker_volume_copy ?(tmp=false) id = `Docker_volume (volume_copy_name ~tmp id)                                            
 
 let extract_name = function `Docker_image name | `Docker_container name -> name
 

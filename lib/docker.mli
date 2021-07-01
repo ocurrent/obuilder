@@ -13,9 +13,12 @@ val set_prefix : string -> unit
 val obuilder_volume : unit -> string
 val image_name : ?tmp:bool -> S.id -> string
 val container_name : S.id -> string
+val volume_copy_name : ?tmp:bool -> S.id -> string
 
 val docker_image : ?tmp:bool -> S.id -> [> `Docker_image of string ]
 val docker_container : S.id -> [> `Docker_container of string ]
+val docker_volume_cache : ?tmp:bool -> S.id -> [> `Docker_volume of string ]
+val docker_volume_copy : ?tmp:bool -> S.id -> [> `Docker_volume of string ]
 
 val result : string -> string -> string
 
