@@ -10,20 +10,24 @@ module Context = Build.Context
 
 module Btrfs_store = Btrfs_store
 module Zfs_store = Zfs_store
+module Docker_store = Docker_store
 module Store_spec = Store_spec
 
 (** {2 Fetchers} *)
-module Docker = Docker
+module Docker_extract = Docker.Extract
+module Docker_pull = Docker.Pull
 
 (** {2 Sandboxes} *)
 
 module Config = Config
-module Sandbox = Sandbox
+module Docker_sandbox = Docker_sandbox
+module Runc_sandbox = Runc_sandbox
 
 (** {2 Builders} *)
 
 module type BUILDER = S.BUILDER with type context := Build.Context.t
 module Builder = Build.Make
+module Docker_builder = Build.MakeDocker
 module Build_log = Build_log
 
 (**/**)

@@ -1,8 +1,6 @@
 open Lwt.Syntax
 open Sexplib.Conv
 
-let backend = `Docker
-
 let ( / ) = Filename.concat
 
 type isolation = [ `HyperV | `Process | `Default ] [@@deriving sexp]
