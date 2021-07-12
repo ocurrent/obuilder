@@ -82,7 +82,7 @@ let copy_symlink ~src ~target ~dst ~to_untar ~user =
 let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
   Log.debug(fun f -> f "Copy dir %S -> %S@." src dst);
   Lwt_unix.LargeFile.lstat (src_dir / src) >>= fun stat ->
-  begin 
+  begin
     let hdr = Tar.Header.make
         ~file_mode:0o755
         ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
