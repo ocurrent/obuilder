@@ -22,16 +22,7 @@ module Context : sig
   *)
 end
 
-(** A builder using a standard storage and sandbox backend. *)
 module Make (Store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) : sig
-  include S.BUILDER with type context := Context.t
-
-  val v : store:Store.t -> sandbox:Sandbox.t -> t
-end
-
-(** A builder using Docker as its backend. Expects {!Docker_store} and
-   {!Docker_sandbox} or wrappers. *)
-module MakeDocker (Store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) : sig
   include S.BUILDER with type context := Context.t
 
   val v : store:Store.t -> sandbox:Sandbox.t -> t

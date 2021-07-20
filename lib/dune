@@ -1,4 +1,24 @@
 (rule
+ (target sandbox.detected.ml)
+ (enabled_if
+  (= %{os_type} Win32))
+ (action
+  (copy# sandbox.docker.ml %{target})))
+
+(rule
+ (target sandbox.detected.ml)
+ (enabled_if
+  (<> %{os_type} Win32))
+ (action
+  (copy# sandbox.runc.ml %{target})))
+
+(rule
+ (target sandbox.ml)
+ (mode fallback)
+ (action
+  (copy sandbox.detected.ml %{target})))
+
+(rule
  (target Static_files.ml)
  (deps
   (source_tree ../static))
@@ -11,7 +31,7 @@
  (preprocess
   (pps ppx_sexp_conv))
   (modules Btrfs_store Build Build_log Config Dao Db Db_store Docker
-   Docker_store Escape Log Manifest Obuilder Os S Docker_sandbox Runc_sandbox Static_files
+   Docker_store Escape Log Manifest Obuilder Os S Sandbox Static_files
    Store_spec Tar_transfer Zfs_store)
  (libraries lwt lwt.unix fmt yojson tar-unix sexplib sqlite3 astring logs sha
    obuilder-spec cmdliner))

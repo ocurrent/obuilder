@@ -64,6 +64,8 @@ end
 module type SANDBOX = sig
   type t
 
+  val backend : [ `Runc | `Docker | `Mock ]
+
   val run :
     cancelled:unit Lwt.t ->
     ?stdin:Os.unix_fd ->

@@ -16,6 +16,8 @@ let assert_str expected got =
     exit 1
   )
 
+module Sandbox = Sandbox
+
 module Test(Store : S.STORE) = struct
   let assert_output expected t id =
     Store.result t id >>= function
@@ -106,8 +108,13 @@ module Test(Store : S.STORE) = struct
   type builder = Builder : (module Obuilder.BUILDER with type t = 'a) * 'a -> builder
 
   let create_builder store conf =
-    let module Builder = Builder(Store)(Runc_sandbox)(Docker_extract) in
-    Runc_sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
+    let (module Fetcher : Obuilder.S.FETCHER) =
+      match Sandbox.backend with
+      | `Runc | `Mock -> (module Obuilder.Docker.Extract : Obuilder.S.FETCHER)
+      | `Docker -> (module Obuilder.Docker.Pull : Obuilder.S.FETCHER)
+    in
+    let module Builder = Obuilder.Builder(Store)(Sandbox)(Fetcher) in
+    Sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
     let builder = Builder.v ~store ~sandbox in
     Builder ((module Builder), builder)
 
@@ -239,7 +246,7 @@ let store =
 
 let cmd =
   let doc = "Run stress tests." in
-  Term.(const stress $ store $ Runc_sandbox.cmdliner),
+  Term.(const stress $ store $ Sandbox.cmdliner),
   Term.info "stress" ~doc
 
 let () =
