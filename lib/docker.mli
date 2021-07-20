@@ -85,8 +85,3 @@ val obuilder_containers : unit -> [ `Docker_container of string ] list Lwt.t
 module Extract : sig
   include S.FETCHER
 end
-
-(** Fetch (pull) base images using Docker *)
-module Pull : sig
-  include S.FETCHER
-end

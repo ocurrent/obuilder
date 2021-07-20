@@ -166,12 +166,3 @@ module Extract = struct
     in
     export_env base
 end
-
-module Pull = struct
-  let fetch ~log ~rootfs base =
-    ignore rootfs;
-    ignore log;
-    Log.debug (fun f -> f "Docker fetcher pull rootfs:%s base:%s" rootfs base);
-    let* () = pull (`Docker_image base) in
-    Lwt.return_nil
-end

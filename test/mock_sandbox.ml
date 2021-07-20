@@ -9,8 +9,6 @@ type t = {
      (unit, [`Msg of string | `Cancelled]) Lwt_result.t) Queue.t;
 }
 
-let backend = `Mock
-
 let expect t x = Queue.add x t.expect
 
 let run ~cancelled ?stdin ~log t (config:Obuilder.Config.t) dir =
