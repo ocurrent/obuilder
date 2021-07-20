@@ -42,13 +42,10 @@ module Json_config = struct
     ]
 
   let user_mounts =
-    List.map @@ fun { Config.Mount.src; dst } ->
+    List.map @@ fun { Config.Mount.src; dst; readonly } ->
+    let options = [ "bind"; "nosuid"; "nodev"; ] in
     mount ~ty:"bind" ~src dst
-          ~options:[
-            "bind";
-            "nosuid";
-            "nodev";
-          ]
+      ~options:(if readonly then "ro" :: options else options)
 
   let strings xs = `List ( List.map (fun x -> `String x) xs)
 
@@ -106,9 +103,10 @@ module Json_config = struct
     in
     `Assoc fields
 
-  let make {Config.cwd; argv; hostname; user; env; mounts; network; mount_secrets} t ~config_dir ~results_dir : Yojson.Safe.t =
+  let make {Config.cwd; argv; hostname; user; env; mounts; network; mount_secrets; entrypoint} t ~config_dir ~results_dir : Yojson.Safe.t =
+    assert (entrypoint = None);
     let user =
-      let { Obuilder_spec.uid; gid } = user in
+      let { Obuilder_spec.uid; gid } = match user with `Unix user -> user | _ -> assert false in
       `Assoc [
         "uid", `Int uid;
         "gid", `Int gid;

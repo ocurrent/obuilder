@@ -125,6 +125,8 @@ For example:
 
 At the moment, the `(build ...)` items must appear before the `(from ...)` line.
 
+Note: on Windows, copying from a build step image based on nanoserver
+isn't supported.
 
 ### workdir
 
@@ -258,6 +260,9 @@ Notes:
 
 - The copy is currently done by running `tar` inside the container to receive the files.
   Therefore, the filesystem must have a working `tar` binary.
+
+- On Windows, copying from a build step image based on nanoserver
+  isn't supported.
 
 ### user
 

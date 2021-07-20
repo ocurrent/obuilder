@@ -140,8 +140,8 @@ let build t ?base ~id fn =
 let result t id =
   let dir = Path.result t id in
   match Os.check_dir dir with
-  | `Present -> Some dir
-  | `Missing -> None
+  | `Present -> Lwt.return_some dir
+  | `Missing -> Lwt.return_none
 
 let get_cache t name =
   match Hashtbl.find_opt t.caches name with
@@ -165,8 +165,11 @@ let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   (* Create writeable clone. *)
   let gen = cache.gen in
   Btrfs.subvolume_snapshot `RW ~src:snapshot tmp >>= fun () ->
-  let { Obuilder_spec.uid; gid } = user in
-  Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; tmp] >>= fun () ->
+  begin match user with
+  | `Unix { Obuilder_spec.uid; gid } ->
+    Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; tmp]
+  | _ -> assert false
+  end >>= fun () ->
   let release () =
     Lwt_mutex.with_lock cache.lock @@ fun () ->
     begin

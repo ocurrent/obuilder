@@ -43,42 +43,46 @@ let default_exec ?cwd ?stdin ?stdout ?stderr ~pp argv =
     let stdin  = Option.map redirection stdin in
     let stdout = Option.map redirection stdout in
     let stderr = Option.map redirection stderr in
-    Lwt_process.exec ?cwd ?stdin ?stdout ?stderr argv
+    try Lwt_result.ok (Lwt_process.exec ?cwd ?stdin ?stdout ?stderr argv)
+    with e -> Lwt_result.fail e
   in
   Option.iter close_redirection stdin;
   Option.iter close_redirection stdout;
   Option.iter close_redirection stderr;
-  proc >|= function
-  | Unix.WEXITED n -> Ok n
-  | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %d" pp x
-  | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp pp_signal x
+  proc >|= fun proc ->
+  Result.fold ~ok:(function
+      | Unix.WEXITED n -> Ok n
+      | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %d" pp x
+      | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp pp_signal x)
+    ~error:(fun e ->
+        Fmt.error_msg "%t raised %s\n%s" pp (Printexc.to_string e) (Printexc.get_backtrace ())) proc
 
 (* Overridden in unit-tests *)
 let lwt_process_exec = ref default_exec
 
-let exec_result ?cwd ?stdin ?stdout ?stderr ~pp argv =
+let exec_result ?cwd ?stdin ?stdout ?stderr ~pp ?(is_success=((=) 0)) argv =
   Logs.info (fun f -> f "Exec %a" pp_cmd argv);
   !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>= function
-  | Ok 0 -> Lwt_result.return ()
+  | Ok n when is_success n -> Lwt_result.return ()
   | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
   | Error e -> Lwt_result.fail (e : [`Msg of string] :> [> `Msg of string])
 
-let exec ?cwd ?stdin ?stdout ?stderr argv =
+let exec ?cwd ?stdin ?stdout ?stderr ?(is_success=((=) 0)) argv =
   Logs.info (fun f -> f "Exec %a" pp_cmd argv);
   let pp f = pp_cmd f argv in
   !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>= function
-  | Ok 0 -> Lwt.return_unit
+  | Ok n when is_success n -> Lwt.return_unit
   | Ok n -> Lwt.fail_with (Fmt.strf "%t failed with exit status %d" pp n)
   | Error (`Msg m) -> Lwt.fail (Failure m)
 
 let running_as_root = not (Sys.unix) || Unix.getuid () = 0
 
 let sudo ?stdin args =
-  let args = if running_as_root then args else "sudo" :: args in
+  let args = if running_as_root then args else "sudo" :: "--" :: args in
   exec ?stdin args
 
 let sudo_result ?cwd ?stdin ?stdout ?stderr ~pp args =
-  let args = if running_as_root then args else "sudo" :: args in
+  let args = if running_as_root then args else "sudo" :: "--" :: args in
   exec_result ?cwd ?stdin ?stdout ?stderr ~pp args
 
 let rec write_all fd buf ofs len =
@@ -142,6 +146,17 @@ let pread ?stderr argv =
   child >>= fun () ->
   Lwt.return data
 
+let pread_result ?stderr ~pp argv =
+  with_pipe_from_child @@ fun ~r ~w ->
+  let child = exec_result ~stdout:(`FD_move_safely w) ?stderr ~pp argv in
+  let r = Lwt_io.(of_fd ~mode:input) r in
+  Lwt.finalize
+    (fun () -> Lwt_io.read r)
+    (fun () -> Lwt_io.close r)
+  >>= fun data ->
+  child >>= fun r ->
+  Result.map (fun () -> data) r |> Lwt_result.lift
+
 let check_dir x =
   match Unix.lstat x with
   | Unix.{ st_kind = S_DIR; _ } -> `Present
@@ -152,3 +167,46 @@ let ensure_dir path =
   match check_dir path with
   | `Present -> ()
   | `Missing -> Unix.mkdir path 0o777
+
+(** delete_recursively code taken from Lwt. *)
+
+let win32_unlink fn =
+  Lwt.catch
+    (fun () -> Lwt_unix.unlink fn)
+    (function
+     | Unix.Unix_error (Unix.EACCES, _, _) as exn ->
+       Lwt_unix.lstat fn >>= fun {st_perm; _} ->
+       (* Try removing the read-only attribute *)
+       Lwt_unix.chmod fn 0o666 >>= fun () ->
+       Lwt.catch
+         (fun () -> Lwt_unix.unlink fn)
+         (function _ ->
+            (* Restore original permissions *)
+            Lwt_unix.chmod fn st_perm >>= fun () ->
+            Lwt.fail exn)
+     | exn -> Lwt.fail exn)
+
+let unlink =
+  if Sys.win32 then
+    win32_unlink
+  else
+    Lwt_unix.unlink
+
+(* This is likely VERY slow for directories with many files. That is probably
+   best addressed by switching to blocking calls run inside a worker thread,
+   i.e. with Lwt_preemptive. *)
+let rec delete_recursively directory =
+  Lwt_unix.files_of_directory directory
+  |> Lwt_stream.iter_s begin fun entry ->
+    if entry = Filename.current_dir_name ||
+       entry = Filename.parent_dir_name then
+      Lwt.return ()
+    else
+      let path = Filename.concat directory entry in
+      Lwt_unix.lstat path >>= fun stat ->
+      if stat.Lwt_unix.st_kind = Lwt_unix.S_DIR then
+        delete_recursively path
+      else
+        unlink path
+  end >>= fun () ->
+  Lwt_unix.rmdir directory

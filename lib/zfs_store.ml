@@ -88,11 +88,11 @@ end = struct
     else fn ()
 end
 
-let user = { Obuilder_spec.uid = Unix.getuid (); gid = Unix.getgid () }
+let user = `Unix { Obuilder_spec.uid = Unix.getuid (); gid = Unix.getgid () }
 
 module Zfs = struct
   let chown ~user t ds =
-    let { Obuilder_spec.uid; gid } = user in
+    let { Obuilder_spec.uid; gid } = match user with `Unix user -> user | _ -> assert false in
     Os.sudo ["chown"; strf "%d:%d" uid gid; Dataset.path t ds]
 
   let create t ds =
@@ -202,8 +202,8 @@ let build t ?base ~id fn =
 let result t id =
   let ds = Dataset.result id in
   let path = Dataset.path t ds ~snapshot:default_snapshot in
-  if Sys.file_exists path then Some path
-  else None
+  if Sys.file_exists path then Lwt.return_some path
+  else Lwt.return_none
 
 let get_cache t name =
   match Hashtbl.find_opt t.caches name with

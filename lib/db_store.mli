@@ -18,7 +18,7 @@ module Make (Raw : S.STORE) : sig
 
   val prune : ?log:(S.id -> unit) -> t -> before:Unix.tm -> int -> int Lwt.t
 
-  val result : t -> S.id -> string option
+  val result : t -> S.id -> string option Lwt.t
 
   val cache :
     user : Obuilder_spec.user ->

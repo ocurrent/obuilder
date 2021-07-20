@@ -1,5 +1,17 @@
+(rule
+ (target Static_files.ml)
+ (deps
+  (source_tree ../static))
+ (action
+  (run %{bin:ocaml-crunch} ../static --mode=plain -o %{target})))
+
 (library
-  (name obuilder)
-  (public_name obuilder)
-  (preprocess (pps ppx_sexp_conv))
-  (libraries lwt lwt.unix fmt yojson tar-unix sexplib sqlite3 astring logs sha obuilder-spec cmdliner))
+ (name obuilder)
+ (public_name obuilder)
+ (preprocess
+  (pps ppx_sexp_conv))
+  (modules Btrfs_store Build Build_log Config Dao Db Db_store Docker
+   Docker_store Escape Log Manifest Obuilder Os S Runc_sandbox Docker_sandbox Static_files
+   Store_spec Tar_transfer Zfs_store)
+ (libraries lwt lwt.unix fmt yojson tar-unix sexplib sqlite3 astring logs sha
+   obuilder-spec cmdliner))
