@@ -485,10 +485,10 @@ let test_sexp () =
       (user (uid 1) (gid 2))
      )|}
 
-let test_docker () =
+let test_docker_unix () =
   let test ~buildkit name expect sexp =
     let spec = Spec.t_of_sexp (Sexplib.Sexp.of_string sexp) in
-    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit spec in
+    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`Unix spec in
     let expect = remove_indent expect in
     Alcotest.(check string) name expect got
   in
@@ -580,6 +580,59 @@ let test_docker () =
        (secrets (a (target /secrets/a))
                 (b (target /secrets/b)))
        (shell "command1"))
+     ) |}
+
+let test_docker_windows () =
+  let test ~buildkit name expect sexp =
+    let spec = Spec.t_of_sexp (Sexplib.Sexp.of_string sexp) in
+    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`Windows spec in
+    let expect = remove_indent expect in
+    Alcotest.(check string) name expect got
+  in
+  test ~buildkit:false "Dockerfile"
+    {| #escape=`
+       FROM base
+       # A test comment
+       WORKDIR C:/src
+       RUN command1
+       SHELL [ "C:/Windows/System32/cmd.exe", "/c" ]
+       RUN command2 && `
+           command3
+       COPY a b c
+       COPY a b c
+       ENV DEBUG="1"
+       USER Zaphod
+       COPY a b c
+    |} {|
+     ((from base)
+      (comment "A test comment")
+      (workdir C:/src)
+      (run (shell "command1"))
+      (shell C:/Windows/System32/cmd.exe /c)
+      (run
+       (cache (a (target /data))
+              (b (target /srv)))
+       (shell "command2 &&
+               command3"))
+      (copy (src a b) (dst c))
+      (copy (src a b) (dst c) (exclude .git _build))
+      (env DEBUG 1)
+      (user (name Zaphod))
+      (copy (src a b) (dst c))
+     ) |};
+  test ~buildkit:false "Multi-stage"
+    {| #escape=`
+       FROM base as tools
+       RUN make tools
+
+       FROM base
+       COPY --from=tools binary /usr/local/bin/
+    |} {|
+     ((build tools
+             ((from base)
+              (run (shell "make tools"))))
+      (from base)
+      (copy (from (build tools)) (src binary) (dst /usr/local/bin/))
      ) |}
 
 let manifest =
@@ -682,7 +735,8 @@ let () =
       "spec", [
         test_case_sync "Sexp"     `Quick test_sexp;
         test_case_sync "Cache ID" `Quick test_cache_id;
-        test_case_sync "Docker"   `Quick test_docker;
+        test_case_sync "Docker UNIX"    `Quick test_docker_unix;
+        test_case_sync "Docker Windows" `Quick test_docker_windows;
       ];
       "build", [
         test_case "Simple"     `Quick test_simple;
