@@ -178,9 +178,9 @@ let env k v = `Env (k, v)
 let user_unix ~uid ~gid = `User (`Unix { uid; gid })
 let user_windows ~name = `User (`Windows { name })
 
-let root =
-  if Sys.win32 then `Windows { name = "ContainerAdministrator" }
-  else `Unix { uid = 0; gid = 0 }
+let root_unix = `Unix { uid = 0; gid = 0 }
+let root_windows = `Windows { name = "ContainerAdministrator" }
+let root = if Sys.win32 then root_windows else root_unix
 
 let rec pp_no_boxes f : Sexplib.Sexp.t -> unit = function
   | List xs -> Fmt.pf f "(%a)" (Fmt.list ~sep:Fmt.sp pp_no_boxes) xs

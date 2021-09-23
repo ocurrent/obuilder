@@ -1,5 +1,6 @@
-val dockerfile_of_spec : buildkit:bool -> Spec.t -> string
-(** [dockerfile_of_spec x] produces a Dockerfile that aims to be equivalent to [x].
+val dockerfile_of_spec : buildkit:bool -> os:[`Unix | `Windows] -> Spec.t -> string
+(** [dockerfile_of_spec ~buildkit ~os x] produces a Dockerfile
+   that aims to be equivalent to [x].
 
     However, note that:
 
@@ -7,5 +8,7 @@ val dockerfile_of_spec : buildkit:bool -> Spec.t -> string
       you have a suitable ".dockerignore" file.
     - The conversion is not robust against malicious input, as the escaping rules are unclear.
 
-    @param buildkit If true, the extended BuildKit syntax is used to support caches.
-                    If false, caches are ignored. *)
+    @param buildkit If true, the extended BuildKit syntax is used to
+      support caches.  If false, caches are ignored. BuildKit syntax
+      isn't supported on Windows.
+    @param os Use UNIX or Windows syntax and idiosyncrasies. *)

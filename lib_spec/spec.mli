@@ -53,6 +53,8 @@ val env : string -> string -> op
 val user_unix : uid:int -> gid:int -> op
 val user_windows : name:string -> op
 
+val root_unix : [`Unix of unix_user]
+val root_windows : [`Windows of windows_user]
 val root : user
 
 val pp : t Fmt.t
