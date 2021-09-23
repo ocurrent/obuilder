@@ -58,6 +58,20 @@ let pp_copy ~ctx f { Spec.from; src; dst; exclude = _ } =
     Fmt.(list ~sep:sp string) src
     dst
 
+let quote ~escape v =
+  let len = String.length v in
+  let buf = Buffer.create len in
+  let j = ref 0 in
+  for i = 0 to len - 1 do
+    if v.[i] = '"' || v.[i] = escape then begin
+      if i - !j > 0 then Buffer.add_substring buf v !j (i - !j);
+      Buffer.add_char buf escape;
+      j := i
+    end
+  done;
+  Buffer.add_substring buf v !j (len - !j);
+  Buffer.contents buf
+
 let pp_op ~buildkit ctx f : Spec.op -> ctx = function
   | `Comment x                -> Fmt.pf f "# %s" x; ctx
   | `Workdir x                -> Fmt.pf f "WORKDIR %s" x; ctx
@@ -66,7 +80,7 @@ let pp_op ~buildkit ctx f : Spec.op -> ctx = function
   | `Run x                    -> pp_run ~ctx f { x with cache = []; secrets = []}; ctx
   | `Copy x                   -> pp_copy ~ctx f x; ctx
   | `User ({ uid; gid } as u) -> Fmt.pf f "USER %d:%d" uid gid; { user = u }
-  | `Env (k, v)               -> Fmt.pf f "ENV %s %s" k v; ctx
+  | `Env (k, v)               -> Fmt.pf f "ENV %s=\"%s\"" k (quote ~escape:'\\' v); ctx
 
 let rec convert ~buildkit f (name, { Spec.child_builds; from; ops }) =
   child_builds |> List.iter (fun (name, spec) ->

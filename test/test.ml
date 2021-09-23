@@ -502,7 +502,8 @@ let test_docker () =
            command3
        COPY a b c
        COPY a b c
-       ENV DEBUG 1
+       ENV DEBUG="1"
+       ENV ESCAPE="\"quote\\sla\\sh\""
        USER 1:2
        COPY --chown=1:2 a b c
     |} {|
@@ -519,6 +520,7 @@ let test_docker () =
       (copy (src a b) (dst c))
       (copy (src a b) (dst c) (exclude .git _build))
       (env DEBUG 1)
+      (env ESCAPE "\"quote\\sla\\sh\"")
       (user (uid 1) (gid 2))
       (copy (src a b) (dst c))
      ) |};
@@ -531,7 +533,7 @@ let test_docker () =
        RUN --mount=type=cache,id=a,target=/data,uid=0 --mount=type=cache,id=b,target=/srv,uid=0 command2
        COPY a b c
        COPY a b c
-       ENV DEBUG 1
+       ENV DEBUG="1"
        USER 1:2
        COPY --chown=1:2 a b c
     |} {|
