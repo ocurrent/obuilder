@@ -68,7 +68,7 @@ let exec ?cwd ?stdin ?stdout ?stderr argv =
   let pp f = pp_cmd f argv in
   !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>= function
   | Ok 0 -> Lwt.return_unit
-  | Ok n -> Lwt.fail_with (Fmt.strf "%t failed with exit status %d" pp n)
+  | Ok n -> Lwt.fail_with (Fmt.str "%t failed with exit status %d" pp n)
   | Error (`Msg m) -> Lwt.fail (Failure m)
 
 let running_as_root = not (Sys.unix) || Unix.getuid () = 0
