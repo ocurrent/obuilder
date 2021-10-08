@@ -25,7 +25,7 @@ let pp_signal f x =
   else if x = sigterm then Fmt.string f "term"
   else Fmt.int f x
 
-let pp_cmd = Fmt.box Fmt.(list ~sep:sp (quote string))
+let pp_cmd = Fmt.hbox Fmt.(list ~sep:sp (quote string))
 
 let redirection = function
   | `FD_move_safely x -> `FD_copy x.raw
