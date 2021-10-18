@@ -151,3 +151,12 @@ let ensure_dir path =
   match check_dir path with
   | `Present -> ()
   | `Missing -> Unix.mkdir path 0o777
+
+let copy ?(superuser=false) ~src dst =
+  if Sys.win32 then
+    exec ["robocopy"; src; dst; "/MIR"; "/NFL"; "/NDL"; "/NJH"; "/NJS"; "/NC"; "/NS"; "/NP"]
+      ~is_success:(fun n -> n = 0 || n = 1)
+  else if superuser then
+    sudo ["cp"; "-a"; "--"; src; dst ]
+  else
+    exec ["cp"; "-a"; "--"; src; dst ]
