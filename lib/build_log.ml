@@ -106,7 +106,7 @@ let of_saved path =
   }
 
 let printf t fmt =
-  Fmt.kstrf (write t) fmt
+  Fmt.kstr (write t) fmt
 
 let empty = {
   state = `Empty;

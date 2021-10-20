@@ -124,7 +124,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
         | Some id ->
           match Store.result t.store id with
           | None ->
-            Lwt_result.fail (`Msg (Fmt.strf "Build result %S not found" id))
+            Lwt_result.fail (`Msg (Fmt.str "Build result %S not found" id))
           | Some dir ->
             Lwt_result.return (dir / "rootfs")
     end >>!= fun src_dir ->
@@ -197,7 +197,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
   let rec run_steps t ~(context:Context.t) ~base = function
     | [] -> Lwt_result.return base
     | op :: ops ->
-      context.log `Heading Fmt.(strf "%a" (pp_op ~context) op);
+      context.log `Heading Fmt.(str "%a" (pp_op ~context) op);
       let k = run_steps t ops in
       match op with
       | `Comment _ -> k ~base ~context
@@ -222,7 +222,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
         k ~base ~context:{context with shell}
 
   let get_base t ~log base =
-    log `Heading (Fmt.strf "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
+    log `Heading (Fmt.str "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
     let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
         Log.info (fun f -> f "Base image not present; importing %S..." base);
@@ -242,9 +242,9 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     let rec aux context = function
       | [] -> Lwt_result.return context
       | (name, child_spec) :: child_builds ->
-        context.Context.log `Heading Fmt.(strf "(build %S ...)" name);
+        context.Context.log `Heading Fmt.(str "(build %S ...)" name);
         build ~scope t context child_spec >>!= fun child_result ->
-        context.Context.log `Note Fmt.(strf "--> finished %S" name);
+        context.Context.log `Note Fmt.(str "--> finished %S" name);
         let context = Context.with_binding name child_result context in
         aux context child_builds
     in

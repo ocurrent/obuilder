@@ -12,7 +12,7 @@ let pp_pair f (k, v) =
 
 let pp_wrap =
   Fmt.using (String.split_on_char '\n')
-    Fmt.(list ~sep:(unit " \\@\n    ") (using String.trim string))
+    Fmt.(list ~sep:(any " \\@\n    ") (using String.trim string))
 
 let pp_cache ~ctx f { Cache.id; target; buildkit_options } =
   let buildkit_options =
@@ -22,7 +22,7 @@ let pp_cache ~ctx f { Cache.id; target; buildkit_options } =
     ("uid", string_of_int ctx.user.uid) ::
     buildkit_options
   in
-  Fmt.pf f "%a" Fmt.(list ~sep:(unit ",") pp_pair) buildkit_options
+  Fmt.pf f "%a" Fmt.(list ~sep:(any ",") pp_pair) buildkit_options
 
 let pp_mount_secret ~ctx f { Secret.id; target; buildkit_options } =
   let buildkit_options =
@@ -32,7 +32,7 @@ let pp_mount_secret ~ctx f { Secret.id; target; buildkit_options } =
     ("uid", string_of_int ctx.user.uid) ::
     buildkit_options
   in
-  Fmt.pf f "%a" Fmt.(list ~sep:(unit ",") pp_pair) buildkit_options
+  Fmt.pf f "%a" Fmt.(list ~sep:(any ",") pp_pair) buildkit_options
 
 let pp_run ~ctx f { Spec.cache; shell; secrets; network = _ } =
   Fmt.pf f "RUN %a%a%a"
@@ -84,4 +84,4 @@ let rec convert ~buildkit f (name, { Spec.child_builds; from; ops }) =
   in ()
 
 let dockerfile_of_spec ~buildkit t =
-  Fmt.strf "%a" (convert ~buildkit) (None, t)
+  Fmt.str "%a" (convert ~buildkit) (None, t)
