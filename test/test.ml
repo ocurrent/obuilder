@@ -416,6 +416,31 @@ let test_delete _switch () =
   Alcotest.(check build_result) "Build 2 result" (Ok "B") result2;
   Lwt.return_unit
 
+let test_tar_long_filename _switch () =
+  let do_test length =
+    Logs.info (fun m -> m "Test copy length %d " length);
+    Lwt_io.with_temp_dir ~prefix:"test-copy-src-" @@ fun src_dir ->
+      Lwt_io.with_temp_dir ~prefix:"test-copy-dst-" @@ fun dst_dir ->
+    let filename = String.make length 'a' in
+    Lwt_io.(with_file ~mode:output) 
+      (src_dir / filename) 
+      (fun ch -> Lwt_io.write ch "file-data") 
+    >>= fun () ->
+    Lwt_unix.openfile (dst_dir / "out.tar") [Lwt_unix.O_WRONLY; Lwt_unix.O_CREAT] 0 
+    >>= fun to_untar ->
+    let src_manifest = Manifest.generate ~exclude:[] ~src_dir "." |> Result.get_ok in
+    let user = {Spec.uid=1000; gid=1000} in
+    Tar_transfer.send_file 
+      ~src_dir 
+      ~src_manifest 
+      ~dst:dst_dir 
+      ~user 
+      ~to_untar
+  in
+  do_test 80 >>= fun () ->
+  do_test 160 >>= fun () ->
+  do_test 240
+
 let sexp = Alcotest.of_pp Sexplib.Sexp.pp_hum
 
 let remove_line_indents = function
@@ -673,6 +698,9 @@ let () =
       "secrets", [
         test_case "Simple"     `Quick test_secrets_simple;
         test_case "No secret provided" `Quick test_secrets_not_provided;
+      ];
+      "tar_transfer", [
+        test_case "Long filename"  `Quick test_tar_long_filename;
       ];
       "manifest", [
         test_case "Copy"       `Quick test_copy;
