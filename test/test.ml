@@ -36,7 +36,7 @@ let mock_op ?(result=Lwt_result.return ()) ?(delay_store=Lwt.return_unit) ?cance
   let cmd =
     match config.argv with
     | ["/bin/bash"; "-c"; cmd] -> cmd
-    | x -> Fmt.strf "%a" Fmt.(Dump.list string) x
+    | x -> Fmt.str "%a" Fmt.(Dump.list string) x
   in
   Build_log.printf log "%s@." cmd >>= fun () ->
   cancel |> Option.iter (fun cancel ->
@@ -440,7 +440,7 @@ let test_sexp () =
     let spec = Spec.t_of_sexp s1 in
     let s2 = Spec.sexp_of_t spec in
     Alcotest.(check sexp) name s1 s2;
-    Alcotest.(check string) name s (Fmt.strf "%a" Spec.pp spec)
+    Alcotest.(check string) name s (Fmt.str "%a" Spec.pp spec)
   in
   test "copy" {|
      ((build tools

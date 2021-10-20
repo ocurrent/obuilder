@@ -71,8 +71,8 @@ module Make (Raw : S.STORE) = struct
       Lwt_result.return (`Saved, id)
 
   let log_ty client_log ~id = function
-    | `Loaded -> client_log `Note (Fmt.strf "---> using %S from cache" id)
-    | `Saved -> client_log `Note (Fmt.strf "---> saved as %S" id)
+    | `Loaded -> client_log `Note (Fmt.str "---> using %S from cache" id)
+    | `Saved -> client_log `Note (Fmt.str "---> saved as %S" id)
 
   (* Check to see if we're in the process of building [id].
      If so, just tail the log from that.
