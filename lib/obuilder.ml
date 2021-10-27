@@ -33,3 +33,4 @@ module Manifest = Manifest
 module Escape = Escape
 module Os = Os
 module Db = Db
+module Tar_transfer = Tar_transfer

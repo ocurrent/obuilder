@@ -33,7 +33,7 @@ module Tar_lwt_unix = struct
   module HW = Tar.HeaderWriter(Lwt)(Writer)
 
   let write_block (header: Tar.Header.t) (body: Lwt_unix.file_descr -> unit Lwt.t) (fd : Lwt_unix.file_descr) =
-    HW.write ~level:Tar.Header.Ustar header fd
+    HW.write ~level:Tar.Header.GNU header fd
     >>= fun () ->
     body fd >>= fun () ->
     Writer.really_write fd (Tar.Header.zero_padding header)

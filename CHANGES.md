@@ -1,5 +1,8 @@
 ### unreleased
 
+- Use GNU tar format instead of UStar for `copy` operations (@TheLortex ...).
+  This enables copying from sources containing long file names (>100 characters).
+
 - Add support for secrets (@TheLortex #63, reviewed by @talex5).
   The obuilder spec's `run` command supports a new `secrets` fields, which allows to temporarily
   mount secret files in an user-specified location. The sandbox build context has an additional
