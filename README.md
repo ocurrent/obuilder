@@ -306,6 +306,11 @@ The dockerfile should work the same way as the spec file, except for these limit
 - All `(network ...)` fields are ignored, as Docker does not allow per-step control of
   networking.
 
+## Experimental macOS Support
+
+OBuilder abstracts over a fetching mechanism for the Docker base image, the sandboxing for the execution of build steps and the store for the cache.
+This makes OBuilder extremely portable and there exists a (very) experimental [macOS][] backend.
+
 ## Licensing
 
 OBuilder is licensed under the Apache License, Version 2.0.
@@ -314,3 +319,4 @@ See [LICENSE][] for the full license text.
 [Dockerfile]: https://docs.docker.com/engine/reference/builder/
 [OCluster]: https://github.com/ocurrent/ocluster
 [LICENSE]: ./LICENSE
+[macOS]: ./macOS.md

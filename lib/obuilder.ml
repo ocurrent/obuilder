@@ -14,11 +14,13 @@ module Store_spec = Store_spec
 
 (** {2 Fetchers} *)
 module Docker = Docker
+module User_temp = User_temp
 
 (** {2 Sandboxes} *)
 
 module Config = Config
 module Runc_sandbox = Runc_sandbox
+module Macos_sandbox = Macos_sandbox
 
 (** {2 Builders} *)
 
