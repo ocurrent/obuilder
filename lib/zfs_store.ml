@@ -32,6 +32,7 @@ type cache = {
 
 type t = {
   pool : string;
+  prefix : string; (* To be prepended to `pool` to give the full path to the pool *)
   caches : (string, cache) Hashtbl.t;
   mutable next : int;
 }
@@ -75,8 +76,8 @@ end = struct
 
   let path ?snapshot t ds =
     match snapshot with
-    | None -> strf "/%s/%s" t.pool ds
-    | Some snapshot -> strf "/%s/%s/.zfs/snapshot/%s" t.pool ds snapshot
+    | None -> strf "%s%s/%s" t.prefix t.pool ds
+    | Some snapshot -> strf "%s%s/%s/.zfs/snapshot/%s" t.prefix t.pool ds snapshot
 
   let exists ?snapshot t ds =
     match Os.check_dir (path ?snapshot t ds) with
@@ -140,8 +141,16 @@ let delete_if_exists t ds mode =
 
 let state_dir t = Dataset.path t Dataset.state
 
-let create ~pool =
-  let t = { pool; caches = Hashtbl.create 10; next = 0 } in
+let prefix_and_pool path =
+  let pool = Filename.basename path in
+  match Filename.chop_suffix_opt ~suffix:pool path with
+   | Some "" -> ("/", pool) (* Preserves original behaviour *)
+   | Some prefix -> (prefix, pool)
+   | None -> failwith ("Failed to get preffix from: " ^ path)
+
+let create ~path =
+  let prefix, pool = prefix_and_pool path in
+  let t = { pool; prefix; caches = Hashtbl.create 10; next = 0 } in
   (* Ensure any left-over temporary datasets are removed before we start. *)
   delete_if_exists t (Dataset.cache_tmp_group) `And_snapshots_and_clones >>= fun () ->
   Dataset.groups |> Lwt_list.iter_s (fun group ->
