@@ -25,7 +25,7 @@
 	    && opam update -u"))
 	 ; Copy just the opam file first (helps caching)
 	 (copy (src obuilder-spec.opam obuilder.opam) (dst ./))
-	 (run (shell "opam pin add -yn ."))
+	 (run (network host) (shell "opam pin add -yn ."))
 	 ; Install OS package dependencies
 	 (run
 	  (network host)
