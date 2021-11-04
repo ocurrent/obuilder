@@ -11,7 +11,7 @@
 	 (workdir /src)
 	 (user (uid 1000) (gid 1000))                           ; Build as the "opam" user
 	 (run (shell "sudo chown opam /src"))
-	 (env OPAM_HASH "3332c004db65ef784f67efdadc50982f000b718f") ; Fix the version of opam-repository we want
+	 (env OPAM_HASH "2018971bc97a8384b46aae43f3b2e9ccbc20ac32") ; Fix the version of opam-repository we want
 	 (run
 	  (network host)
 	  (shell "sudo apt-get --allow-releaseinfo-change update"))
