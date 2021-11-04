@@ -426,6 +426,10 @@ let test_tar_long_filename _switch () =
       (src_dir / filename) 
       (fun ch -> Lwt_io.write ch "file-data") 
     >>= fun () ->
+    Lwt_io.(with_file ~mode:output) 
+      (src_dir / filename) 
+      (fun ch -> Lwt_io.write ch "file-data") 
+    >>= fun () ->
     Lwt_unix.openfile (dst_dir / "out.tar") [Lwt_unix.O_WRONLY; Lwt_unix.O_CREAT] 0 
     >>= fun to_untar ->
     let src_manifest = Manifest.generate ~exclude:[] ~src_dir "." |> Result.get_ok in
