@@ -42,3 +42,7 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/ocurrent/obuilder.git"
+pin-depends: [
+  [ "tar-unix.dev" "git+https://github.com/dra27/ocaml-tar.git#6cce2e2206140b2e63e6b217d5bc51b1200a76d0"]
+  [ "tar.dev" "git+https://github.com/dra27/ocaml-tar.git#6cce2e2206140b2e63e6b217d5bc51b1200a76d0"]
+]
