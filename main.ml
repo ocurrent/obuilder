@@ -25,7 +25,7 @@ let create_builder spec conf =
 let create_macos_builder spec conf =
   let open Obuilder in
   Store_spec.to_store spec >>= fun (Store ((module Store), store)) ->
-  let module Builder = Builder(Store)(Macos_sandbox)(User_temp) in
+  let module Builder = Builder(Store)(Macos_sandbox)(Docker) in
   Macos_sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)
