@@ -1,3 +1,2 @@
-((from empty)
- (run (shell "echo hello > hello.txt"))
- (run (shell "cat hello.txt")))
+((from patricoferris/macos-opam:macos-homebrew-ocaml-4.12)
+ (run (shell "./local/bin/opam --version")))
