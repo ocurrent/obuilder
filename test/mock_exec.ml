@@ -58,7 +58,7 @@ let exec_docker ?stdout = function
   | x -> Fmt.failwith "Unknown mock docker command %a" Fmt.(Dump.list string) x
 
 let mkdir = function
-  | ["--mode=755"; "--"; path] -> Unix.mkdir path 0o755; Lwt_result.return 0
+  | ["-m"; "755"; "--"; path] -> Unix.mkdir path 0o755; Lwt_result.return 0
   | x -> Fmt.failwith "Unexpected mkdir %a" Fmt.(Dump.list string) x
 
 let closing redir fn =

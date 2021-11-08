@@ -22,7 +22,7 @@ type config = {
 let run_as ~env ~user ~cmd =
   let command =
     let env = String.concat " " (List.map (fun (k, v) -> Filename.quote (k^"="^v)) env) in
-    "su" :: "-l" :: user :: "-c" :: "--" ::
+    "sudo" :: "su" :: "-l" :: user :: "-c" :: "--" ::
     Printf.sprintf {|source ~/.obuilder_profile.sh && env %s "$0" "$@"|} env ::
     cmd
   in
@@ -69,7 +69,6 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config homedir =
   let stdout = `FD_move_safely out_w in
   let stderr = stdout in
   let copy_log = copy_to_log ~src:out_r ~dst:log in
-  let run_cmd : string list ref = ref [] in
   let proc_id = ref None in
   let proc =
     let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
@@ -81,7 +80,6 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config homedir =
     let tmpdir = List.hd (String.split_on_char '\n' tmpdir) in
     let env = ("TMPDIR", tmpdir) :: osenv in
     let cmd = run_as ~env ~user ~cmd:config.Config.argv in
-    run_cmd := cmd;
     Os.ensure_dir config.Config.cwd;
     let pid, proc = Os.open_process ?stdin ~stdout ~stderr ~pp ~cwd:config.Config.cwd cmd in
     proc_id := Some pid;

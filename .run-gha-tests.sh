@@ -50,4 +50,5 @@ sudo chown -R 1000:1000 /zfs/cache/c-opam-archives
 sudo zfs snapshot zfs/cache/c-opam-archives@snap
 
 opam exec -- dune exec -- obuilder build -f example.spec . --store=btrfs:/btrfs
+opam exec -- dune exec -- obuilder build -f example.spec . --store=rsync:/rsync
 opam exec -- dune exec -- obuilder build -f example.spec . --store=zfs:zfs
