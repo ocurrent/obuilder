@@ -29,7 +29,7 @@ let build t ?base ~id fn =
        base |> Option.iter (fun base -> assert (not (String.contains base '/')));
        let dir = t.dir / id in
        assert (Os.check_dir dir = `Missing);
-       let tmp_dir = dir ^ ".part" in
+       let tmp_dir = dir ^ "-tmp" in
        assert (not (Sys.file_exists tmp_dir));
        begin match base with
          | None -> Os.ensure_dir tmp_dir; Lwt.return_unit
