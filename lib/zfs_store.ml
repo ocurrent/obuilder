@@ -216,6 +216,14 @@ let result t id =
   if Sys.file_exists path then Lwt.return_some path
   else Lwt.return_none
 
+let log_file t id =
+  result t id >|= function
+  | Some dir -> Filename.concat dir "log"
+  | None ->
+    let ds = Dataset.result id in
+    let clone = Dataset.path t ds in
+    Filename.concat clone "log"
+
 let get_cache t name =
   match Hashtbl.find_opt t.caches name with
   | Some c -> c

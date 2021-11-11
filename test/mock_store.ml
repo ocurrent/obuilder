@@ -64,6 +64,9 @@ let result t id =
   | `Present -> Lwt.return_some dir
   | `Missing -> Lwt.return_none
 
+let log_file t id =
+  Lwt.return (t.dir / "logs" / (id  ^ ".log"))
+
 let rec finish t =
   if t.builds > 0 then (
     Logs.info (fun f -> f "Waiting for %d builds to finish" t.builds);
@@ -75,6 +78,7 @@ let with_store fn =
   Lwt_io.with_temp_dir ~prefix:"mock-store-" @@ fun dir ->
   let t = { dir; cond = Lwt_condition.create (); builds = 0 } in
   Obuilder.Os.ensure_dir (state_dir t);
+  Obuilder.Os.ensure_dir (t.dir / "logs");
   Lwt.finalize
     (fun () -> fn t)
     (fun () -> finish t)
