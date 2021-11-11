@@ -123,6 +123,11 @@ let result t id =
   | `Present -> Lwt.return_some dir
   | `Missing -> Lwt.return_none
 
+let log_file t id =
+  result t id >|= function
+  | Some dir -> dir / "log"
+  | None -> (Path.result_tmp t id) / "log"
+
 let state_dir t = t.path / Path.state_dirname
 
 let get_cache t name =
