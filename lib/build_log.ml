@@ -114,7 +114,7 @@ let empty = {
 }
 
 let copy ~src ~dst =
-  let buf = Bytes.create 4096 in
+  let buf = Bytes.create max_chunk_size in
   let rec aux () =
     Lwt_unix.read src buf 0 (Bytes.length buf) >>= function
     | 0 -> Lwt.return_unit
