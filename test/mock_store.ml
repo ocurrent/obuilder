@@ -64,6 +64,11 @@ let result t id =
   | `Present -> Lwt.return_some dir
   | `Missing -> Lwt.return_none
 
+let log_file t id =
+  result t id >|= function
+  | Some dir -> dir / "log"
+  | None -> t.dir / (id ^ "-tmp") / "log"
+
 let rec finish t =
   if t.builds > 0 then (
     Logs.info (fun f -> f "Waiting for %d builds to finish" t.builds);
