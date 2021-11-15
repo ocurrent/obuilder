@@ -62,9 +62,9 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config homedir =
   let homedir = Filename.concat homedir "rootfs" in
   let user = user_name ~prefix:"mac" ~uid:t.uid in
   let uid = string_of_int t.uid in
-  Os.Macos.create_new_user ~username:user ~home:homedir ~uid ~gid:"1000" >>= fun _ ->
-  let set_homedir = Os.Macos.change_home_directory_for ~user ~homedir in
-  let update_scoreboard = Os.Macos.update_scoreboard ~uid:t.uid ~homedir ~scoreboard:t.scoreboard in
+  Macos.create_new_user ~username:user ~home:homedir ~uid ~gid:"1000" >>= fun _ ->
+  let set_homedir = Macos.change_home_directory_for ~user ~homedir in
+  let update_scoreboard = Macos.update_scoreboard ~uid:t.uid ~homedir ~scoreboard:t.scoreboard in
   let osenv = config.Config.env in
   let stdout = `FD_move_safely out_w in
   let stderr = stdout in
@@ -76,7 +76,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config homedir =
     Os.sudo_result ~pp set_homedir >>= fun _ ->
     Os.sudo_result ~pp update_scoreboard >>= fun _ ->
     pre_build t >>= fun _ ->
-    Os.pread @@ Os.Macos.get_tmpdir ~user >>= fun tmpdir ->
+    Os.pread @@ Macos.get_tmpdir ~user >>= fun tmpdir ->
     let tmpdir = List.hd (String.split_on_char '\n' tmpdir) in
     let env = ("TMPDIR", tmpdir) :: osenv in
     let cmd = run_as ~env ~user ~cmd:config.Config.argv in
@@ -91,7 +91,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config homedir =
     let aux () =
       if Lwt.is_sleeping proc then (
         match !proc_id with
-          | Some pid -> Os.Macos.kill_all_descendants ~pid:(string_of_int pid)
+          | Some pid -> Macos.kill_all_descendants ~pid:(string_of_int pid)
           | None -> Log.warn (fun f -> f "Failed to find pid..."); Lwt.return ()
           )
       else Lwt.return_unit  (* Process has already finished *)
