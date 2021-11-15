@@ -91,7 +91,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config homedir =
     let aux () =
       if Lwt.is_sleeping proc then (
         match !proc_id with
-          | Some pid -> Macos.kill_all_descendants ~pid:(string_of_int pid)
+          | Some pid -> Macos.kill_all_descendants ~pid
           | None -> Log.warn (fun f -> f "Failed to find pid..."); Lwt.return ()
           )
       else Lwt.return_unit  (* Process has already finished *)
