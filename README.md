@@ -2,7 +2,7 @@
 
 OBuilder takes a build script (similar to a Dockerfile) and performs the steps in it in a sandboxed environment.
 
-After each step, OBuild uses the snapshot feature of the filesystem (ZFS or Btrfs) to store the state of the build.
+After each step, OBuild uses the snapshot feature of the filesystem (ZFS or Btrfs) to store the state of the build. There is also an Rsync backend that copies the build state.
 Repeating a build will reuse the cached results where possible.
 
 OBuilder aims to be portable, although currently only Linux support is present.
@@ -28,7 +28,7 @@ To build `example.spec` (which builds OBuilder itself) using the ZFS pool `tank`
 
     $ obuilder build -f example.spec . --store=zfs:tank
 
-To use Btrfs directory `/mnt/btrfs` for the build cache, use `--store=btrfs:/mnt/btrfs`.
+To use Btrfs directory `/mnt/btrfs` for the build cache, use `--store=btrfs:/mnt/btrfs` or specify a directory for Rsync to use `--store=rsync:/rsync`.
 
 ## Notes
 
@@ -164,7 +164,7 @@ The command run will be this list of arguments followed by the single argument `
  (network NETWORK...)?
  (secrets SECRET...)?
  (shell COMMAND))
- 
+
 ```
 
 Examples:
@@ -200,8 +200,8 @@ networks (if any).
 
 Currently, no other networks can be used, so the only options are `host` or an isolated private network.
 
-The `(secrets SECRET...)` field can be used to request values for chosen keys, mounted as read-only files in 
-the image. Each `SECRET` entry is under the form `(ID (target PATH))`, where `ID` selects the secret, and 
+The `(secrets SECRET...)` field can be used to request values for chosen keys, mounted as read-only files in
+the image. Each `SECRET` entry is under the form `(ID (target PATH))`, where `ID` selects the secret, and
 `PATH` is the location of the mounted secret file within the container.
 The sandbox context API contains a `secrets` parameter to provide values to the runtime.
 If a requested secret isn't provided with a value, the runtime fails.

@@ -39,7 +39,7 @@
 	 (copy                                                  ; Copy the rest of the source code
 	  (src .)
 	  (dst /src/)
-	  (exclude .git _build))
+	  (exclude .git _build _opam))
 	 (run (shell "opam exec -- dune build @install @runtest"))))    ; Build and test
  ; Now generate a small runtime image with just the resulting binary:
  (from debian:10)

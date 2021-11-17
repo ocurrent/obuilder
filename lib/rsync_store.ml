@@ -24,7 +24,7 @@ module Rsync = struct
   let delete dir =
     Os.sudo [ "rm"; "-r"; dir ]
 
-  let rsync = [ "rsync"; "-aq" ]
+  let rsync = [ "rsync"; "-aHq" ]
 
   let rename ~src ~dst =
     let cmd = [ "mv"; src; dst ] in
