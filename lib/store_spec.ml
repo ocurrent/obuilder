@@ -5,17 +5,20 @@ open Lwt.Infix
 type t = [
   | `Btrfs of string  (* Path *)
   | `Zfs of string    (* Pool *)
+  | `Rsync of string  (* Path for the root of the store *)
 ]
 
 let of_string s =
   match Astring.String.cut s ~sep:":" with
   | Some ("zfs", pool) -> Ok (`Zfs pool)
   | Some ("btrfs", path) -> Ok (`Btrfs path)
+  | Some ("rsync", path) -> Ok (`Rsync path)
   | _ -> Error (`Msg "Store must start with zfs: or btrfs:")
 
 let pp f = function
   | `Zfs pool -> Fmt.pf f "zfs:%s" pool
   | `Btrfs path -> Fmt.pf f "btrfs:%s" path
+  | `Rsync path -> Fmt.pf f "rsync:%s" path
 
 type store = Store : (module S.STORE with type t = 'a) * 'a -> store
 
@@ -26,3 +29,6 @@ let to_store = function
   | `Zfs pool ->
     Zfs_store.create ~pool >|= fun store ->
     Store ((module Zfs_store), store)
+  | `Rsync path ->
+    Rsync_store.create ~path >|= fun store ->
+    Store ((module Rsync_store), store)
