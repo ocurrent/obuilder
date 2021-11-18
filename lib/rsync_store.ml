@@ -35,7 +35,7 @@ module Rsync = struct
       | Some uid_gid -> [ "--chown"; uid_gid ]
       | None -> []
     in
-    let cmd = rsync @ chown @ [ Fmt.str "%s/" src; dst ] in
+    let cmd = rsync @ chown @ [ src ^ "/"; dst ] in
     Os.ensure_dir dst;
     Os.sudo cmd
 end
@@ -55,7 +55,7 @@ module Path = struct
   let result t id = t.path / result_dirname / id
   let cache t id = t.path / cache_dirname / id
 
-  let cache_tmp t n id = t.path / cache_tmp_dirname / Fmt.str "%i-%s" n id
+  let cache_tmp t n id = t.path / cache_tmp_dirname / Printf.sprintf "%i-%s" n id
 
   let result_tmp t id = t.path / result_tmp_dirname / id
 end
