@@ -1,4 +1,4 @@
-(** Sandbox builds using macOS users. *)
+(** Sandbox builds. *)
 
 include S.SANDBOX
 
@@ -10,5 +10,5 @@ val cmdliner : config Cmdliner.Term.t
     and parameters to setup a specific sandbox's configuration. *)
 
 val create : state_dir:string -> config -> t Lwt.t
-(** [create ~state_dir config] is a user-based sandboxing system for macOS that
-    keeps state in [state_dir] and is configured using [config]. *)
+(** [create ~state_dir config] is a sandboxing system that keeps state in [state_dir]
+    and is configured using [config]. *)
