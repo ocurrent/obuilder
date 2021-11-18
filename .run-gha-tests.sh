@@ -29,10 +29,15 @@ sudo mkdir /btrfs
 sudo mount -t btrfs "$BTRFS_LOOP" /btrfs
 sudo chown "$(whoami)" /btrfs
 
+sudo mkdir /rsync
+sudo chown "$(whoami)" /rsync
+
 opam exec -- make
 opam exec -- dune exec -- obuilder healthcheck --store=btrfs:/btrfs
+opam exec -- dune exec -- obuilder healthcheck --store=rsync:/rsync
 opam exec -- dune exec -- obuilder healthcheck --store=zfs:zfs
 opam exec -- dune exec -- ./stress/stress.exe btrfs:/btrfs
+opam exec -- dune exec -- ./stress/stress.exe rsync:/rsync
 opam exec -- dune exec -- ./stress/stress.exe zfs:zfs
 
 # Populate the caches from our own GitHub Actions cache
