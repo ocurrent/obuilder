@@ -16,7 +16,6 @@ let assert_str expected got =
     exit 1
   )
 
-module Sandbox = Runc_sandbox
 module Fetcher = Docker
 
 module Test(Store : S.STORE) = struct
