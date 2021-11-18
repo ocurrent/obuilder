@@ -19,8 +19,7 @@ module User_temp = User_temp
 (** {2 Sandboxes} *)
 
 module Config = Config
-module Runc_sandbox = Runc_sandbox
-module Macos_sandbox = Macos_sandbox
+module Sandbox = Sandbox
 
 (** {2 Builders} *)
 
