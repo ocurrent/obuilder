@@ -10,7 +10,7 @@ doc: "https://ocurrent.github.io/obuilder/"
 bug-reports: "https://github.com/ocurrent/obuilder/issues"
 depends: [
   "dune" {>= "2.7"}
-  "lwt"
+  "lwt" {>= "5.5.0"}
   "astring"
   "fmt" {>= "0.8.9"}
   "logs"
