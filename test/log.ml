@@ -38,7 +38,7 @@ let rec await t expect =
   let got = Buffer.contents t.buf |> remove_notes in
   if got = expect then Lwt.return_unit
   else if String.length got > String.length expect then (
-      Fmt.failwith "Log expected %S but got %S" expect got
+    Fmt.failwith "Log expected %S but got %S" expect got
   ) else (
     let common = min (String.length expect) (String.length got) in
     if String.sub got 0 common = String.sub expect 0 common then (
