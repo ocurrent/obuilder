@@ -420,21 +420,21 @@ let test_tar_long_filename _switch () =
   let do_test length =
     Logs.info (fun m -> m "Test copy length %d " length);
     Lwt_io.with_temp_dir ~prefix:"test-copy-src-" @@ fun src_dir ->
-      Lwt_io.with_temp_dir ~prefix:"test-copy-dst-" @@ fun dst_dir ->
+    Lwt_io.with_temp_dir ~prefix:"test-copy-dst-" @@ fun dst_dir ->
     let filename = String.make length 'a' in
-    Lwt_io.(with_file ~mode:output) 
-      (src_dir / filename) 
-      (fun ch -> Lwt_io.write ch "file-data") 
+    Lwt_io.(with_file ~mode:output)
+      (src_dir / filename)
+      (fun ch -> Lwt_io.write ch "file-data")
     >>= fun () ->
-    Lwt_unix.openfile (dst_dir / "out.tar") [Lwt_unix.O_WRONLY; Lwt_unix.O_CREAT] 0 
+    Lwt_unix.openfile (dst_dir / "out.tar") [Lwt_unix.O_WRONLY; Lwt_unix.O_CREAT] 0
     >>= fun to_untar ->
     let src_manifest = Manifest.generate ~exclude:[] ~src_dir "." |> Result.get_ok in
     let user = {Spec.uid=1000; gid=1000} in
-    Tar_transfer.send_file 
-      ~src_dir 
-      ~src_manifest 
-      ~dst:dst_dir 
-      ~user 
+    Tar_transfer.send_file
+      ~src_dir
+      ~src_manifest
+      ~dst:dst_dir
+      ~user
       ~to_untar
   in
   do_test 80 >>= fun () ->
@@ -644,34 +644,34 @@ let test_cache_id () =
   check "c-foo%3abar" "foo:bar";
   check "c-Az09-id.foo_orig" "Az09-id.foo_orig"
 
-  let test_secrets_not_provided _switch () =
-    with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
-    let log = Log.create "b" in
-    let context = Context.v ~src_dir ~log:(Log.add log) () in
-    let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/run/secrets/test" "test"] "Append" ]) in
-    Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
-    B.build builder context spec >>!= get store "output" >>= fun result ->
-    Alcotest.(check build_result) "Final result" (Error (`Msg "Couldn't find value for requested secret 'test'")) result;
-    Lwt.return_unit
+let test_secrets_not_provided _switch () =
+  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+  let log = Log.create "b" in
+  let context = Context.v ~src_dir ~log:(Log.add log) () in
+  let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/run/secrets/test" "test"] "Append" ]) in
+  Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
+  B.build builder context spec >>!= get store "output" >>= fun result ->
+  Alcotest.(check build_result) "Final result" (Error (`Msg "Couldn't find value for requested secret 'test'")) result;
+  Lwt.return_unit
 
-  let test_secrets_simple _switch () =
-    with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
-    let log = Log.create "b" in
-    let context = Context.v ~src_dir ~log:(Log.add log) ~secrets:["test", "top secret value"; "test2", ""] () in
-    let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/testsecret" "test"; Secret.v "test2"] "Append" ]) in
-    Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
-    B.build builder context spec >>!= get store "output" >>= fun result ->
-    Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
-    Log.check "Check b log"
-      {| (from base)
+let test_secrets_simple _switch () =
+  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+  let log = Log.create "b" in
+  let context = Context.v ~src_dir ~log:(Log.add log) ~secrets:["test", "top secret value"; "test2", ""] () in
+  let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/testsecret" "test"; Secret.v "test2"] "Append" ]) in
+  Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
+  B.build builder context spec >>!= get store "output" >>= fun result ->
+  Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
+  Log.check "Check b log"
+    {| (from base)
         ;---> saved as .*
          /: (run (secrets (test (target /testsecret)) (test2 (target /run/secrets/test2)))
          ........(shell Append))
          Append
         ;---> saved as .*
        |}
-      log;
-    Lwt.return_unit
+    log;
+  Lwt.return_unit
 
 let () =
   let open Alcotest_lwt in
