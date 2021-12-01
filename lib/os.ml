@@ -94,26 +94,20 @@ let write_file ~path contents =
   Lwt_io.write ch contents
 
 let with_pipe_from_child fn =
-  let r, w = Lwt_unix.pipe_in () in
+  let r, w = Lwt_unix.pipe_in ~cloexec:true () in
   let w = { raw = w; needs_close = true } in
   Lwt.finalize
-    (fun () ->
-       Lwt_unix.set_close_on_exec r;
-       fn ~r ~w
-    )
+    (fun () -> fn ~r ~w)
     (fun () ->
        ensure_closed_unix w;
        ensure_closed_lwt r
     )
 
 let with_pipe_to_child fn =
-  let r, w = Lwt_unix.pipe_out () in
+  let r, w = Lwt_unix.pipe_out ~cloexec:true () in
   let r = { raw = r; needs_close = true } in
   Lwt.finalize
-    (fun () ->
-       Lwt_unix.set_close_on_exec w;
-       fn ~r ~w
-    )
+    (fun () -> fn ~r ~w)
     (fun () ->
        ensure_closed_unix r;
        ensure_closed_lwt w
