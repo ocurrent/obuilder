@@ -2,6 +2,8 @@ open Lwt.Infix
 
 let ( / ) = Filename.concat
 
+let level = Tar.Header.GNU
+
 module Tar_lwt_unix = struct
   include Tar_lwt_unix
 
@@ -32,8 +34,8 @@ module Tar_lwt_unix = struct
 
   module HW = Tar.HeaderWriter(Lwt)(Writer)
 
-  let write_block (header: Tar.Header.t) (body: Lwt_unix.file_descr -> unit Lwt.t) (fd : Lwt_unix.file_descr) =
-    HW.write ~level:Tar.Header.GNU header fd
+  let write_block ?level (header: Tar.Header.t) (body: Lwt_unix.file_descr -> unit Lwt.t) (fd : Lwt_unix.file_descr) =
+    HW.write ?level header fd
     >>= fun () ->
     body fd >>= fun () ->
     Writer.really_write fd (Tar.Header.zero_padding header)
@@ -62,7 +64,7 @@ let copy_file ~src ~dst ~to_untar ~user =
       ~group_id:user.Obuilder_spec.gid
       dst stat.Lwt_unix.LargeFile.st_size
   in
-  Tar_lwt_unix.write_block hdr (fun ofd ->
+  Tar_lwt_unix.write_block ~level hdr (fun ofd ->
       Lwt_io.(with_file ~mode:input) src (copy_to ~dst:ofd)
     ) to_untar
 
@@ -77,7 +79,7 @@ let copy_symlink ~src ~target ~dst ~to_untar ~user =
       ~group_id:user.Obuilder_spec.gid
       dst 0L
   in
-  Tar_lwt_unix.write_block hdr (fun _ -> Lwt.return_unit) to_untar
+  Tar_lwt_unix.write_block ~level hdr (fun _ -> Lwt.return_unit) to_untar
 
 let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
   Log.debug(fun f -> f "Copy dir %S -> %S@." src dst);
@@ -90,8 +92,10 @@ let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
         ~group_id:user.Obuilder_spec.gid
         (dst ^ "/") 0L
     in
-    Tar_lwt_unix.write_block hdr (fun _ -> Lwt.return_unit) to_untar
-  end >>= fun () ->
+    Tar_lwt_unix.write_block ~level hdr (fun _ -> Lwt.return_unit) to_untar
+  end >>= fun () -> send_dir ~src_dir ~dst ~to_untar ~user items
+
+and send_dir ~src_dir ~dst ~to_untar ~user items =
   items |> Lwt_list.iter_s (function
       | `File (src, _) ->
         let src = src_dir / src in
@@ -109,21 +113,8 @@ let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
 let remove_leading_slashes = Astring.String.drop ~sat:((=) '/')
 
 let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
-  let dst_dir = remove_leading_slashes dst_dir in
-  src_manifest |> Lwt_list.iter_s (function
-      | `File (path, _) ->
-        let src = src_dir / path in
-        let dst = dst_dir / (Filename.basename path) in
-        copy_file ~src ~dst ~to_untar ~user
-      | `Symlink (src, target) ->
-        let src = src_dir / src in
-        let dst = dst_dir / Filename.basename src in
-        copy_symlink ~src ~target ~dst ~to_untar ~user
-      | `Dir (src, items) ->
-        let dst = dst_dir / Filename.basename src in
-        copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
-    )
-  >>= fun () ->
+  let dst = remove_leading_slashes dst_dir in
+  send_dir ~src_dir ~dst ~to_untar ~user src_manifest >>= fun () ->
   Tar_lwt_unix.write_end to_untar
 
 let send_file ~src_dir ~src_manifest ~dst ~user ~to_untar =

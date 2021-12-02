@@ -17,7 +17,7 @@
   (fmt (>= 0.8.9))
   logs
   cmdliner
-  tar-unix
+  (tar-unix (>= 2.0.0))
   yojson
   sexplib
   ppx_deriving
