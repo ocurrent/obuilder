@@ -9,6 +9,8 @@ type t = {
   fallback_library_path : string;
   (* Scoreboard -- where we keep our symlinks for knowing homedirs for users *)
   scoreboard : string;
+  (* Whether or not the FUSE filesystem is mounted *)
+  mutable fuse_mounted : bool;
 }
 
 open Sexplib.Conv
@@ -39,32 +41,45 @@ let copy_to_log ~src ~dst =
   aux ()
 
 (* HACK: Unmounting and remounting the FUSE filesystem seems to "fix"
-   some weird cachining bug, see https://github.com/patricoferris/obuilder/issues/9 *)
-let post_build () =
-  let f = ["umount"; "-f"; "/usr/local"] in
-  Os.sudo f >>= fun _ -> Lwt.return ()
+   some weird cachining bug, see https://github.com/patricoferris/obuilder/issues/9
 
-let rec pre_build (t : t) =
+   For macOS we also need to create the illusion of building in a static
+   home directory, and to achieve this we copy in the pre-build environment
+   and copy back out the result. It's not super efficienct, but is necessary.*)
+let post_build ~result_dir ~home_dir (t : t) =
+  Os.sudo ["rsync"; "-aHq"; home_dir ^ "/"; result_dir ] >>= fun () ->
+  if not t.fuse_mounted then Lwt.return () else
+  let f = ["umount"; "-f"; "/usr/local"] in
+  Os.sudo f >>= fun _ -> t.fuse_mounted <- false; Lwt.return ()
+
+(* Using rsync to delete old files seems to be a good deal faster. *)
+let rec pre_build ~result_dir ~home_dir (t : t) =
+  Os.sudo [ "mkdir"; "-p"; "/tmp/obuilder-empty" ] >>= fun () ->
+  Os.sudo [ "rsync"; "-aHq"; "--delete"; "/tmp/obuilder-empty/"; home_dir ^ "/" ] >>= fun () ->
+  Os.sudo [ "rsync"; "-aHq"; result_dir ^ "/"; home_dir ] >>= fun () ->
+  if t.fuse_mounted then Lwt.return () else
   let f = [ "obuilderfs"; t.scoreboard ; "/usr/local"; "-o"; "allow_other" ] in
-  let pp ppf = Fmt.pf ppf "[ macFUSE ] " in
-  Os.sudo_result ~pp f >>= function Ok _ -> Lwt.return () | Error (`Msg _) -> (post_build () >>= fun _ -> pre_build t)
+  Os.sudo f >>= fun _ -> t.fuse_mounted <- true; Lwt.return ()
 
 let user_name ~prefix ~uid =
   Fmt.str "%s%i" prefix uid
 
+let home_directory user = Filename.concat "/Users/" user
+
 (* A build step in macos:
    - Should be properly sandboxed using sandbox-exec (coming soon...)
    - Umask g+w to work across users if restored from a snapshot
-   - Set the new home directory of the user, to the new hash
+   - Set the new home directory of the user to something static and copy in the environment
    - Should be executed by the underlying user (t.uid) *)
-let run ~cancelled ?stdin:stdin ~log (t : t) config homedir =
+let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
   Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
-  let homedir = Filename.concat homedir "rootfs" in
+  let result_dir = Filename.concat result_tmp "rootfs" in
   let user = user_name ~prefix:"mac" ~uid:t.uid in
+  let home_dir = home_directory user in
   let uid = string_of_int t.uid in
-  Macos.create_new_user ~username:user ~home:homedir ~uid ~gid:"1000" >>= fun _ ->
-  let set_homedir = Macos.change_home_directory_for ~user ~homedir in
-  let update_scoreboard = Macos.update_scoreboard ~uid:t.uid ~homedir ~scoreboard:t.scoreboard in
+  Macos.create_new_user ~username:user ~home_dir ~uid ~gid:"1000" >>= fun _ ->
+  let set_homedir = Macos.change_home_directory_for ~user ~home_dir in
+  let update_scoreboard = Macos.update_scoreboard ~uid:t.uid ~home_dir ~scoreboard:t.scoreboard in
   let osenv = config.Config.env in
   let stdout = `FD_move_safely out_w in
   let stderr = stdout in
@@ -75,7 +90,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config homedir =
     let pp f = Os.pp_cmd f config.Config.argv in
     Os.sudo_result ~pp set_homedir >>= fun _ ->
     Os.sudo_result ~pp update_scoreboard >>= fun _ ->
-    pre_build t >>= fun _ ->
+    pre_build ~result_dir ~home_dir t >>= fun _ ->
     Os.pread @@ Macos.get_tmpdir ~user >>= fun tmpdir ->
     let tmpdir = List.hd (String.split_on_char '\n' tmpdir) in
     let env = ("TMPDIR", tmpdir) :: osenv in
@@ -84,7 +99,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config homedir =
     let pid, proc = Os.open_process ?stdin ~stdout ~stderr ~pp ~cwd:config.Config.cwd cmd in
     proc_id := Some pid;
     Os.process_result ~pp proc >>= fun r ->
-    post_build () >>= fun () ->
+    post_build ~result_dir ~home_dir t >>= fun () ->
     Lwt.return r
   in
   Lwt.on_termination cancelled (fun () ->
@@ -109,6 +124,7 @@ let create ~state_dir:_ c =
     gid = 1000;
     fallback_library_path = c.fallback_library_path;
     scoreboard = c.scoreboard;
+    fuse_mounted = false;
   }
 
 let uid =
@@ -140,6 +156,6 @@ let scoreboard =
 
 let cmdliner : config Term.t =
   let make uid fallback_library_path scoreboard =
-    {uid; fallback_library_path; scoreboard}
+    { uid; fallback_library_path; scoreboard; }
   in
   Term.(const make $ uid $ fallback_library_path $ scoreboard)
