@@ -145,7 +145,9 @@ let cache ~user t name =
   (* Create writeable clone. *)
   let gen = cache.gen in
   let { Obuilder_spec.uid; gid } = user in
-  Rsync.copy_children ~chown:(Printf.sprintf "%d:%d" uid gid) ~src:snapshot ~dst:tmp () >>= fun () ->
+  (* rsync --chown not supported by the rsync that macOS ships with *)
+  Rsync.copy_children ~src:snapshot ~dst:tmp () >>= fun () ->
+  Os.sudo [ "chown"; Printf.sprintf "%d:%d" uid gid; tmp ] >>= fun () ->
   let release () =
       Lwt_mutex.with_lock cache.lock @@ fun () ->
       begin
