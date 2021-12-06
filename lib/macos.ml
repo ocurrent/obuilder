@@ -9,7 +9,7 @@ let user_exists ~user =
   List.exists (Astring.String.equal user) (Astring.String.cuts ~sep:"\n" s)
 
 (* Generates a new MacOS user called `<prefix><uid>' *)
-let create_new_user ~username ~home ~uid ~gid =
+let create_new_user ~username ~home_dir ~uid ~gid =
   let* exists = user_exists ~user:username in
   if exists then Lwt.return_ok ()
   else
@@ -21,7 +21,7 @@ let create_new_user ~username ~home ~uid ~gid =
     >>!= fun _ ->
     sudo_result ~pp:(pp "UserShell") (dscl @ [ "UserShell"; "/bin/bash" ])
     >>!= fun _ ->
-    sudo_result ~pp:(pp "NFSHomeDirectory") (dscl @ [ "NFSHomeDirectory"; home ])
+    sudo_result ~pp:(pp "NFSHomeDirectory") (dscl @ [ "NFSHomeDirectory"; home_dir ])
 
 let delete_user ~user =
   let* exists = user_exists ~user in
@@ -66,12 +66,12 @@ let copy_template ~base ~local =
   let pp s ppf = Fmt.pf ppf "[ %s ]" s in
   sudo_result ~pp:(pp "RSYNC") ["rsync"; "-avq"; base ^ "/"; local]
 
-let change_home_directory_for ~user ~homedir =
-  ["dscl"; "."; "-create"; "/Users/" ^ user ; "NFSHomeDirectory"; homedir ]
+let change_home_directory_for ~user ~home_dir =
+  ["dscl"; "."; "-create"; "/Users/" ^ user ; "NFSHomeDirectory"; home_dir ]
 
 (* Used by the FUSE filesystem to indicate where a users home directory should be ...*)
-let update_scoreboard ~uid ~scoreboard ~homedir =
-  ["ln"; "-Fhs"; homedir; scoreboard ^ "/" ^ string_of_int uid]
+let update_scoreboard ~uid ~scoreboard ~home_dir =
+  ["ln"; "-Fhs"; home_dir; scoreboard ^ "/" ^ string_of_int uid]
 
 let remove_link ~uid ~scoreboard =
   [ "rm"; scoreboard ^ "/" ^ string_of_int uid ]
