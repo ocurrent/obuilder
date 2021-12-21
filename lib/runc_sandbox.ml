@@ -322,7 +322,7 @@ let clean_runc dir =
   |> Array.to_list
   |> Lwt_list.iter_s (fun item ->
       Log.warn (fun f -> f "Removing left-over runc container %S" item);
-      Os.sudo ["runc"; "--root"; dir; "delete"; item]
+      Os.sudo ["runc"; "--root"; dir; "delete"; "--force"; item]
     )
 
 let create ~state_dir (c : config) =
