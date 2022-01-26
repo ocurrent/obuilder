@@ -1,0 +1,38 @@
+(from patricoferris/empty@sha256:b95ca2b377dd736f609f0a10d63318c9f627a817823cf416402a29bfe9202bb9)
+---> saved as "1e8a7b908b7883f051110a922dc647791b81e0d658f5c1bdd8242d9ab898f8ae"
+/: (run (shell "mkdir hello"))
+---> saved as "ba0dc81067c02a45ad4a8cdbbca046aa1e59a37deca612c6a4f8698ae67e200f"
+/: (run (shell "echo 'hello world' > ./hello/hello.txt"))
+---> saved as "ee3328c16f05527e80a95b87c110aac986495aef607f14b9ef4371398a8659d8"
+/: (run (shell "cat ./hello/hello.txt"))
+hello world
+---> saved as "c97a5a234cc9bfcc601b2f7a98975bf294fa7552301c182358fc32ceb21308d8"
+/: (run (shell "rm -rf hello"))
+---> saved as "de2d77926d7e89828a3578ef5173bbce6050e2a7e39488b1de54dcffa864a600"
+/: (run (shell ls))
+dev
+etc
+local
+proc
+sys
+---> saved as "0b38a347b26152e1115a76902af06ff34a4f38aa2182e3af04e2867801fce841"
+Got: "0b38a347b26152e1115a76902af06ff34a4f38aa2182e3af04e2867801fce841"
+(from patricoferris/empty@sha256:b95ca2b377dd736f609f0a10d63318c9f627a817823cf416402a29bfe9202bb9)
+---> using "1e8a7b908b7883f051110a922dc647791b81e0d658f5c1bdd8242d9ab898f8ae" from cache
+/: (run (shell "mkdir hello"))
+---> using "ba0dc81067c02a45ad4a8cdbbca046aa1e59a37deca612c6a4f8698ae67e200f" from cache
+/: (run (shell "echo 'hello world' > ./hello/hello.txt"))
+---> using "ee3328c16f05527e80a95b87c110aac986495aef607f14b9ef4371398a8659d8" from cache
+/: (run (shell "cat ./hello/hello.txt"))
+hello world
+---> using "c97a5a234cc9bfcc601b2f7a98975bf294fa7552301c182358fc32ceb21308d8" from cache
+/: (run (shell "rm -rf hello"))
+---> using "de2d77926d7e89828a3578ef5173bbce6050e2a7e39488b1de54dcffa864a600" from cache
+/: (run (shell ls))
+dev
+etc
+local
+proc
+sys
+---> using "0b38a347b26152e1115a76902af06ff34a4f38aa2182e3af04e2867801fce841" from cache
+Got: "0b38a347b26152e1115a76902af06ff34a4f38aa2182e3af04e2867801fce841"
