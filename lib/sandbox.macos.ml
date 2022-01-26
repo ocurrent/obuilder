@@ -11,6 +11,8 @@ type t = {
   scoreboard : string;
   (* Whether or not the FUSE filesystem is mounted *)
   mutable fuse_mounted : bool;
+  (* Whether we have chowned/chmoded the data *)
+  mutable chowned : bool;
 }
 
 open Sexplib.Conv
@@ -47,7 +49,7 @@ let copy_to_log ~src ~dst =
    home directory, and to achieve this we copy in the pre-build environment
    and copy back out the result. It's not super efficienct, but is necessary.*)
 let post_build ~result_dir ~home_dir (t : t) =
-  Os.sudo ["rsync"; "-aHq"; home_dir ^ "/"; result_dir ] >>= fun () ->
+  Os.sudo ["rsync"; "-aHq"; "--delete"; home_dir ^ "/"; result_dir ] >>= fun () ->
   if not t.fuse_mounted then Lwt.return () else
   let f = ["umount"; "-f"; "/usr/local"] in
   Os.sudo f >>= fun _ -> t.fuse_mounted <- false; Lwt.return ()
@@ -57,6 +59,11 @@ let rec pre_build ~result_dir ~home_dir (t : t) =
   Os.sudo [ "mkdir"; "-p"; "/tmp/obuilder-empty" ] >>= fun () ->
   Os.sudo [ "rsync"; "-aHq"; "--delete"; "/tmp/obuilder-empty/"; home_dir ^ "/" ] >>= fun () ->
   Os.sudo [ "rsync"; "-aHq"; result_dir ^ "/"; home_dir ] >>= fun () ->
+  (if t.chowned then Lwt.return () else begin
+    Os.sudo [ "chown"; "-R"; ":" ^ (string_of_int t.gid); home_dir ] >>= fun () ->
+    Os.sudo [ "chmod"; "-R"; "g+w"; home_dir ] >>= fun () ->
+    Lwt.return (t.chowned <- true)
+  end) >>= fun () ->
   if t.fuse_mounted then Lwt.return () else
   let f = [ "obuilderfs"; t.scoreboard ; "/usr/local"; "-o"; "allow_other" ] in
   Os.sudo f >>= fun _ -> t.fuse_mounted <- true; Lwt.return ()
@@ -125,6 +132,7 @@ let create ~state_dir:_ c =
     fallback_library_path = c.fallback_library_path;
     scoreboard = c.scoreboard;
     fuse_mounted = false;
+    chowned = false;
   }
 
 let uid =
