@@ -9,6 +9,8 @@ type t = {
   fallback_library_path : string;
   (* Scoreboard -- where we keep our symlinks for knowing homedirs for users *)
   scoreboard : string;
+  (* Should the sandbox mount and unmount the FUSE filesystem *)
+  no_fuse : bool;
   (* Whether or not the FUSE filesystem is mounted *)
   mutable fuse_mounted : bool;
   (* Whether we have chowned/chmoded the data *)
@@ -21,6 +23,7 @@ type config = {
   uid: int;
   fallback_library_path : string;
   scoreboard : string;
+  no_fuse : bool;
 }[@@deriving sexp]
 
 let run_as ~env ~user ~cmd =
@@ -50,12 +53,12 @@ let copy_to_log ~src ~dst =
    and copy back out the result. It's not super efficienct, but is necessary.*)
 let post_build ~result_dir ~home_dir (t : t) =
   Os.sudo ["rsync"; "-aHq"; "--delete"; home_dir ^ "/"; result_dir ] >>= fun () ->
-  if not t.fuse_mounted then Lwt.return () else
+  if not t.fuse_mounted || t.no_fuse then Lwt.return () else
   let f = ["umount"; "-f"; "/usr/local"] in
   Os.sudo f >>= fun _ -> t.fuse_mounted <- false; Lwt.return ()
 
 (* Using rsync to delete old files seems to be a good deal faster. *)
-let rec pre_build ~result_dir ~home_dir (t : t) =
+let pre_build ~result_dir ~home_dir (t : t) =
   Os.sudo [ "mkdir"; "-p"; "/tmp/obuilder-empty" ] >>= fun () ->
   Os.sudo [ "rsync"; "-aHq"; "--delete"; "/tmp/obuilder-empty/"; home_dir ^ "/" ] >>= fun () ->
   Os.sudo [ "rsync"; "-aHq"; result_dir ^ "/"; home_dir ] >>= fun () ->
@@ -64,7 +67,7 @@ let rec pre_build ~result_dir ~home_dir (t : t) =
     Os.sudo [ "chmod"; "-R"; "g+w"; home_dir ] >>= fun () ->
     Lwt.return (t.chowned <- true)
   end) >>= fun () ->
-  if t.fuse_mounted then Lwt.return () else
+  if t.fuse_mounted || t.no_fuse then Lwt.return () else
   let f = [ "obuilderfs"; t.scoreboard ; "/usr/local"; "-o"; "allow_other" ] in
   Os.sudo f >>= fun _ -> t.fuse_mounted <- true; Lwt.return ()
 
@@ -131,6 +134,7 @@ let create ~state_dir:_ c =
     gid = 1000;
     fallback_library_path = c.fallback_library_path;
     scoreboard = c.scoreboard;
+    no_fuse = c.no_fuse;
     fuse_mounted = false;
     chowned = false;
   }
@@ -162,8 +166,17 @@ let scoreboard =
     ~docv:"SCOREBOARD"
     ["scoreboard"]
 
+let no_fuse =
+  Arg.value @@
+  Arg.flag @@
+  Arg.info
+    ~doc:"Whether the macOS sandbox should mount and unmount the FUSE filesystem. \
+    This is useful for testing."
+    ~docv:"NO-FUSE"
+    ["no-fuse"]
+
 let cmdliner : config Term.t =
-  let make uid fallback_library_path scoreboard =
-    { uid; fallback_library_path; scoreboard; }
+  let make uid fallback_library_path scoreboard no_fuse =
+    { uid; fallback_library_path; scoreboard; no_fuse }
   in
-  Term.(const make $ uid $ fallback_library_path $ scoreboard)
+  Term.(const make $ uid $ fallback_library_path $ scoreboard $ no_fuse)
