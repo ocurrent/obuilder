@@ -1,0 +1,13 @@
+(rule
+ (alias macos)
+ (deps 
+   ./specs/simple.macos.spec
+   ./macos.sh 
+   ../../main.exe)
+ (targets ./simple.out)
+ (action 
+   (with-stdout-to ./simple.out (run ./macos.sh))))
+
+(rule
+ (alias macos)
+ (action (diff simple.expected simple.out)))
