@@ -293,7 +293,7 @@ let run ~cancelled ?stdin:stdin ~log t config results_dir =
   let copy_log = Build_log.copy ~src:out_r ~dst:log in
   let proc =
     let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
-    let pp f = Os.pp_cmd f config.argv in
+    let pp f = Os.pp_cmd f ("", config.argv) in
     Os.sudo_result ~cwd:tmp ?stdin ~stdout ~stderr ~pp cmd
   in
   Lwt.on_termination cancelled (fun () ->
