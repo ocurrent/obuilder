@@ -25,7 +25,9 @@ let pp_signal f x =
   else if x = sigterm then Fmt.string f "term"
   else Fmt.int f x
 
-let pp_cmd = Fmt.hbox Fmt.(list ~sep:sp (quote string))
+let pp_cmd f (cmd, argv) =
+  let argv = if cmd = "" then argv else cmd :: argv in
+  Fmt.hbox Fmt.(list ~sep:sp (quote string)) f argv
 
 let redirection = function
   | `FD_move_safely x -> `FD_copy x.raw
@@ -60,7 +62,7 @@ let default_exec ?cwd ?stdin ?stdout ?stderr ~pp argv =
 (* Similar to default_exec except using open_process_none in order to get the
    pid of the forked process. On macOS this allows for cleaner job cancellations *)
 let open_process ?cwd ?stdin ?stdout ?stderr ?pp:_ argv =
-  Logs.info (fun f -> f "Fork exec %a" pp_cmd argv);
+  Logs.info (fun f -> f "Fork exec %a" pp_cmd ("", argv));
   let proc =
     let stdin  = Option.map redirection stdin in
     let stdout = Option.map redirection stdout in
@@ -86,17 +88,17 @@ let process_result ~pp proc =
 (* Overridden in unit-tests *)
 let lwt_process_exec = ref default_exec
 
-let exec_result ?cwd ?stdin ?stdout ?stderr ~pp ?(is_success=((=) 0)) argv =
-  Logs.info (fun f -> f "Exec %a" pp_cmd argv);
-  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>= function
-  | Ok n when is_success n -> Lwt_result.return ()
+let exec_result ?cwd ?stdin ?stdout ?stderr ~pp ?(is_success=((=) 0)) ?(cmd="") argv =
+  Logs.info (fun f -> f "Exec %a" pp_cmd (cmd, argv));
+  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp (cmd, Array.of_list argv) >>= function
+  | Ok n when is_success n -> Lwt_result.ok Lwt.return_unit
   | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
   | Error e -> Lwt_result.fail (e : [`Msg of string] :> [> `Msg of string])
 
-let exec ?cwd ?stdin ?stdout ?stderr ?(is_success=((=) 0)) argv =
-  Logs.info (fun f -> f "Exec %a" pp_cmd argv);
-  let pp f = pp_cmd f argv in
-  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>= function
+let exec ?cwd ?stdin ?stdout ?stderr ?(is_success=((=) 0)) ?(cmd="") argv =
+  Logs.info (fun f -> f "Exec %a" pp_cmd (cmd, argv));
+  let pp f = pp_cmd f (cmd, argv) in
+  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp (cmd, Array.of_list argv) >>= function
   | Ok n when is_success n -> Lwt.return_unit
   | Ok n -> Lwt.fail_with (Fmt.str "%t failed with exit status %d" pp n)
   | Error (`Msg m) -> Lwt.fail (Failure m)
