@@ -338,7 +338,7 @@ let fast_sync =
   Arg.value @@
   Arg.flag @@
   Arg.info
-    ~doc:"Ignore sync syscalls (requires runc >= 1.0.0-rc92)"
+    ~doc:"Ignore sync syscalls (requires runc >= 1.0.0-rc92)."
     ["fast-sync"]
 
 let cmdliner : config Term.t =
