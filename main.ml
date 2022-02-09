@@ -82,13 +82,14 @@ let setup_log style_renderer level =
   ()
 
 let setup_log =
-  Term.(const setup_log $ Fmt_cli.style_renderer () $ Logs_cli.level ())
+  let docs = Manpage.s_common_options in
+  Term.(const setup_log $ Fmt_cli.style_renderer ~docs () $ Logs_cli.level ~docs ())
 
 let spec_file =
   Arg.required @@
   Arg.opt Arg.(some file) None @@
   Arg.info
-    ~doc:"Path of build spec file"
+    ~doc:"Path of build spec file."
     ~docv:"FILE"
     ["f"]
 
@@ -96,7 +97,7 @@ let src_dir =
   Arg.required @@
   Arg.pos 0 Arg.(some dir) None @@
   Arg.info
-    ~doc:"Directory containing the source files"
+    ~doc:"Directory containing the source files."
     ~docv:"DIR"
     []
 
@@ -107,7 +108,7 @@ let store =
   Arg.required @@
   Arg.opt Arg.(some store_t) None @@
   Arg.info
-    ~doc:"btrfs:/path or rsync:/path or zfs:pool for build cache"
+    ~doc:"$(b,btrfs:/path) or $(b,rsync:/path) or $(b,zfs:pool) for build cache."
     ~docv:"STORE"
     ["store"]
 
@@ -115,7 +116,7 @@ let id =
   Arg.required @@
   Arg.pos 0 Arg.(some string) None @@
   Arg.info
-    ~doc:"The ID of a build within the store"
+    ~doc:"The $(i,ID) of a build within the store."
     ~docv:"ID"
     []
 
@@ -123,7 +124,7 @@ let secrets =
   (Arg.value @@
    Arg.(opt_all (pair ~sep:':' string file)) [] @@
    Arg.info
-     ~doc:"Provide a secret under the form id:file"
+     ~doc:"Provide a secret under the form $(b,id:file)."
      ~docv:"SECRET"
      ["secret"])
 
@@ -143,17 +144,17 @@ let buildkit =
   Arg.value @@
   Arg.flag @@
   Arg.info
-    ~doc:"Output extended BuildKit syntax"
+    ~doc:"Output extended BuildKit syntax."
     ["buildkit"]
 
 let dockerfile =
-  let doc = "Convert a spec to Dockerfile format" in
+  let doc = "Convert a spec to Dockerfile format." in
   let info = Cmd.info ~doc "dockerfile" in
   Cmd.v info
     Term.(const dockerfile $ setup_log $ buildkit $ spec_file)
 
 let healthcheck =
-  let doc = "Perform a self-test" in
+  let doc = "Perform a self-test." in
   let info = Cmd.info ~doc "healthcheck" in
   Cmd.v info
     Term.(const healthcheck $ setup_log $ store $ Sandbox.cmdliner)
