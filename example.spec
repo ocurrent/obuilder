@@ -7,11 +7,11 @@
 ; The result can then be found in /tank/HASH/rootfs/ (where HASH is displayed at the end of the build).
 
 ((build dev
-	((from ocaml/opam@sha256:af617095b1255a61f82ac1873031a850dd29c37865ff5bf691ab5ccd29187679)
+	((from ocaml/opam@sha256:dca2be63c27c3860560bd70001f94c39c32e8a22fdc270e5e77d297b665c871f)
 	 (workdir /src)
 	 (user (uid 1000) (gid 1000))                           ; Build as the "opam" user
 	 (run (shell "sudo chown opam /src"))
-	 (env OPAM_HASH "b33a2146602d62541ce95e5f1f52b63827f076c2") ; Fix the version of opam-repository we want
+	 (env OPAM_HASH "6ed2f3af9af5303f9a037a693e3f4696a4b51fe1") ; Fix the version of opam-repository we want
 	 (run
 	  (network host)
 	  (shell "sudo apt-get --allow-releaseinfo-change update"))

@@ -129,13 +129,15 @@ let secrets =
 
 let build =
   let doc = "Build a spec file." in
-  Term.(const build $ setup_log $ store $ spec_file $ Sandbox.cmdliner $ src_dir $ secrets),
-  Term.info "build" ~doc
+  let info = Cmd.info ~doc "build" in
+  Cmd.v info
+    Term.(const build $ setup_log $ store $ spec_file $ Sandbox.cmdliner $ src_dir $ secrets)
 
 let delete =
   let doc = "Recursively delete a cached build result." in
-  Term.(const delete $ setup_log $ store $ Sandbox.cmdliner $ id),
-  Term.info "delete" ~doc
+  let info = Cmd.info ~doc "delete" in
+  Cmd.v info
+    Term.(const delete $ setup_log $ store $ Sandbox.cmdliner $ id)
 
 let buildkit =
   Arg.value @@
@@ -146,22 +148,19 @@ let buildkit =
 
 let dockerfile =
   let doc = "Convert a spec to Dockerfile format" in
-  Term.(const dockerfile $ setup_log $ buildkit $ spec_file),
-  Term.info "dockerfile" ~doc
+  let info = Cmd.info ~doc "dockerfile" in
+  Cmd.v info
+    Term.(const dockerfile $ setup_log $ buildkit $ spec_file)
 
 let healthcheck =
   let doc = "Perform a self-test" in
-  Term.(const healthcheck $ setup_log $ store $ Sandbox.cmdliner),
-  Term.info "healthcheck" ~doc
+  let info = Cmd.info ~doc "healthcheck" in
+  Cmd.v info
+    Term.(const healthcheck $ setup_log $ store $ Sandbox.cmdliner)
 
 let cmds = [build; delete; dockerfile; healthcheck]
 
-let default_cmd =
-  let doc = "a command-line interface for OBuilder" in
-  Term.(ret (const (`Help (`Pager, None)))),
-  Term.info "obuilder" ~doc
-
-let term_exit (x : unit Term.result) = Term.exit x
-
 let () =
-  term_exit @@ Term.eval_choice default_cmd cmds
+  let doc = "a command-line interface for OBuilder" in
+  let info = Cmd.info ~doc "obuilder" in
+  exit (Cmd.eval @@ Cmd.group info cmds)

@@ -127,7 +127,7 @@ module Test(Store : S.STORE) = struct
     let ops = ops @ [Spec.run {|[ `cat output` = %S ] || exit 1|} expected] in
     let check_log data =
       data |> String.split_on_char '\n' |> List.filter_map (fun line ->
-          match Astring.String.cut ~sep:":" line with 
+          match Astring.String.cut ~sep:":" line with
           | Some ("added", x) -> Some x
           | _ -> None
         )
@@ -221,8 +221,6 @@ let stress spec conf =
 
 open Cmdliner
 
-let term_exit (x : unit Term.result) = Term.exit x
-
 let store_t =
   Arg.conv Obuilder.Store_spec.(of_string, pp)
 
@@ -236,11 +234,13 @@ let store =
 
 let cmd =
   let doc = "Run stress tests." in
-  Term.(const stress $ store $ Sandbox.cmdliner),
-  Term.info "stress" ~doc
+  let info = Cmd.info ~doc "stress" in
+  Cmd.v info
+    Term.(const stress $ store $ Sandbox.cmdliner)
+
 
 let () =
   (* Logs.(set_level (Some Info)); *)
   Fmt_tty.setup_std_outputs ();
   Logs.set_reporter @@ Logs.format_reporter ();
-  term_exit @@ Term.eval cmd
+  exit @@ Cmd.eval cmd
