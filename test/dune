@@ -1,7 +1,14 @@
+(executable
+ (name dummy)
+ (public_name dummy)
+ (package obuilder)
+ (modules dummy))
+
 (test
-  (name test)
-  (package obuilder)
-  (deps base.tar)
-  (libraries alcotest-lwt obuilder str logs.fmt))
+ (name test)
+ (package obuilder)
+ (deps base.tar %{bin:dummy})
+ (libraries alcotest-lwt obuilder str logs.fmt)
+ (modules log mock_exec mock_sandbox mock_store test))
 
 (dirs :standard \ test1)
