@@ -728,6 +728,24 @@ let test_secrets_simple _switch () =
     log;
   Lwt.return_unit
 
+let test_exec_nul _switch () =
+  Os.lwt_process_exec := Os.default_exec;
+  let args = ["dummy"; "stdout"] in
+  Os.exec ~stdout:`Dev_null ~stderr:`Dev_null args >>= fun actual ->
+  Alcotest.(check unit) "stdout" actual ();
+  let args = ["dummy"; "stderr"] in
+  Os.exec ~stdout:`Dev_null ~stderr:`Dev_null args >|= fun actual ->
+  Alcotest.(check unit) "stderr" actual ();
+  Os.lwt_process_exec := Mock_exec.exec
+
+let test_pread_nul _switch () =
+  Os.lwt_process_exec := Os.default_exec;
+  let expected = "the quick brown fox jumps over the lazy dog" in
+  let args = ["dummy"; "stdout"] in
+  Os.pread ~stderr:`Dev_null args >|= fun actual ->
+  Alcotest.(check string) "stdout" actual expected;
+  Os.lwt_process_exec := Mock_exec.exec
+
 let () =
   let open Alcotest_lwt in
   Lwt_main.run begin
@@ -760,6 +778,10 @@ let () =
       ];
       "manifest", [
         test_case "Copy"       `Quick test_copy;
+      ];
+      "process", [
+        test_case "Execute a process" `Quick test_exec_nul;
+        test_case "Read stdout of a process" `Quick test_pread_nul;
       ];
     ]
   end
