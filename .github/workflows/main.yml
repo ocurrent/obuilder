@@ -7,6 +7,9 @@ on:
     # Prime the caches every Monday
     - cron: 0 1 * * MON
 
+env:
+  RUNC_VERSION: v1.1.0
+
 jobs:
   build:
     strategy:
@@ -35,5 +38,17 @@ jobs:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
 
       - run: opam install . --deps-only --with-test
+
+      - name: Cache runc
+        id: cache-runc
+        uses: actions/cache@v3
+        with:
+          path: /usr/local/bin/runc
+          key: ${{ env.RUNC_VERSION }}
+
+      - name: Download runc
+        if: steps.cache-runc.outputs.cache-hit != 'true'
+        run: |
+          sudo wget https://github.com/opencontainers/runc/releases/download/$RUNC_VERSION/runc.amd64 -O /usr/local/bin/runc
 
       - run: ./.run-gha-tests.sh
