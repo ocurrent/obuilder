@@ -2,7 +2,6 @@
 set -eux
 export OPAMYES=true
 
-sudo wget https://github.com/opencontainers/runc/releases/download/v1.0.2/runc.amd64 -O /usr/local/bin/runc
 sudo chmod a+x /usr/local/bin/runc
 
 sudo sh -c "cat > /usr/local/bin/uname" << EOF
