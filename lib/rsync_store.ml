@@ -30,6 +30,15 @@ module Rsync = struct
     let cmd = [ "mv"; src; dst ] in
     Os.sudo cmd
 
+  let rename_with_sharing ~base ~src ~dst = match base with
+    | None -> rename ~src ~dst
+    | Some base ->
+        (* Attempt to hard-link existing files shared with [base] *)
+        let cmd = rsync @ [ "--checksum"; "--link-dest=" ^ base; src ^ "/"; dst ] in
+        Os.ensure_dir dst;
+        Os.sudo cmd >>= fun () ->
+        delete src
+
   let copy_children ?chown ~src ~dst () =
     let chown = match chown with
       | Some uid_gid -> [ "--chown"; uid_gid ]
@@ -69,16 +78,17 @@ let build t ?base ~id fn =
   Log.debug (fun f -> f "rsync: build %S" id);
   let result = Path.result t id in
   let result_tmp = Path.result_tmp t id in
+  let base = Option.map (Path.result t) base in
   begin match base with
   | None -> Rsync.create result_tmp
-  | Some base -> Rsync.copy_children ~src:(Path.result t base) ~dst:result_tmp ()
+  | Some src -> Rsync.copy_children ~src ~dst:result_tmp ()
   end
   >>= fun () ->
   Lwt.try_bind
       (fun () -> fn result_tmp)
       (fun r ->
       begin match r with
-          | Ok () -> Rsync.rename ~src:result_tmp ~dst:result
+          | Ok () -> Rsync.rename_with_sharing ~base ~src:result_tmp ~dst:result
           | Error _ -> Lwt.return_unit
       end >>= fun () ->
       Lwt.return r
