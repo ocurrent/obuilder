@@ -8,12 +8,14 @@ type t = [
   | `Rsync of string  (* Path for the root of the store *)
 ]
 
+let is_absolute path = not (Filename.is_relative path)
+
 let of_string s =
   match Astring.String.cut s ~sep:":" with
   | Some ("zfs", pool) -> Ok (`Zfs pool)
-  | Some ("btrfs", path) -> Ok (`Btrfs path)
-  | Some ("rsync", path) -> Ok (`Rsync path)
-  | _ -> Error (`Msg "Store must start with zfs: or btrfs:")
+  | Some ("btrfs", path) when is_absolute path -> Ok (`Btrfs path)
+  | Some ("rsync", path) when is_absolute path -> Ok (`Rsync path)
+  | _ -> Error (`Msg "Store must start with zfs: or btrfs:/ or rsync:/")
 
 let pp f = function
   | `Zfs pool -> Fmt.pf f "zfs:%s" pool
