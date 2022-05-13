@@ -13,6 +13,6 @@ for store in $stores; do
 done;
 for store in $stores; do
 	echo Test $store
-	dune exec ./stress/stress.exe $store
+	dune exec ./stress/stress.exe --store=$store
 done;
 echo PASS

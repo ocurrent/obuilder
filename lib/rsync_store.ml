@@ -10,8 +10,14 @@ type cache = {
   mutable gen : int;
 }
 
+type mode =
+  | Copy
+  | Hardlink
+  | Hardlink_unsafe
+
 type t = {
     path : string;
+    mode : mode;
     caches : (string, cache) Hashtbl.t;
     mutable next : int;
 }
@@ -30,11 +36,15 @@ module Rsync = struct
     let cmd = [ "mv"; src; dst ] in
     Os.sudo cmd
 
-  let rename_with_sharing ~base ~src ~dst = match base with
-    | None -> rename ~src ~dst
-    | Some base ->
+  let rename_with_sharing ~mode ~base ~src ~dst = match mode, base with
+    | Copy, _ | _, None -> rename ~src ~dst
+    | _, Some base ->
         (* Attempt to hard-link existing files shared with [base] *)
-        let cmd = rsync @ [ "--checksum"; "--link-dest=" ^ base; src ^ "/"; dst ] in
+        let safe = match mode with
+          | Hardlink -> ["--checksum"]
+          | _ -> []
+        in
+        let cmd = rsync @ safe @ ["--link-dest=" ^ base; src ^ "/"; dst ] in
         Os.ensure_dir dst;
         Os.sudo cmd >>= fun () ->
         delete src
@@ -69,10 +79,10 @@ module Path = struct
   let result_tmp t id = t.path / result_tmp_dirname / id
 end
 
-let create ~path =
+let create ~path ?(mode = Copy) () =
   Rsync.create path >>= fun () ->
   Lwt_list.iter_s Rsync.create (Path.dirs path) >|= fun () ->
-  { path; caches = Hashtbl.create 10; next = 0 }
+  { path; mode; caches = Hashtbl.create 10; next = 0 }
 
 let build t ?base ~id fn =
   Log.debug (fun f -> f "rsync: build %S" id);
@@ -88,7 +98,7 @@ let build t ?base ~id fn =
       (fun () -> fn result_tmp)
       (fun r ->
       begin match r with
-          | Ok () -> Rsync.rename_with_sharing ~base ~src:result_tmp ~dst:result
+          | Ok () -> Rsync.rename_with_sharing ~mode:t.mode ~base ~src:result_tmp ~dst:result
           | Error _ -> Lwt.return_unit
       end >>= fun () ->
       Lwt.return r

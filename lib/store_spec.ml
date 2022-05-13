@@ -24,7 +24,7 @@ let pp f = function
 
 type store = Store : (module S.STORE with type t = 'a) * 'a -> store
 
-let to_store = function
+let to_store mode = function
   | `Btrfs path ->
     Btrfs_store.create path >|= fun store ->
     Store ((module Btrfs_store), store)
@@ -32,5 +32,31 @@ let to_store = function
     Zfs_store.create ~pool >|= fun store ->
     Store ((module Zfs_store), store)
   | `Rsync path ->
-    Rsync_store.create ~path >|= fun store ->
+    Rsync_store.create ~path ~mode () >|= fun store ->
     Store ((module Rsync_store), store)
+
+let cmdliner =
+  let open Cmdliner in
+  let store_t = Arg.conv (of_string, pp) in
+  let store =
+    Arg.required @@
+    Arg.opt Arg.(some store_t) None @@
+    Arg.info
+      ~doc:"$(b,btrfs:/path) or $(b,rsync:/path) or $(b,zfs:pool) for build cache."
+      ~docv:"STORE"
+      ["store"]
+  in
+  let rsync_mode =
+    let options =
+      [("copy", Rsync_store.Copy);
+       ("hardlink", Rsync_store.Hardlink);
+       ("hardlink_unsafe", Rsync_store.Hardlink_unsafe)]
+    in
+    Arg.value @@
+    Arg.opt (Arg.enum options) Rsync_store.Copy @@
+    Arg.info
+      ~doc:"$(b,copy) or $(b,hardlink), to optimize for speed or low disk usage."
+      ~docv:"RSYNC_MODE"
+      ["rsync-mode"]
+  in
+  Term.(const to_store $ rsync_mode $ store)

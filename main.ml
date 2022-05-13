@@ -4,6 +4,7 @@ let ( / ) = Filename.concat
 
 module Sandbox = Obuilder.Runc_sandbox
 module Fetcher = Obuilder.Docker
+module Store_spec = Obuilder.Store_spec
 
 type builder = Builder : (module Obuilder.BUILDER with type t = 'a) * 'a -> builder
 
@@ -14,7 +15,7 @@ let log tag msg =
   | `Output -> output_string stdout msg; flush stdout
 
 let create_builder spec conf =
-  Obuilder.Store_spec.to_store spec >>= fun (Store ((module Store), store)) ->
+  spec >>= fun (Store_spec.Store ((module Store), store)) ->
   let module Builder = Obuilder.Builder(Store)(Sandbox)(Fetcher) in
   Sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
   let builder = Builder.v ~store ~sandbox in
@@ -101,16 +102,7 @@ let src_dir =
     ~docv:"DIR"
     []
 
-let store_t =
-  Arg.conv Obuilder.Store_spec.(of_string, pp)
-
-let store =
-  Arg.required @@
-  Arg.opt Arg.(some store_t) None @@
-  Arg.info
-    ~doc:"$(b,btrfs:/path) or $(b,rsync:/path) or $(b,zfs:pool) for build cache."
-    ~docv:"STORE"
-    ["store"]
+let store = Store_spec.cmdliner
 
 let id =
   Arg.required @@
