@@ -321,7 +321,7 @@ See [LICENSE][] for the full license text.
 [LICENSE]: ./LICENSE
 
 [github-shield]: https://github.com/ocurrent/obuilder/actions/workflows/main.yaml/badge.svg
-[github-ci]: https://github.com/ocurrent/obuilder/actions/workflows/main.yaml
+[github-ci]: https://github.com/ocurrent/obuilder/actions/workflows/main.yml
 
 [docs-shield]:https://img.shields.io/badge/doc-online-blue.svg
 [docs]: https://ocurrent.github.io/obuilder/
