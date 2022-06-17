@@ -320,7 +320,7 @@ See [LICENSE][] for the full license text.
 [OCluster]: https://github.com/ocurrent/ocluster
 [LICENSE]: ./LICENSE
 
-[github-shield]: https://github.com/ocurrent/obuilder/actions/workflows/main.yaml/badge.svg
+[github-shield]: https://github.com/ocurrent/obuilder/actions/workflows/main.yml/badge.svg
 [github-ci]: https://github.com/ocurrent/obuilder/actions/workflows/main.yml
 
 [docs-shield]:https://img.shields.io/badge/doc-online-blue.svg
