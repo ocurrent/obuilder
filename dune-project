@@ -5,6 +5,7 @@
 (source (github ocurrent/obuilder))
 (authors "talex5@gmail.com")
 (maintainers "talex5@gmail.com")
+(license "Apache-2.0")
 (documentation "https://ocurrent.github.io/obuilder/")
 (package
  (name obuilder)
@@ -18,7 +19,7 @@
   logs
   (cmdliner (>= 1.1.0))
   (tar-unix (>= 2.0.0))
-  yojson
+  (yojson (>= "1.6.0"))
   sexplib
   ppx_deriving
   ppx_sexp_conv
@@ -26,7 +27,9 @@
   sqlite3
   (obuilder-spec (= :version))
   (ocaml (>= 4.10.0))
-  (alcotest-lwt :with-test)))
+  (alcotest-lwt :with-test))
+ (conflicts
+  (result (< "1.5"))))
 (package
  (name obuilder-spec)
  (synopsis "Build specification format")

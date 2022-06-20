@@ -5,6 +5,7 @@ description:
   "A library for constructing, reading and writing OBuilder build specification files."
 maintainer: ["talex5@gmail.com"]
 authors: ["talex5@gmail.com"]
+license: "Apache-2.0"
 homepage: "https://github.com/ocurrent/obuilder"
 doc: "https://ocurrent.github.io/obuilder/"
 bug-reports: "https://github.com/ocurrent/obuilder/issues"
