@@ -3,6 +3,7 @@
 (formatting disabled)
 (generate_opam_files true)
 (source (github ocurrent/obuilder))
+(license Apache-2.0)
 (authors "talex5@gmail.com")
 (maintainers "talex5@gmail.com")
 (documentation "https://ocurrent.github.io/obuilder/")
@@ -10,7 +11,8 @@
  (name obuilder)
  (synopsis "Run build scripts for CI")
  (description
-  "OBuilder takes a build script (similar to a Dockerfile) and performs the steps in it in a sandboxed environment.")
+   "OBuilder takes a build script (similar to a Dockerfile) and performs the steps in it in a sandboxed environment.")
+ (conflicts (result (< 1.5)))
  (depends
   (lwt (>= 5.5.0))
   astring
