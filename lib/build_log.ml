@@ -13,8 +13,7 @@ type t = {
 }
 
 let with_dup fd fn =
-  let fd = Lwt_unix.dup fd in
-  Lwt_unix.set_close_on_exec fd;
+  let fd = Lwt_unix.dup ~cloexec:true fd in
   Lwt.finalize
     (fun () -> fn fd)
     (fun () -> Lwt_unix.close fd)
