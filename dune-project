@@ -13,7 +13,7 @@
  (description
   "OBuilder takes a build script (similar to a Dockerfile) and performs the steps in it in a sandboxed environment.")
  (depends
-  (lwt (>= 5.5.0))
+  (lwt (>= 5.6.1))
   astring
   (fmt (>= 0.8.9))
   logs
