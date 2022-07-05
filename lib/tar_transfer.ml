@@ -65,7 +65,8 @@ let copy_file ~src ~dst ~to_untar ~user =
       dst stat.Lwt_unix.LargeFile.st_size
   in
   Tar_lwt_unix.write_block ~level hdr (fun ofd ->
-      Lwt_io.(with_file ~mode:input) src (copy_to ~dst:ofd)
+      let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
+      Lwt_io.(with_file ~mode:input ~flags) src (copy_to ~dst:ofd)
     ) to_untar
 
 let copy_symlink ~src ~target ~dst ~to_untar ~user =

@@ -29,7 +29,8 @@ let tail ?switch t dst =
   match t.state with
   | `Finished -> invalid_arg "tail: log is finished!"
   | `Readonly path ->
-    Lwt_io.(with_file ~mode:input) path @@ fun ch ->
+    let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
+    Lwt_io.(with_file ~mode:input ~flags) path @@ fun ch ->
     let buf = Bytes.create max_chunk_size in
     let rec aux () =
       Lwt_io.read_into ch buf 0 max_chunk_size >>= function
