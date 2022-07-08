@@ -24,7 +24,7 @@ let get store path id =
 
 let with_config fn =
   Mock_store.with_store @@ fun store ->
-  let sandbox = Mock_sandbox.create (Mock_store.state_dir store / "sandbox") in
+  let sandbox = Mock_sandbox.create () in
   let builder = B.v ~store ~sandbox in
   let src_dir = Mock_store.state_dir store / "src" in
   Os.ensure_dir src_dir;

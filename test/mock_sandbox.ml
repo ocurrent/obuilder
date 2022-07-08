@@ -1,5 +1,4 @@
 type t = {
-  dir : string;
   expect :
     (cancelled:unit Lwt.t ->
      ?stdin:Obuilder.Os.unix_fd ->
@@ -22,4 +21,4 @@ let run ~cancelled ?stdin ~log t (config:Obuilder.Config.t) dir =
         | ex -> Lwt_result.fail (`Msg (Printexc.to_string ex))
       )
 
-let create dir = { dir; expect = Queue.create () }
+let create () = { expect = Queue.create () }
