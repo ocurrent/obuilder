@@ -1,4 +1,4 @@
-(lang dune 2.7)
+(lang dune 3.3)
 (name obuilder)
 (formatting disabled)
 (generate_opam_files true)
