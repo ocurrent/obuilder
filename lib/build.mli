@@ -22,7 +22,7 @@ module Context : sig
   *)
 end
 
-module Make (Store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) : sig
+module Make (Store : S.STORE) (Sandbox : S.SANDBOX) (_ : S.FETCHER) : sig
   include S.BUILDER with type context := Context.t
 
   val v : store:Store.t -> sandbox:Sandbox.t -> t
