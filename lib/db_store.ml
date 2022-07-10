@@ -6,7 +6,6 @@ let ( >>!= ) = Lwt_result.bind
 module Make (Raw : S.STORE) = struct
   type build = {
     mutable users : int;
-    cancelled : unit Lwt.t;
     set_cancelled : unit Lwt.u;         (* Resolve this to cancel (when [users = 0]). *)
     log : Build_log.t Lwt.t;
     result : (([`Loaded | `Saved] * S.id), [`Cancelled | `Msg of string]) Lwt_result.t;
@@ -19,7 +18,7 @@ module Make (Raw : S.STORE) = struct
     dao : Dao.t;
     (* Invariants for builds in [in_progress]:
        - [result] is still pending and [log] isn't finished.
-       - [cancelled] is resolved iff [users = 0]. *)
+       - [set_cancelled] is resolved iff [users = 0]. *)
     mutable in_progress : build Builds.t;
   }
 
@@ -101,7 +100,7 @@ module Make (Raw : S.STORE) = struct
       let log, set_log = Lwt.wait () in
       let tail_log = log >>= fun log -> Build_log.tail ?switch log (client_log `Output) in
       let cancelled, set_cancelled = Lwt.wait () in
-      let build = { users = 1; cancelled; set_cancelled; log; result } in
+      let build = { users = 1; set_cancelled; log; result } in
       Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref build; Lwt.return_unit) >>= fun () ->
       t.in_progress <- Builds.add id build t.in_progress;
       Lwt.async

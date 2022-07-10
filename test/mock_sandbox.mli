@@ -1,6 +1,6 @@
 include Obuilder.S.SANDBOX
 
-val create : string -> t
+val create : unit -> t
 val expect :
   t -> (cancelled:unit Lwt.t ->
         ?stdin:Obuilder.Os.unix_fd ->
