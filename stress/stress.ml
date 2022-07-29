@@ -211,7 +211,7 @@ end
 
 let stress spec conf =
   Lwt_main.run begin
-    Store_spec.to_store spec >>= fun (Store ((module Store), store)) ->
+    spec >>= fun (Store_spec.Store ((module Store), store)) ->
     let module T = Test(Store) in
     T.test_store store >>= fun () ->
     T.test_cache store >>= fun () ->
@@ -221,22 +221,11 @@ let stress spec conf =
 
 open Cmdliner
 
-let store_t =
-  Arg.conv Obuilder.Store_spec.(of_string, pp)
-
-let store =
-  Arg.required @@
-  Arg.pos 0 Arg.(some store_t) None @@
-  Arg.info
-    ~doc:"zfs:pool or btrfs:/path for build cache"
-    ~docv:"STORE"
-    []
-
 let cmd =
   let doc = "Run stress tests." in
   let info = Cmd.info ~doc "stress" in
   Cmd.v info
-    Term.(const stress $ store $ Sandbox.cmdliner)
+    Term.(const stress $ Store_spec.cmdliner $ Sandbox.cmdliner)
 
 
 let () =

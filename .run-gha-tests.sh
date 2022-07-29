@@ -35,9 +35,9 @@ opam exec -- make
 opam exec -- dune exec -- obuilder healthcheck --store=btrfs:/btrfs
 opam exec -- dune exec -- obuilder healthcheck --store=rsync:/rsync
 opam exec -- dune exec -- obuilder healthcheck --store=zfs:zfs
-opam exec -- dune exec -- ./stress/stress.exe btrfs:/btrfs
-opam exec -- dune exec -- ./stress/stress.exe rsync:/rsync
-opam exec -- dune exec -- ./stress/stress.exe zfs:zfs
+opam exec -- dune exec -- ./stress/stress.exe --store=btrfs:/btrfs
+opam exec -- dune exec -- ./stress/stress.exe --store=rsync:/rsync
+opam exec -- dune exec -- ./stress/stress.exe --store=zfs:zfs
 
 # Populate the caches from our own GitHub Actions cache
 btrfs subvolume create /btrfs/cache/c-opam-archives
