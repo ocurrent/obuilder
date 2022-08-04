@@ -25,5 +25,5 @@ end
 module Make (Store : S.STORE) (Sandbox : S.SANDBOX) (_ : S.FETCHER) : sig
   include S.BUILDER with type context := Context.t
 
-  val v : store:Store.t -> sandbox:Sandbox.t -> t
+  val v : store:Store.t -> sandbox:Sandbox.t -> process:Eio.Process.t -> dir:Eio.Dir.t -> t
 end

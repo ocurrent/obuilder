@@ -1,4 +1,5 @@
 open Lwt.Infix
+open Eio
 
 let ( / ) = Filename.concat
 
@@ -47,11 +48,11 @@ end
 
 let copy_to ~dst src =
   let len = 4096 in
-  let buf = Bytes.create len in
+  let buf = Cstruct.create len in
   let rec aux () =
-    Lwt_io.read_into src buf 0 len >>= function
+    match Flow.read src (Cstruct.sub buf 0 len) with
     | 0 -> Lwt.return_unit
-    | n -> Os.write_all dst buf 0 n >>= aux
+    | n -> Os.write_all dst buf 0 n |> aux
   in
   aux ()
 
@@ -66,7 +67,9 @@ let copy_file ~src ~dst ~to_untar ~user =
   in
   Tar_lwt_unix.write_block ~level hdr (fun ofd ->
       let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
-      Lwt_io.(with_file ~mode:input ~flags) src (copy_to ~dst:ofd)
+      Lwt_io.(with_file ~mode:input ~flags) src (fun _ -> Lwt.return ())
+      
+      (* (copy_to ~dst:ofd) *)
     ) to_untar
 
 let copy_symlink ~src ~target ~dst ~to_untar ~user =

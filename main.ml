@@ -1,5 +1,3 @@
-open Lwt.Infix
-
 let ( / ) = Filename.concat
 
 module Sandbox = Obuilder.Runc_sandbox
@@ -14,11 +12,11 @@ let log tag msg =
   | `Note -> Fmt.pr "%a@." Fmt.(styled (`Fg `Yellow) string) msg
   | `Output -> output_string stdout msg; flush stdout
 
-let create_builder spec conf =
-  spec >>= fun (Store_spec.Store ((module Store), store)) ->
+let create_builder dir process spec conf =
+  spec |> fun (Store_spec.Store ((module Store), store)) ->
   let module Builder = Obuilder.Builder(Store)(Sandbox)(Fetcher) in
-  Sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
-  let builder = Builder.v ~store ~sandbox in
+  let sandbox = Sandbox.create ~process ~state_dir:(Store.state_dir store / "sandbox") conf in
+  let builder = Builder.v ~store ~sandbox ~process ~dir in
   Builder ((module Builder), builder)
 
 let read_whole_file path =
@@ -27,9 +25,9 @@ let read_whole_file path =
   let len = in_channel_length ic in
   really_input_string ic len
 
-let build () store spec conf src_dir secrets =
-  Lwt_main.run begin
-    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+let build () ~dir ~process store spec conf src_dir secrets =
+  begin
+    create_builder dir process store conf |> fun (Builder ((module Builder), builder)) ->
     let spec =
       try Obuilder.Spec.t_of_sexp (Sexplib.Sexp.load_sexp spec)
       with Failure msg ->
@@ -38,10 +36,9 @@ let build () store spec conf src_dir secrets =
     in
     let secrets = List.map (fun (id, path) -> id, read_whole_file path) secrets in
     let context = Obuilder.Context.v ~log ~src_dir ~secrets () in
-    Builder.build builder context spec >>= function
+    match Builder.build builder context spec with
     | Ok x ->
-      Fmt.pr "Got: %S@." (x :> string);
-      Lwt.return_unit
+      Fmt.pr "Got: %S@." (x :> string)
     | Error `Cancelled ->
       Fmt.epr "Cancelled at user's request@.";
       exit 1
@@ -50,10 +47,10 @@ let build () store spec conf src_dir secrets =
       exit 1
   end
 
-let healthcheck () store conf =
-  Lwt_main.run begin
-    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
-    Builder.healthcheck builder >|= function
+let healthcheck () ~dir ~process store conf =
+  begin
+    create_builder dir process store conf |> fun (Builder ((module Builder), builder)) ->
+    match Builder.healthcheck builder with
     | Error (`Msg m) ->
       Fmt.epr "Healthcheck failed: %s@." m;
       exit 1
@@ -61,9 +58,9 @@ let healthcheck () store conf =
       Fmt.pr "Healthcheck passed@."
   end
 
-let delete () store conf id =
-  Lwt_main.run begin
-    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+let delete () ~dir ~process store conf id =
+  begin
+    create_builder dir process store conf |> fun (Builder ((module Builder), builder)) ->
     Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
   end
 
@@ -102,8 +99,6 @@ let src_dir =
     ~docv:"DIR"
     []
 
-let store = Store_spec.cmdliner
-
 let id =
   Arg.required @@
   Arg.pos 0 Arg.(some string) None @@
@@ -120,17 +115,19 @@ let secrets =
      ~docv:"SECRET"
      ["secret"])
 
-let build =
+let build dir process =
   let doc = "Build a spec file." in
   let info = Cmd.info ~doc "build" in
+  let store = Store_spec.cmdliner process in
   Cmd.v info
-    Term.(const build $ setup_log $ store $ spec_file $ Sandbox.cmdliner $ src_dir $ secrets)
+    Term.(const (build ~dir ~process) $ setup_log $ store $ spec_file $ Sandbox.cmdliner $ src_dir $ secrets)
 
-let delete =
+let delete dir process =
   let doc = "Recursively delete a cached build result." in
   let info = Cmd.info ~doc "delete" in
+  let store = Store_spec.cmdliner process in
   Cmd.v info
-    Term.(const delete $ setup_log $ store $ Sandbox.cmdliner $ id)
+    Term.(const (delete ~dir ~process) $ setup_log $ store $ Sandbox.cmdliner $ id)
 
 let buildkit =
   Arg.value @@
@@ -145,15 +142,19 @@ let dockerfile =
   Cmd.v info
     Term.(const dockerfile $ setup_log $ buildkit $ spec_file)
 
-let healthcheck =
+let healthcheck dir process =
   let doc = "Perform a self-test." in
   let info = Cmd.info ~doc "healthcheck" in
+  let store = Store_spec.cmdliner process in
   Cmd.v info
-    Term.(const healthcheck $ setup_log $ store $ Sandbox.cmdliner)
+    Term.(const (healthcheck ~dir ~process) $ setup_log $ store $ Sandbox.cmdliner)
 
-let cmds = [build; delete; dockerfile; healthcheck]
+let cmds dir process = [build dir process; delete dir process; dockerfile; healthcheck dir process]
 
 let () =
+  Eio_main.run @@ fun env ->
+  let dir = Eio.Stdenv.fs env in
+  let process = Eio.Stdenv.process env in
   let doc = "a command-line interface for OBuilder" in
   let info = Cmd.info ~doc "obuilder" in
-  exit (Cmd.eval @@ Cmd.group info cmds)
+  exit (Cmd.eval @@ Cmd.group info (cmds dir process))
