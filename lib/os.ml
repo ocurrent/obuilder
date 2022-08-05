@@ -88,6 +88,7 @@ let with_pipe_from_child ~sw fn =
 
 let with_pipe_to_child ~sw fn =
   let r, w = Eio_unix.pipe sw in
+  Logs.info (fun f -> f "pipiing");
   Fun.protect
     (fun () -> fn ~r ~w)
     ~finally:(fun () ->

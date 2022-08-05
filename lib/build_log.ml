@@ -20,8 +20,10 @@ let with_dup ~sw (fd : 'a) fn =
 
 let catch_cancel fn =
   try fn () with
-      | Lwt.Canceled -> Error `Cancelled
-      | ex -> raise ex
+    | Cancel.Cancelled _ -> 
+      Logs.info (fun f -> f "Catch cancel");
+      Error `Cancelled
+    | ex -> raise ex
 
 let tail ?switch t dst =
   match t.state with
@@ -31,6 +33,7 @@ let tail ?switch t dst =
     Dir.with_open_in t.dir path @@ fun ch ->
     (* Lwt_io.(with_file ~mode:input ~flags) path @@ fun ch -> *)
     let buf = Cstruct.create max_chunk_size in
+    catch_cancel @@ fun () ->
     let th, cancel =
       let th, set_th = Promise.create () in
       Switch.run @@ fun sw ->
@@ -41,26 +44,34 @@ let tail ?switch t dst =
           | n -> dst (Cstruct.to_string buf ~off:0 ~len:n); aux ()
         with End_of_file -> Promise.resolve set_th (Ok ())
       in
+      let cancel () =
+        match Promise.peek th with
+        | Some _ -> ()
+        | None -> 
+          Switch.fail sw (Failure "cancelled");
+          Promise.resolve_error set_th `Cancelled
+      in
       Fiber.fork ~sw aux;
-      th, fun () -> Switch.fail sw (Failure "cancelled")
+      th, cancel
     in
-    catch_cancel @@ fun () ->
-    (* Option.iter (fun sw -> Switch.on_release sw cancel) switch; *)
-    (* Lwt_eio.Promise.await_lwt @@
-    Lwt_switch.add_hook_or_exec switch (fun () -> Lwt.cancel th; Lwt.return_unit); *)
+    Lwt_eio.Promise.await_lwt @@
+    Lwt_switch.add_hook_or_exec switch (fun () -> cancel (); Lwt.return_unit);
     Promise.await th
   | `Empty -> Ok ()
   | `Open (fd, cond) ->
     (* Dup [fd], which can still work after [fd] is closed. *)
+    catch_cancel @@ fun () ->
     Switch.run @@ fun sw ->
     with_dup ~sw fd @@ fun fd ->
     let buf = Cstruct.create max_chunk_size in
-    let rec aux i =
-      (* match switch with
-      | Some sw -> (
-        try Ok (Switch.check sw) with Cancel.Cancelled _ -> Error `Cancelled
-      )
-      | _ -> *)
+    let th, aux, cancel =
+      let th, set_th = Promise.create () in
+      let rec aux i =
+        Switch.check sw;
+        Logs.info (fun f -> f "AUX %i" i);
+        match switch with 
+        | Some sw when not (Lwt_switch.is_on sw) -> Error `Cancelled
+        | _ ->
         let avail = min (t.len - i) max_chunk_size in
         if avail > 0 then (
           let n = Flow.read fd buf in
@@ -73,12 +84,22 @@ let tail ?switch t dst =
             aux i
           | _ -> Ok ()
         )
+      in
+      let cancel () =
+        match Promise.peek th with
+        | Some _ -> ()
+        | None -> 
+          Promise.resolve_error set_th `Cancelled;
+          Switch.fail sw (Cancel.Cancelled (Failure "cancelled"))
+      in
+      th, (fun () -> Fiber.fork ~sw (fun () -> Promise.resolve set_th @@ aux 0)), cancel
     in
-    catch_cancel @@ fun () ->
-    let th = aux 0 in
-    (* Lwt_eio.Promise.await_lwt @@ *)
-    (* Lwt_switch.add_hook_or_exec switch (fun () -> Lwt.cancel th; Lwt.return_unit); *)
-    th
+    let () = aux () in
+    Lwt_eio.Promise.await_lwt @@
+    Lwt_switch.add_hook_or_exec switch (fun () -> cancel (); Lwt.return_unit);
+    let r = Promise.await th in
+    Logs.info (fun f -> f "Exiting %s" (match r with Ok () -> "OK" | _ -> "CAncelled"));
+    r
 
 let create ~sw ~dir path =
   let fd = Dir.open_out ~sw dir path ~create:(`Or_truncate 0o666) in

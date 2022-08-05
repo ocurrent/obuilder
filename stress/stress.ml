@@ -32,8 +32,8 @@ module Test(Store : S.STORE) = struct
   let test_store t =
     assert (Store.result t "unknown" = None);
     (* Build without a base *)
-    Store.delete t "base" >>= fun () ->
-    Store.build t ~id:"base" (fun tmpdir -> write ~path:(tmpdir / "output") "ok" >|= Result.ok) >>= fun r ->
+    Store.delete t "base";
+    let r = Store.build t ~id:"base" (fun tmpdir -> write ~path:(tmpdir / "output") "ok" >|= Result.ok) in
     assert (r = Ok ());
     assert_output "ok" t "base";
     (* Build with a base *)

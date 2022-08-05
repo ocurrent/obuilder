@@ -1,7 +1,7 @@
 open Eio
 
 let ( / ) = Filename.concat
-let ( >>!= ) = Result.bind
+let ( >>!= ) v f = Result.bind v f
 
 module Make (Raw : S.STORE) = struct
   type build = {
@@ -33,7 +33,7 @@ module Make (Raw : S.STORE) = struct
 
   let dec_ref build =
     build.users <- build.users - 1;
-    if Promise.is_resolved build.result then (
+    if not (Promise.is_resolved build.result) then (
       Log.info (fun f -> f "User cancelled job (users now = %d)" build.users);
       if build.users = 0 then (
         Promise.resolve build.set_cancelled ()
@@ -46,6 +46,7 @@ module Make (Raw : S.STORE) = struct
   let get_build t ~sw ~base ~id ~cancelled ~set_log fn =
     match Raw.result t.raw id with
     | Some dir ->
+      Logs.info (fun f -> f "Someojekfdshsdu");
       let now = Unix.(gmtime (gettimeofday ())) in
       Dao.set_used t.dao ~id ~now;
       let log_file = dir / "log" in
@@ -54,13 +55,16 @@ module Make (Raw : S.STORE) = struct
         else Build_log.empty t.dir
       in
       Promise.resolve set_log (Ok log);
+      Logs.info (fun f -> f "Loaded babyyyy");
       Ok (`Loaded, id)
     | None ->
+      Logs.info (fun f -> f "NONONOENOENOENE");
       match Raw.build t.raw ?base ~id (fun dir ->
           let log_file = dir / "log" in
           if Sys.file_exists log_file then Unix.unlink log_file;
           let log = Build_log.create ~sw ~dir:t.dir log_file in
           Promise.resolve set_log (Ok log);
+          Logs.info (fun f -> f "About to call fn!");
           fn ~cancelled ~log dir
         )
           with 
@@ -92,46 +96,65 @@ module Make (Raw : S.STORE) = struct
       existing.users <- existing.users + 1;
       let log = Promise.await_exn existing.log in
       (* Option.iter (fun sw -> Switch.on_release sw (fun () -> dec_ref existing)) switch; *)
-      (* Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref existing; Lwt.return_unit) >>= fun () -> *)
-      Build_log.tail ?switch log (client_log `Output) >>!= fun () ->
-      Promise.await existing.result >>!= fun (ty, r) ->
-      log_ty client_log ~id ty;
-      Ok r
+      Lwt_eio.Promise.await_lwt @@
+      Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref existing; Lwt.return_unit);
+      let res () =
+        Logs.info (fun f -> f "RESSSS");
+        Build_log.tail ?switch log (client_log `Output) >>!= fun () ->
+        Logs.info (fun f -> f "LOGING");
+        Promise.await existing.result >>!= fun (ty, r) ->
+        log_ty client_log ~id ty;
+        Ok r
+      in
+      let r = res () in
+      Logs.info (fun f -> f "completed");
+      r
     | None ->
       let result, set_result = Promise.create () in
       let log, set_log = Promise.create () in
-      let tail_log, set_tl = Promise.create () in
+      let tail_log () =
+        match Promise.await log with
+        | Ok log -> 
+          Logs.info (fun f -> f "Got log!");
+          Build_log.tail ?switch log (client_log `Output)
+        | _ -> assert false
+      in
       let cancelled, set_cancelled = Promise.create () in
       let build = { users = 1; set_cancelled; log; result } in
-      (* Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref build; Lwt.return_unit) >>= fun () -> *)
+      Lwt_eio.Promise.await_lwt @@
+      Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref build; Lwt.return_unit);
       t.in_progress <- Builds.add id build t.in_progress;
-      Switch.run @@ fun sw ->
-      Fiber.both
-        (fun () -> 
-          match Promise.await log with
-          | Ok log ->
-             let v = Build_log.tail ?switch log (client_log `Output) in
-             Promise.resolve set_tl v
-          | _ -> assert false
-        )
-        (fun () ->
-           try
-              let r = get_build t ~sw ~base ~id ~cancelled ~set_log fn in
-              Fiber.yield ();
-              t.in_progress <- Builds.remove id t.in_progress;
-              Promise.resolve set_result r;
-              finish_log ~set_log log
-           with
-              ex ->
-                Log.info (fun f -> f "Build %S error: %a" id Fmt.exn ex);
+      let run () =
+        Switch.run @@ fun sw ->
+        Fiber.fork ~sw
+          (fun () ->
+            try
+                let r = get_build t ~sw ~base ~id ~cancelled ~set_log fn in
+                (* We yield here to ensure that [tail_log] is called where the
+                  log promise has been set by the called to [get_build] so
+                  we don't finish early. *)
+                Fiber.yield ();
                 t.in_progress <- Builds.remove id t.in_progress;
-                Promise.resolve_error set_result (`Msg (Printexc.to_string ex));
+                Promise.resolve set_result r;
+                (* Fiber.yield (); *)
                 finish_log ~set_log log
-        );
-      Promise.await tail_log >>!= fun () ->
-      Promise.await result >>!= fun (ty, r) ->
-      log_ty client_log ~id ty;
-      Ok r
+            with
+                ex ->
+                  Log.info (fun f -> f "Build %S error: %a" id Fmt.exn ex);
+                  t.in_progress <- Builds.remove id t.in_progress;
+                  Promise.resolve_error set_result (`Msg (Printexc.to_string ex));
+                  finish_log ~set_log log
+          );
+        tail_log () >>!= fun () ->
+          Logs.info (fun f -> f "GOING1");
+        Promise.await result >>!= fun (ty, r) ->
+          Logs.info (fun f -> f "GOING2");
+        log_ty client_log ~id ty;
+        Ok r
+      in
+      let res = run () in 
+      Logs.info (fun f -> f "Run complete");
+      res
 
   let result t id = Raw.result t.raw id
   let cache ~user t = Raw.cache ~user t.raw

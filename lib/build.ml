@@ -74,7 +74,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     in
     let { base; workdir; user; env; cmd; shell; network; mount_secrets } = run_input in
     Switch.run @@ fun sw ->
-    Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
+    let r = 
+      Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
         let to_release = ref [] in
         Fun.protect
           (fun () ->
@@ -88,7 +89,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
              let argv = shell @ [cmd] in
              let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~mount_secrets ~network in
              Os.with_pipe_to_child ~sw @@ fun ~r:stdin ~w:close_me ->
-             Flow.close close_me;
+             (* Flow.close close_me; *)
              let stdin = (stdin :> <Flow.source; Eio_unix.unix_fd>) in
              Sandbox.run ~sw ~dir:t.dir ~process:t.process ~cancelled ~stdin ~log t.sandbox config result_tmp
           )
@@ -96,6 +97,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
              !to_release |> Fiber.iter (fun f -> f ())
           )
       )
+          in Logs.info (fun f -> f "BUILD"); r
 
   type copy_details = {
     base : S.id;
@@ -263,7 +265,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     run_steps t ~context ~base:id ops
 
   let build t context spec =
-    let r = build ~dir:t.dir ~scope:[] t context spec in
+    let r = try build ~dir:t.dir ~scope:[] t context spec with Cancel.Cancelled _ -> Error (`Cancelled) in
     (r : (string, [ `Cancelled | `Msg of string ]) result :> (string, [> `Cancelled | `Msg of string ]) result)
 
   let delete ?log t id =
