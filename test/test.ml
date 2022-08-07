@@ -715,12 +715,12 @@ let () =
         Alcotest.test_case "Docker"   `Quick test_docker;
       ];
       "build", [
-        (* test_case "Simple"     `Quick test_simple;
+        test_case "Simple"     `Quick test_simple;
         test_case "Prune"      `Quick test_prune;
         test_case "Concurrent" `Quick test_concurrent;
         test_case "Concurrent failure" `Quick test_concurrent_failure;
         test_case "Concurrent failure 2" `Quick test_concurrent_failure_2;
-        test_case "Cancel"     `Quick test_cancel; *)
+        test_case "Cancel"     `Quick test_cancel;
         test_case "Cancel 2"   `Quick test_cancel_2;
         test_case "Cancel 3"   `Quick test_cancel_3;
         (* test_case "Cancel 4"   `Quick test_cancel_4;
