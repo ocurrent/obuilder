@@ -27,7 +27,7 @@ module Docker_sandbox = Docker_sandbox
 
 module type BUILDER = S.BUILDER with type context := Build.Context.t
 module Builder = Build.Make
-module Docker_builder = Build.Docker
+module Docker_builder = Build.Make_Docker
 module Build_log = Build_log
 
 (**/**)

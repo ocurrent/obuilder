@@ -212,9 +212,8 @@ module Test(Store : S.STORE) = struct
     aux ()
 end
 
-let stress spec conf =
+let stress (_, spec) conf =
   Lwt_main.run begin
-    let spec = Option.get spec in
     spec >>= fun (Store_spec.Store ((module Store), store)) ->
     let module T = Test(Store) in
     T.test_store store >>= fun () ->

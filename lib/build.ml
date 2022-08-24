@@ -318,8 +318,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     Lwt.return_unit
 end
 
-module Docker = struct
-  module Store = Db_store.Make(Docker_store)
+module Make_Docker (Raw_store : S.STORE) = struct
+  module Store = Db_store.Make(Raw_store)
 
   type t = {
     store : Store.t;

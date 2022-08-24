@@ -56,6 +56,6 @@ val cmdliner : config Cmdliner.Term.t
     necessary flags and parameters to setup a specific sandbox's
     configuration. *)
 
-val create : ?clean:bool -> config -> t Lwt.t
+val create : config -> t Lwt.t
 (** [create config] is a Docker sandboxing system that is configured
     using [config]. *)
