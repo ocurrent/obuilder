@@ -1,15 +1,15 @@
-open Lwt.Infix
+open Eio
 open Obuilder
 
 module B = Builder(Mock_store)(Mock_sandbox)(Docker)
 
 let ( / ) = Filename.concat
-let ( >>!= ) = Lwt_result.bind
+let ( >>!= ) = Result.bind
 
 let () =
   Logs.(set_level ~all:true (Some Info));
   Logs.set_reporter @@ Logs_fmt.reporter ();
-  Os.lwt_process_exec := Mock_exec.exec
+  Os.eio_process_exec := Mock_exec.exec
 
 let build_result =
   Alcotest.of_pp @@ fun f x ->
@@ -18,19 +18,22 @@ let build_result =
   | Error `Cancelled -> Fmt.string f "Cancelled"
   | Ok id -> Fmt.string f id
 
-let get store path id =
+let get ~dir store path id =
   let result = Mock_store.path store id in
-  Lwt_io.(with_file ~mode:input) (result / "rootfs" / path) Lwt_io.read >|= Result.ok
+  Dir.load dir (result / "rootfs" / path) |> Result.ok
 
-let with_config fn =
-  Mock_store.with_store @@ fun store ->
+let with_config ~dir ~process fn =
+  Mock_store.with_store ~dir ~process @@ fun store ->
   let sandbox = Mock_sandbox.create () in
-  let builder = B.v ~store ~sandbox in
+  let builder = B.v ~store ~sandbox ~dir ~process in
   let src_dir = Mock_store.state_dir store / "src" in
   Os.ensure_dir src_dir;
   fn ~src_dir ~store ~sandbox ~builder
 
-let mock_op ?(result=Lwt_result.return ()) ?(delay_store=Lwt.return_unit) ?cancel ?output () =
+let alread_resolved = Eio.Promise.create_resolved ()
+let ok_promise = Eio.Promise.create_resolved (Ok ())
+
+let mock_op ~dir:dir_cap ?(result=ok_promise) ?(delay_store=alread_resolved) ?cancel ?output () =
   fun ~cancelled ?stdin:_ ~log (config:Obuilder.Config.t) dir ->
   Mock_store.delay_store := delay_store;
   let cmd =
@@ -38,30 +41,36 @@ let mock_op ?(result=Lwt_result.return ()) ?(delay_store=Lwt.return_unit) ?cance
     | ["/bin/bash"; "-c"; cmd] -> cmd
     | x -> Fmt.str "%a" Fmt.(Dump.list string) x
   in
-  Build_log.printf log "%s@." cmd >>= fun () ->
-  cancel |> Option.iter (fun cancel ->
-      Lwt.on_termination cancelled (fun () -> Lwt.wakeup cancel (Error `Cancelled))
+  Build_log.printf log "%s@." cmd;
+  cancel |> Option.iter (fun (sw, cancel) ->
+    Fiber.fork ~sw (fun () ->
+      Logs.info (fun f -> f "Forked and waiting");
+       Promise.await cancelled;
+       Promise.resolve cancel (Error `Cancelled)
+      )
     );
   let rootfs = dir / "rootfs" in
+  let create = `Or_truncate 0o666 in
   begin match output with
-    | Some (`Constant v) -> Lwt_io.(with_file ~mode:output) (rootfs / "output") (fun ch -> Lwt_io.write ch v)
+    | Some (`Constant v) -> 
+      Dir.save ~create dir_cap (rootfs / "output") v
     | Some (`Append (v, src)) ->
-      Lwt_io.(with_file ~mode:input) (rootfs / src) Lwt_io.read >>= fun src ->
-      Lwt_io.(with_file ~mode:output) (rootfs / "output") (fun ch -> Lwt_io.write ch (src ^ v))
+      let src = Dir.load dir_cap (rootfs / src) in
+      Dir.save ~create dir_cap (rootfs / "output") (src ^ v)
     | Some `Append_cmd ->
-      Lwt_io.(with_file ~mode:input) (rootfs / "output") Lwt_io.read >>= fun src ->
-      Lwt_io.(with_file ~mode:output) (rootfs / "output") (fun ch -> Lwt_io.write ch (src ^ cmd))
-    | None -> Lwt.return_unit
-  end >>= fun () ->
+      let src = Dir.load dir_cap (rootfs / "output") in
+      Dir.save ~create dir_cap (rootfs / "output") (src ^ cmd)
+    | None -> ()
+  end;
   result
 
-let test_simple _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+let test_simple ~dir ~process switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log = Log.create "b" in
-  let context = Context.v ~src_dir ~log:(Log.add log) () in
+  let context = Context.v ~switch ~src_dir ~log:(Log.add log) () in
   let spec = Spec.(stage ~from:"base" [ run "Append" ]) in
-  Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
-  B.build builder context spec >>!= get store "output" >>= fun result ->
+  Mock_sandbox.expect sandbox (mock_op ~dir ~output:(`Append ("runner", "base-id")) ());
+  let result = B.build builder context spec >>!= get ~dir store "output" in
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
   Log.check "Check log"
     {|(from base)
@@ -72,7 +81,7 @@ let test_simple _switch () =
      |} log;
   (* Check result is cached *)
   Log.clear log;
-  B.build builder context spec >>!= get store "output" >>= fun result ->
+  let result = B.build builder context spec >>!= get ~dir store "output" in
   Alcotest.(check build_result) "Final result cached" (Ok "base-distro\nrunner") result;
   Log.check "Check cached log"
     {|(from base)
@@ -80,17 +89,16 @@ let test_simple _switch () =
       /: (run (shell Append))
       Append
       ;---> using .* from cache
-     |} log;
-  Lwt.return_unit
+     |} log
 
-let test_prune _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+let test_prune ~dir ~process switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
   let start = Unix.(gettimeofday () |> gmtime) in
   let log = Log.create "b" in
-  let context = Context.v ~src_dir ~log:(Log.add log) () in
+  let context = Context.v ~switch ~src_dir ~log:(Log.add log) () in
   let spec = Spec.(stage ~from:"base" [ run "Append" ]) in
-  Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
-  B.build builder context spec >>!= get store "output" >>= fun result ->
+  Mock_sandbox.expect sandbox (mock_op ~dir ~output:(`Append ("runner", "base-id")) ());
+  let result = B.build builder context spec >>!= get ~dir store "output" in
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
   Log.check "Check log"
     {|(from base)
@@ -100,34 +108,36 @@ let test_prune _switch () =
       ;---> saved as .*
      |} log;
   let log id = Logs.info (fun f -> f "Deleting %S" id) in
-  B.prune ~log builder ~before:start 10 >>= fun n ->
+  let n = B.prune ~log builder ~before:start 10 in
   Alcotest.(check int) "Nothing before start time" 0 n;
   let end_time = Unix.(gettimeofday () +. 60.0 |> gmtime) in
-  B.prune ~log builder ~before:end_time 10 >>= fun n ->
-  Alcotest.(check int) "Prune" 2 n;
-  Lwt.return_unit
+  let n = B.prune ~log builder ~before:end_time 10 in
+  Alcotest.(check int) "Prune" 2 n
 
 (* Two builds, [A;B] and [A;C] are started together. The [A] command is only run once,
    with the log visible to both while the build is still in progress. *)
-let test_concurrent _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+let test_concurrent ~dir ~process switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log1 = Log.create "b1" in
   let log2 = Log.create "b2" in
-  let context1 = Obuilder.Context.v ~log:(Log.add log1) ~src_dir () in
-  let context2 = Obuilder.Context.v ~log:(Log.add log2) ~src_dir () in
+  let context1 = Obuilder.Context.v ~switch ~log:(Log.add log1) ~src_dir () in
+  let context2 = Obuilder.Context.v ~switch ~log:(Log.add log2) ~src_dir () in
   let spec1 = Obuilder.Spec.(stage ~from:"base"[ run "A"; run "B" ]) in
   let spec2 = Obuilder.Spec.(stage ~from:"base"[ run "A"; run "C" ]) in
-  let a, a_done = Lwt.wait () in
-  Mock_sandbox.expect sandbox (mock_op ~result:a ~output:(`Constant "A") ());
-  Mock_sandbox.expect sandbox (mock_op ~output:`Append_cmd ());
-  Mock_sandbox.expect sandbox (mock_op ~output:`Append_cmd ());
-  let b1 = B.build builder context1 spec1 in
-  Log.await log1 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
-  let b2 = B.build builder context2 spec2 in
-  Log.await log2 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
-  Lwt.wakeup a_done (Ok ());
-  b1 >>!= get store "output" >>= fun b1 ->
-  b2 >>!= get store "output" >>= fun b2 ->
+  let a, a_done = Promise.create () in
+  Mock_sandbox.expect sandbox (mock_op ~dir ~result:a ~output:(`Constant "A") ());
+  Mock_sandbox.expect sandbox (mock_op ~dir ~output:`Append_cmd ());
+  Mock_sandbox.expect sandbox (mock_op ~dir ~output:`Append_cmd ());
+  Switch.run @@ fun sw ->
+  let b1, set_b1 = Promise.create () in 
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b1 @@ B.build builder context1 spec1);
+  Log.await log1 "(from base)\n/: (run (shell A))\nA\n";
+  let b2, set_b2 = Promise.create () in 
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b2 @@ B.build builder context2 spec2);
+  Log.await log2 "(from base)\n/: (run (shell A))\nA\n";
+  Promise.resolve_ok a_done ();
+  let b1 = Promise.await b1 >>!= get ~dir store "output" in
+  let b2 = Promise.await b2 >>!= get ~dir store "output" in
   Alcotest.(check build_result) "Final result" (Ok "AB") b1;
   Alcotest.(check build_result) "Final result" (Ok "AC") b2;
   Log.check "Check AB log"
@@ -151,27 +161,29 @@ let test_concurrent _switch () =
        C
       ;---> saved as .*
      |}
-    log2;
-  Lwt.return ()
+    log2
 
 (* Two builds, [A;B] and [A;C] are started together. The [A] command fails. *)
-let test_concurrent_failure _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+let test_concurrent_failure ~dir ~process switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log1 = Log.create "b1" in
   let log2 = Log.create "b2" in
-  let context1 = Obuilder.Context.v ~log:(Log.add log1) ~src_dir () in
-  let context2 = Obuilder.Context.v ~log:(Log.add log2) ~src_dir () in
+  let context1 = Obuilder.Context.v ~switch ~log:(Log.add log1) ~src_dir () in
+  let context2 = Obuilder.Context.v ~switch ~log:(Log.add log2) ~src_dir () in
   let spec1 = Obuilder.Spec.(stage ~from:"base" [ run "A"; run "B" ]) in
   let spec2 = Obuilder.Spec.(stage ~from:"base" [ run "A"; run "C" ]) in
-  let a, a_done = Lwt.wait () in
-  Mock_sandbox.expect sandbox (mock_op ~result:a ());
-  let b1 = B.build builder context1 spec1 in
-  Log.await log1 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
-  let b2 = B.build builder context2 spec2 in
-  Log.await log2 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
-  Lwt.wakeup a_done (Error (`Msg "Mock build failure"));
-  b1 >>!= get store "output" >>= fun b1 ->
-  b2 >>!= get store "output" >>= fun b2 ->
+  let a, a_done = Promise.create () in
+  Mock_sandbox.expect sandbox (mock_op ~dir ~result:a ());
+  Switch.run @@ fun sw ->
+  let b1, set_b1 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b1 @@ B.build builder context1 spec1);
+  Log.await log1 "(from base)\n/: (run (shell A))\nA\n";
+  let b2, set_b2 = Promise.create () in 
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b2 @@ B.build builder context2 spec2);
+  Log.await log2 "(from base)\n/: (run (shell A))\nA\n";
+  Promise.resolve a_done (Error (`Msg "Mock build failure"));
+  let b1 = Promise.await b1 >>!= get ~dir store "output" in
+  let b2 = Promise.await b2 >>!= get ~dir store "output" in
   Alcotest.(check build_result) "B1 result" (Error (`Msg "Mock build failure")) b1;
   Alcotest.(check build_result) "B2 result" (Error (`Msg "Mock build failure")) b2;
   Log.check "Check AB log"
@@ -187,28 +199,30 @@ let test_concurrent_failure _switch () =
        /: (run (shell A))
        A
      |}
-    log2;
-  Lwt.return ()
+    log2
 
 (* Two builds, [A;B] and [A;C] are started together. The [A] command fails
    just as the second build is trying to open the log file. *)
-let test_concurrent_failure_2 _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+let test_concurrent_failure_2 ~dir ~process switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log1 = Log.create "b1" in
   let log2 = Log.create "b2" in
-  let context1 = Obuilder.Context.v ~log:(Log.add log1) ~src_dir () in
-  let context2 = Obuilder.Context.v ~log:(Log.add log2) ~src_dir () in
+  let context1 = Obuilder.Context.v ~switch ~log:(Log.add log1) ~src_dir () in
+  let context2 = Obuilder.Context.v ~switch ~log:(Log.add log2) ~src_dir () in
   let spec1 = Obuilder.Spec.(stage ~from:"base" [ run "A"; run "B" ]) in
   let spec2 = Obuilder.Spec.(stage ~from:"base" [ run "A"; run "C" ]) in
-  let a, a_done = Lwt.wait () in
-  Mock_sandbox.expect sandbox (mock_op ~result:(Lwt_result.fail (`Msg "Mock build failure")) ~delay_store:a ());
-  let b1 = B.build builder context1 spec1 in
-  Log.await log1 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
-  let b2 = B.build builder context2 spec2 in
-  Log.await log2 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
-  Lwt.wakeup a_done ();
-  b1 >>!= get store "output" >>= fun b1 ->
-  b2 >>!= get store "output" >>= fun b2 ->
+  let a, a_done = Promise.create () in
+  Mock_sandbox.expect sandbox (mock_op ~dir ~result:(Promise.create_resolved (Error (`Msg "Mock build failure"))) ~delay_store:a ());
+  Switch.run @@ fun sw ->
+  let b1, set_b1 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b1 @@ B.build builder context1 spec1);
+  Log.await log1 "(from base)\n/: (run (shell A))\nA\n";
+  let b2, set_b2 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b2 @@ B.build builder context2 spec2);
+  Log.await log2 "(from base)\n/: (run (shell A))\nA\n";
+  Promise.resolve a_done ();
+  let b1 = Promise.await b1 >>!= get ~dir store "output" in
+  let b2 = Promise.await b2 >>!= get ~dir store "output" in
   Alcotest.(check build_result) "B1 result" (Error (`Msg "Mock build failure")) b1;
   Alcotest.(check build_result) "B2 result" (Error (`Msg "Mock build failure")) b2;
   Log.check "Check AB log"
@@ -224,48 +238,50 @@ let test_concurrent_failure_2 _switch () =
        /: (run (shell A))
        A
      |}
-    log2;
-  Lwt.return ()
+    log2
 
-let test_cancel _switch () =
-  with_config @@ fun ~src_dir ~store:_ ~sandbox ~builder ->
+let test_cancel ~dir ~process switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store:_ ~sandbox ~builder ->
   let log = Log.create "b" in
-  let switch = Lwt_switch.create () in
+  Switch.run @@ fun sw ->
   let context = Context.v ~switch ~src_dir ~log:(Log.add log) () in
   let spec = Spec.(stage ~from:"base" [ run "Wait" ]) in
-  let r, set_r = Lwt.wait () in
-  Mock_sandbox.expect sandbox (mock_op ~result:r ~cancel:set_r ());
-  let b = B.build builder context spec in
-  Log.await log "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
-  Lwt_switch.turn_off switch >>= fun () ->
-  b >>= fun result ->
+  let r, set_r = Promise.create () in
+  Mock_sandbox.expect sandbox (mock_op ~dir ~result:r ~cancel:(sw, set_r) ());
+  let b, set_b1 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b1 @@ B.build builder context spec);
+  Log.await log "(from base)\n/: (run (shell Wait))\nWait\n";
+  Lwt_eio.Promise.await_lwt @@ Lwt_switch.turn_off switch;
+  let result = Promise.await b in
   Alcotest.(check build_result) "Final result" (Error `Cancelled) result;
   Log.check "Check log"
     {|(from base)
       ;---> saved as .*
       /: (run (shell Wait))
       Wait
-     |} log;
-  Lwt.return_unit
+     |} log
 
 (* Two users are sharing a build. One cancels. *)
-let test_cancel_2 _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+let test_cancel_2 ~dir ~process _switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
+  Switch.run @@ fun sw ->
   let spec = Spec.(stage ~from:"base" [ run "Wait" ]) in
-  let r, set_r = Lwt.wait () in
-  Mock_sandbox.expect sandbox (mock_op ~result:r ~cancel:set_r ~output:(`Constant "ok") ());
+  let r, set_r = Promise.create () in
+  Mock_sandbox.expect sandbox (mock_op ~dir ~result:r ~cancel:(sw, set_r) ~output:(`Constant "ok") ());
   let log1 = Log.create "b1" in
   let log2 = Log.create "b2" in
   let switch1 = Lwt_switch.create () in
   let switch2 = Lwt_switch.create () in
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
   let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
-  let b1 = B.build builder context1 spec in
-  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
-  let b2 = B.build builder context2 spec in
-  Log.await log2 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
-  Lwt_switch.turn_off switch1 >>= fun () ->
-  b1 >>= fun result1 ->
+  let b1, set_b1 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b1 @@ B.build builder context1 spec);
+  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n";
+  let b2, set_b2 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b2 @@ B.build builder context2 spec);
+  Log.await log2 "(from base)\n/: (run (shell Wait))\nWait\n";
+  Lwt_eio.Promise.await_lwt @@ Lwt_switch.turn_off switch1;
+  let result1 = Promise.await b1 in 
   Alcotest.(check build_result) "User 1 result" (Error `Cancelled) result1;
   Log.check "Check log"
     {|(from base)
@@ -273,8 +289,8 @@ let test_cancel_2 _switch () =
       /: (run (shell Wait))
       Wait
      |} log1;
-  Lwt.wakeup set_r (Ok ());
-  b2 >>!= get store "output" >>= fun result2 ->
+  Promise.resolve set_r (Ok ());
+  let result2 = Promise.await b2 >>!= get ~dir store "output" in
   Alcotest.(check build_result) "Final result" (Ok "ok") result2;
   Log.check "Check log"
     {|(from base)
@@ -282,27 +298,30 @@ let test_cancel_2 _switch () =
       /: (run (shell Wait))
       Wait
       ;---> saved as .*
-     |} log2;
-  Lwt.return_unit
+     |} log2
 
 (* Two users are sharing a build. Both cancel. *)
-let test_cancel_3 _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+let test_cancel_3 ~dir ~process _switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
+  Switch.run @@ fun sw ->
   let spec = Spec.(stage ~from:"base" [ run "Wait" ]) in
-  let r, set_r = Lwt.wait () in
-  Mock_sandbox.expect sandbox (mock_op ~result:r ~cancel:set_r ());
+  let r, set_r = Promise.create () in
+  Mock_sandbox.expect sandbox (mock_op ~dir ~result:r ~cancel:(sw, set_r) ());
   let log1 = Log.create "b1" in
   let log2 = Log.create "b2" in
   let switch1 = Lwt_switch.create () in
   let switch2 = Lwt_switch.create () in
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
   let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
-  let b1 = B.build builder context1 spec in
-  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
-  let b2 = B.build builder context2 spec in
-  Log.await log2 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
-  Lwt_switch.turn_off switch1 >>= fun () ->
-  b1 >>= fun result1 ->
+  let b1, set_b1 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b1 @@ B.build builder context1 spec);
+  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n";
+  let b2, set_b2 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b2 @@ B.build builder context2 spec);
+  Log.await log2 "(from base)\n/: (run (shell Wait))\nWait\n";
+  Lwt_eio.Promise.await_lwt @@ Lwt_switch.turn_off switch1;
+  let result1 = Promise.await b1 in
+  ignore (failwith "YIKES");
   Alcotest.(check build_result) "User 1 result" (Error `Cancelled) result1;
   Log.check "Check log"
     {|(from base)
@@ -310,113 +329,119 @@ let test_cancel_3 _switch () =
       /: (run (shell Wait))
       Wait
      |} log1;
-  Lwt_switch.turn_off switch2 >>= fun () ->
-  b2 >>!= get store "output" >>= fun result2 ->
+  Lwt_eio.Promise.await_lwt @@ Lwt_switch.turn_off switch2;
+  ignore (failwith "YIKES");
+  let result2 = Promise.await b2 >>!= get ~dir store "output" in
   Alcotest.(check build_result) "User 2 result" (Error `Cancelled) result2;
+  ignore (failwith "logged");
   Log.check "Check log"
     {|(from base)
       ;---> using .* from cache
       /: (run (shell Wait))
       Wait
      |} log2;
-  r >>= fun r ->
+  let r = Promise.await r in
   let r = Result.map (fun () -> "-") r in
-  Alcotest.(check build_result) "Build cancelled" (Error `Cancelled) r;
-  Lwt.return_unit
+  Alcotest.(check build_result) "Build cancelled" (Error `Cancelled) r
 
 (* One user cancels a failed build after its replacement has started. *)
-let test_cancel_4 _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+let test_cancel_4 ~dir ~process _switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
+  Switch.run @@ fun sw ->
   let spec = Spec.(stage ~from:"base" [ run "Wait" ]) in
-  let r, set_r = Lwt.wait () in
-  Mock_sandbox.expect sandbox (mock_op ~result:r ~cancel:set_r ());
+  let r, set_r = Promise.create () in
+  Mock_sandbox.expect sandbox (mock_op ~dir ~result:r ~cancel:(sw, set_r) ());
   let log1 = Log.create "b1" in
   let log2 = Log.create "b2" in
   let switch1 = Lwt_switch.create () in
   let switch2 = Lwt_switch.create () in
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
   let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
-  let b1 = B.build builder context1 spec in
-  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
-  Lwt.wakeup set_r (Error (`Msg "Build failed"));
+  let b1, set_b1 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b1 @@ B.build builder context1 spec);
+  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n";
+  Promise.resolve set_r (Error (`Msg "Build failed"));
   (* Begin a new build. *)
-  let r2, set_r2 = Lwt.wait () in
-  Mock_sandbox.expect sandbox (mock_op ~result:r2 ~cancel:set_r2 ~output:(`Constant "ok") ());
-  let b2 = B.build builder context2 spec in
-  Log.await log2 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  let r2, set_r2 = Promise.create () in
+  Mock_sandbox.expect sandbox (mock_op ~dir ~result:r2 ~cancel:(sw, set_r2) ~output:(`Constant "ok") ());
+  let b2, set_b2 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b2 @@ B.build builder context2 spec);
+  Log.await log2 "(from base)\n/: (run (shell Wait))\nWait\n";
   (* Cancel the original build. *)
-  Lwt_switch.turn_off switch1 >>= fun () ->
-  b1 >>= fun result1 ->
+  Lwt_eio.Promise.await_lwt @@ Lwt_switch.turn_off switch1;
+  let result1 = Promise.await b1 in
   Alcotest.(check build_result) "User 1 result" (Error (`Msg "Build failed")) result1;
   (* Start a third build. It should attach to the second build. *)
   let log3 = Log.create "b3" in
   let switch3 = Lwt_switch.create () in
   let context3 = Context.v ~switch:switch3 ~src_dir ~log:(Log.add log3) () in
-  let b3 = B.build builder context3 spec in
-  Log.await log3 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
-  Lwt.wakeup set_r2 (Ok ());
-  b2 >>!= get store "output" >>= fun result2 ->
+  let b3, set_b3 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b3 @@ B.build builder context3 spec);
+  Log.await log3 "(from base)\n/: (run (shell Wait))\nWait\n";
+  Promise.resolve set_r2 (Ok ());
+  let result2 = Promise.await b2 >>!= get ~dir store "output" in
   Alcotest.(check build_result) "User 2 result" (Ok "ok") result2;
-  b3 >>!= get store "output" >>= fun result3 ->
-  Alcotest.(check build_result) "User 3 result" (Ok "ok") result3;
-  Lwt.return_unit
+  let result3 = Promise.await b3 >>!= get ~dir store "output" in
+  Alcotest.(check build_result) "User 3 result" (Ok "ok") result3
 
 (* Start a new build while the previous one is cancelling. *)
-let test_cancel_5 _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+let test_cancel_5 ~dir ~process _switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
+  Switch.run @@ fun sw ->
   let spec = Spec.(stage ~from:"base" [ run "Wait" ]) in
-  let r, set_r = Lwt.wait () in
-  let delay_store, set_delay = Lwt.wait () in
-  Mock_sandbox.expect sandbox (mock_op ~result:r ~cancel:set_r ~delay_store ());
+  let r, set_r = Promise.create () in
+  let delay_store, set_delay = Promise.create () in
+  Mock_sandbox.expect sandbox (mock_op ~dir ~result:r ~cancel:(sw, set_r) ~delay_store ());
   let log1 = Log.create "b1" in
   let switch1 = Lwt_switch.create () in
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
-  let b1 = B.build builder context1 spec in
-  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
-  Lwt_switch.turn_off switch1 >>= fun () ->
-  b1 >>= fun result1 ->
+  let b1, set_b1 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b1 @@ B.build builder context1 spec);
+  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n";
+  Lwt_eio.Promise.await_lwt @@ Lwt_switch.turn_off switch1;
+  let result1 = Promise.await b1 in
   Alcotest.(check build_result) "User 1 result" (Error `Cancelled) result1;
   (* Begin a new build. *)
-  Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "ok") ());
+  Mock_sandbox.expect sandbox (mock_op ~dir ~output:(`Constant "ok") ());
   let log2 = Log.create "b2" in
   let switch2 = Lwt_switch.create () in
   let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
-  let b2 = B.build builder context2 spec in
-  Log.await log2 "(from base)\n/: (run (shell Wait))\n" >>= fun () ->
-  Lwt.wakeup set_delay ();
-  b2 >>!= get store "output" >>= fun result1 ->
-  Alcotest.(check build_result) "User 2 result" (Ok "ok") result1;
-  Lwt.return_unit
+  let b2, set_b2 = Promise.create () in
+  Fiber.fork ~sw (fun () -> Promise.resolve set_b2 @@ B.build builder context2 spec);
+  Log.await log2 "(from base)\n/: (run (shell Wait))\n";
+  Promise.resolve set_delay ();
+  let result1 = Promise.await b2 >>!= get ~dir store "output" in
+  Alcotest.(check build_result) "User 2 result" (Ok "ok") result1
 
-let test_delete _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+(* let test_delete ~dir ~process _switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
   let spec = Spec.(stage ~from:"base" [ run "A"; run "B" ]) in
-  Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "A") ());
-  Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "B") ());
+  Mock_sandbox.expect sandbox (mock_op ~dir ~output:(`Constant "A") ());
+  Mock_sandbox.expect sandbox (mock_op ~dir ~output:(`Constant "B") ());
   let log1 = Log.create "b1" in
   let switch1 = Lwt_switch.create () in
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
   let b1 = B.build builder context1 spec in
-  b1 >>!= get store "output" >>= fun result1 ->
+  let result1 = b1 >>!= get ~dir store "output" in
   Alcotest.(check build_result) "Build 1 result" (Ok "B") result1;
   (* Remove A *)
-  Mock_store.find ~output:"A" store >>= fun id ->
+  let id = Mock_store.find ~dir ~output:"A" store in
   let id = Option.get id in
   let log = ref [] in
-  B.delete ~log:(fun x -> log := x :: !log) builder id >>= fun () ->
+  B.delete ~log:(fun x -> log := x :: !log) builder id;
   Alcotest.(check int) "Deleted 2 items" 2 (List.length !log);
   (* Check rebuild works *)
-  Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "A") ());
-  Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "B") ());
+  Mock_sandbox.expect sandbox (mock_op ~dir ~output:(`Constant "A") ());
+  Mock_sandbox.expect sandbox (mock_op ~dir ~output:(`Constant "B") ());
   let log2 = Log.create "b2" in
   let switch2 = Lwt_switch.create () in
   let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
   let b2 = B.build builder context2 spec in
-  b2 >>!= get store "output" >>= fun result2 ->
+  let result2 = b2 >>!= get ~dir store "output" in
   Alcotest.(check build_result) "Build 2 result" (Ok "B") result2;
-  Lwt.return_unit
+  Lwt.return_unit *)
 
-let test_tar_long_filename _switch () =
+(* let test_tar_long_filename _switch () =
   let do_test length =
     Logs.info (fun m -> m "Test copy length %d " length);
     Lwt_io.with_temp_dir ~prefix:"test-copy-src-" @@ fun src_dir ->
@@ -439,7 +464,7 @@ let test_tar_long_filename _switch () =
   in
   do_test 80 >>= fun () ->
   do_test 160 >>= fun () ->
-  do_test 240
+  do_test 240 *)
 
 let sexp = Alcotest.of_pp Sexplib.Sexp.pp_hum
 
@@ -590,7 +615,7 @@ let manifest =
     (Alcotest.of_pp (fun f (`Msg m) -> Fmt.string f m))
 
 (* Test copy step. *)
-let test_copy _switch () =
+(* let test_copy _switch () =
   Lwt_io.with_temp_dir ~prefix:"test-copy-" @@ fun src_dir ->
   Lwt_io.(with_file ~mode:output) (src_dir / "file") (fun ch -> Lwt_io.write ch "file-data") >>= fun () ->
   (* Files *)
@@ -630,7 +655,7 @@ let test_copy _switch () =
   Alcotest.(check manifest) "Tree"
     (Ok (`Dir ("dir1", [`Dir ("dir1/dir2", [`File ("dir1/dir2/file2", f2hash)])])))
   @@ Manifest.generate ~exclude:[] ~src_dir "dir1";
-  Lwt.return_unit
+  Lwt.return_unit *)
 
 let test_cache_id () =
   let check expected id =
@@ -646,23 +671,23 @@ let test_cache_id () =
   check "c-foo%3abar" "foo:bar";
   check "c-Az09-id.foo_orig" "Az09-id.foo_orig"
 
-let test_secrets_not_provided _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+let test_secrets_not_provided ~dir ~process switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log = Log.create "b" in
-  let context = Context.v ~src_dir ~log:(Log.add log) () in
+  let context = Context.v ~switch ~src_dir ~log:(Log.add log) () in
   let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/run/secrets/test" "test"] "Append" ]) in
-  Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
-  B.build builder context spec >>!= get store "output" >>= fun result ->
+  Mock_sandbox.expect sandbox (mock_op ~dir ~output:(`Append ("runner", "base-id")) ());
+  let result = B.build builder context spec >>!= get store ~dir "output" in
   Alcotest.(check build_result) "Final result" (Error (`Msg "Couldn't find value for requested secret 'test'")) result;
   Lwt.return_unit
 
-let test_secrets_simple _switch () =
-  with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
+let test_secrets_simple ~dir ~process switch () =
+  with_config ~dir ~process @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log = Log.create "b" in
-  let context = Context.v ~src_dir ~log:(Log.add log) ~secrets:["test", "top secret value"; "test2", ""] () in
+  let context = Context.v ~switch ~src_dir ~log:(Log.add log) ~secrets:["test", "top secret value"; "test2", ""] () in
   let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/testsecret" "test"; Secret.v "test2"] "Append" ]) in
-  Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
-  B.build builder context spec >>!= get store "output" >>= fun result ->
+  Mock_sandbox.expect sandbox (mock_op ~dir ~output:(`Append ("runner", "base-id")) ());
+  let result = B.build builder context spec >>!= get ~dir store "output" in
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
   Log.check "Check b log"
     {| (from base)
@@ -672,17 +697,22 @@ let test_secrets_simple _switch () =
          Append
         ;---> saved as .*
        |}
-    log;
-  Lwt.return_unit
+    log
 
 let () =
-  let open Alcotest_lwt in
-  Lwt_main.run begin
-    run "OBuilder" [
+  Eio_main.run @@ fun env ->
+  Lwt_eio.with_event_loop ~clock:env#clock @@ fun _ ->
+  let dir = Eio.Stdenv.fs env in
+  let process = Eio.Stdenv.process env in
+  let test_case s m fn =
+    let switch = Lwt_switch.create () in
+    Alcotest.test_case s m (fn ~dir ~process switch)
+  in
+    Alcotest.run "OBuilder" [
       "spec", [
-        test_case_sync "Sexp"     `Quick test_sexp;
-        test_case_sync "Cache ID" `Quick test_cache_id;
-        test_case_sync "Docker"   `Quick test_docker;
+        Alcotest.test_case "Sexp"     `Quick test_sexp;
+        Alcotest.test_case "Cache ID" `Quick test_cache_id;
+        Alcotest.test_case "Docker"   `Quick test_docker;
       ];
       "build", [
         test_case "Simple"     `Quick test_simple;
@@ -693,9 +723,10 @@ let () =
         test_case "Cancel"     `Quick test_cancel;
         test_case "Cancel 2"   `Quick test_cancel_2;
         test_case "Cancel 3"   `Quick test_cancel_3;
-        test_case "Cancel 4"   `Quick test_cancel_4;
-        test_case "Cancel 5"   `Quick test_cancel_5;
-        test_case "Delete"     `Quick test_delete;
+        (* test_case "Cancel 4"   `Quick test_cancel_4;
+        test_case "Cancel 5"   `Quick test_cancel_5; *)
+     ]
+      (*  test_case "Delete"     `Quick test_delete;
       ];
       "secrets", [
         test_case "Simple"     `Quick test_secrets_simple;
@@ -706,6 +737,5 @@ let () =
       ];
       "manifest", [
         test_case "Copy"       `Quick test_copy;
-      ];
+      ]; *)
     ]
-  end

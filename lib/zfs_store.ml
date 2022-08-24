@@ -1,5 +1,3 @@
-open Lwt.Infix
-
 (* This is rather complicated, because (unlike btrfs):
    - zfs won't let you delete datasets that other datasets are cloned from.
      However, you can "promote" a dataset, so that it switches roles with its parent.
@@ -25,13 +23,14 @@ open Lwt.Infix
 let strf = Printf.sprintf
 
 type cache = {
-  lock : Lwt_mutex.t;
+  lock : Eio.Mutex.t;
   mutable gen : int;            (* Version counter. *)
   mutable n_clones : int;
 }
 
 type t = {
   pool : string;
+  process : Eio.Process.t;
   caches : (string, cache) Hashtbl.t;
   mutable next : int;
 }
@@ -53,7 +52,7 @@ module Dataset : sig
   val path : ?snapshot:string -> t -> dataset -> string
 
   val exists : ?snapshot:string -> t -> dataset -> bool
-  val if_missing : ?snapshot:string -> t -> dataset -> (unit -> unit Lwt.t) -> unit Lwt.t
+  val if_missing : ?snapshot:string -> t -> dataset -> (unit -> unit) -> unit
 end = struct
   type dataset = string
 
@@ -84,7 +83,7 @@ end = struct
     | `Present -> true
 
   let if_missing ?snapshot t ds fn =
-    if exists ?snapshot t ds then Lwt.return_unit
+    if exists ?snapshot t ds then ()
     else fn ()
 end
 
@@ -93,10 +92,12 @@ let user = { Obuilder_spec.uid = Unix.getuid (); gid = Unix.getgid () }
 module Zfs = struct
   let chown ~user t ds =
     let { Obuilder_spec.uid; gid } = user in
-    Os.sudo ["chown"; strf "%d:%d" uid gid; Dataset.path t ds]
+    Eio.Switch.run @@ fun sw ->
+    Os.sudo ~sw ~process:t.process ["chown"; strf "%d:%d" uid gid; Dataset.path t ds]
 
   let create t ds =
-    Os.sudo ["zfs"; "create"; "--"; Dataset.full_name t ds]
+    Eio.Switch.run @@ fun sw ->
+    Os.sudo ~sw ~process:t.process ["zfs"; "create"; "--"; Dataset.full_name t ds]
 
   let destroy t ds mode =
     let opts =
@@ -105,7 +106,8 @@ module Zfs = struct
       | `And_snapshots -> ["-r"]
       | `And_snapshots_and_clones -> ["-R"]
     in
-    Os.sudo (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds])
+    Eio.Switch.run @@ fun sw ->
+    Os.sudo ~sw ~process:t.process (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds])
 
   let destroy_snapshot t ds snapshot mode =
     let opts =
@@ -114,41 +116,47 @@ module Zfs = struct
       | `Recurse -> ["-R"]
       | `Immediate -> []
     in
-    Os.sudo (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds ^ "@" ^ snapshot])
+    Eio.Switch.run @@ fun sw ->
+    Os.sudo ~sw ~process:t.process (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds ^ "@" ^ snapshot])
 
   let clone t ~src ~snapshot dst =
-    Os.sudo ["zfs"; "clone"; "--"; Dataset.full_name t src ~snapshot; Dataset.full_name t dst]
+    Eio.Switch.run @@ fun sw ->
+    Os.sudo ~sw ~process:t.process ["zfs"; "clone"; "--"; Dataset.full_name t src ~snapshot; Dataset.full_name t dst]
 
   let snapshot t ds ~snapshot =
-    Os.sudo ["zfs"; "snapshot"; "--"; Dataset.full_name t ds ~snapshot]
+    Eio.Switch.run @@ fun sw ->
+    Os.sudo ~sw ~process:t.process ["zfs"; "snapshot"; "--"; Dataset.full_name t ds ~snapshot]
 
   let promote t ds =
-    Os.sudo ["zfs"; "promote"; Dataset.full_name t ds]
+    Eio.Switch.run @@ fun sw ->
+    Os.sudo ~sw ~process:t.process ["zfs"; "promote"; Dataset.full_name t ds]
 
   let rename t ~old ds =
-    Os.sudo ["zfs"; "rename"; "--"; Dataset.full_name t old; Dataset.full_name t ds]
+    Eio.Switch.run @@ fun sw ->
+    Os.sudo ~sw ~process:t.process ["zfs"; "rename"; "--"; Dataset.full_name t old; Dataset.full_name t ds]
 
   let rename_snapshot t ds ~old snapshot =
-    Os.sudo ["zfs"; "rename"; "--";
+    Eio.Switch.run @@ fun sw ->
+    Os.sudo ~sw ~process:t.process ["zfs"; "rename"; "--";
           Dataset.full_name t ds ~snapshot:old;
           Dataset.full_name t ds ~snapshot]
 end
 
 let delete_if_exists t ds mode =
   if Dataset.exists t ds then Zfs.destroy t ds mode
-  else Lwt.return_unit
+  else ()
 
 let state_dir t = Dataset.path t Dataset.state
 
-let create ~pool =
-  let t = { pool; caches = Hashtbl.create 10; next = 0 } in
+let create ~process ~pool =
+  let t = { pool; process; caches = Hashtbl.create 10; next = 0 } in
   (* Ensure any left-over temporary datasets are removed before we start. *)
-  delete_if_exists t (Dataset.cache_tmp_group) `And_snapshots_and_clones >>= fun () ->
-  Dataset.groups |> Lwt_list.iter_s (fun group ->
-      Dataset.if_missing t group (fun () -> Zfs.create t group) >>= fun () ->
+  delete_if_exists t (Dataset.cache_tmp_group) `And_snapshots_and_clones;
+  Dataset.groups |> Eio.Fiber.iter (fun group ->
+      Dataset.if_missing t group (fun () -> Zfs.create t group);
       Zfs.chown ~user t group
-    ) >>= fun () ->
-  Lwt.return t
+    );
+  t
 
 (* The builder will always delete child datasets before their parent.
    It's possible that we crashed after cloning this but before recording that
@@ -168,36 +176,32 @@ let build t ?base ~id fn =
      we don't create the snapshot unless the build succeeds. If we crash
      with a partially written directory, `result` will see there is no
      snapshot and we'll end up here and delete it. *)
-  delete_if_exists t ds `Only >>= fun () ->
+  delete_if_exists t ds `Only;
   let clone = Dataset.path t ds in
   begin match base with
     | None ->
-      Zfs.create t ds >>= fun () ->
+      Zfs.create t ds;
       Zfs.chown ~user t ds
     | Some base ->
       let src = Dataset.result base in
       Zfs.clone t ~src ~snapshot:default_snapshot ds
-  end
-  >>= fun () ->
-  Lwt.try_bind
-    (fun () -> fn clone)
-    (function
+  end;
+  try
+    match fn clone with
       | Ok () ->
         Log.debug (fun f -> f "zfs: build %S succeeded" id);
-        Zfs.snapshot t ds ~snapshot:default_snapshot >>= fun () ->
+        Zfs.snapshot t ds ~snapshot:default_snapshot;
         (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
            keep it around? *)
-        Lwt_result.return ()
+        Ok ()
       | Error _ as e ->
         Log.debug (fun f -> f "zfs: build %S failed" id);
-        Zfs.destroy t ds `Only >>= fun () ->
-        Lwt.return e
-    )
-    (fun ex ->
+        Zfs.destroy t ds `Only;
+        e
+    with ex ->
         Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
-        Zfs.destroy t ds `Only >>= fun () ->
-        Lwt.fail ex
-    )
+        Zfs.destroy t ds `Only;
+        raise ex
 
 let result t id =
   let ds = Dataset.result id in
@@ -209,7 +213,7 @@ let get_cache t name =
   match Hashtbl.find_opt t.caches name with
   | Some c -> c
   | None ->
-    let c = { lock = Lwt_mutex.create (); gen = 0; n_clones = 0 } in
+    let c = { lock = Eio.Mutex.create (); gen = 0; n_clones = 0 } in
     Hashtbl.add t.caches name c;
     c
 
@@ -244,25 +248,25 @@ let get_tmp_ds t name =
    - We might crash before making the main@snap tag. If main is missing this tag,
      it is safe to create it, since we must have been just about to do that.
 *)
-let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
+let cache ~user t name : (string * (unit -> unit)) =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
+  Eio.Mutex.use_ro cache.lock @@ fun () ->
   Log.debug (fun f -> f "zfs: get cache %S" (name :> string));
   let gen = cache.gen in
   let main_ds = Dataset.cache name in
   let tmp_ds = get_tmp_ds t name in
   (* Create the cache as an empty directory if it doesn't exist. *)
-  Dataset.if_missing t main_ds (fun  () -> Zfs.create t main_ds) >>= fun () ->
+  Dataset.if_missing t main_ds (fun  () -> Zfs.create t main_ds);
   (* Ensure we have the snapshot. This is needed on first creation, and
      also to recover from crashes. *)
   Dataset.if_missing t main_ds ~snapshot:default_snapshot (fun () ->
-      Zfs.chown ~user t main_ds >>= fun () ->
+      Zfs.chown ~user t main_ds;
       Zfs.snapshot t main_ds ~snapshot:default_snapshot
-    ) >>= fun () ->
+    );
   cache.n_clones <- cache.n_clones + 1;
-  Zfs.clone t ~src:main_ds ~snapshot:default_snapshot tmp_ds >>= fun () ->
+  Zfs.clone t ~src:main_ds ~snapshot:default_snapshot tmp_ds;
   let release () =
-    Lwt_mutex.with_lock cache.lock @@ fun () ->
+    Eio.Mutex.use_ro cache.lock @@ fun () ->
     Log.debug (fun f -> f "zfs: release cache %S" (name :> string));
     cache.n_clones <- cache.n_clones - 1;
     if cache.gen = gen then (
@@ -272,52 +276,51 @@ let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
       (* Rename main to something temporary, so if we crash here then we'll
          just start again with an empty cache next time. *)
       let delete_me = get_tmp_ds t name in
-      Zfs.rename t ~old:main_ds delete_me >>= fun () ->
-      Zfs.promote t tmp_ds >>= fun () ->
+      Zfs.rename t ~old:main_ds delete_me;
+      Zfs.promote t tmp_ds;
       (* At this point:
          - All the other clones of main are now clones of tmp_ds.
          - main@snap has moved to tmp@snap.
          - Any other tags were older than snap and so have also moved to tmp. *)
-      Zfs.destroy t delete_me `Only >>= fun () ->
+      Zfs.destroy t delete_me `Only;
       (* Move the old @snap tag out of the way. *)
       let archive_name = strf "old-%d" gen in
       (* We know [archive_name] doesn't exist because [gen] is unique for
          this process, and we delete stale tmp dirs from previous runs at start-up,
          which would remove any such deferred tags. *)
-      Zfs.rename_snapshot t tmp_ds ~old:default_snapshot archive_name >>= fun () ->
+      Zfs.rename_snapshot t tmp_ds ~old:default_snapshot archive_name;
       (* Mark the archived snapshot for removal. If other clones are using it,
          this will defer the deletion until they're done *)
-      Zfs.destroy_snapshot t tmp_ds archive_name `Defer >>= fun () ->
+      Zfs.destroy_snapshot t tmp_ds archive_name `Defer;
       (* Create the new snapshot and rename this as the new main_ds. *)
-      Zfs.snapshot t tmp_ds ~snapshot:default_snapshot >>= fun () ->
+      Zfs.snapshot t tmp_ds ~snapshot:default_snapshot;
       Zfs.rename t ~old:tmp_ds main_ds
     ) else (
       (* We have no snapshots or clones here. *)
-      Lwt.catch (fun () -> Zfs.destroy t tmp_ds `Only)
-        (fun ex ->
+      try Zfs.destroy t tmp_ds `Only with
+      ex ->
            Log.warn (fun f -> f "Error trying to release cache (will retry): %a" Fmt.exn ex);
            (* XXX: Don't know what's causing this. By the time fuser runs, the problem has disappeared! *)
            Unix.system (strf "fuser -mv %S" (Dataset.path t tmp_ds)) |> ignore;
-           Lwt_unix.sleep 10.0 >>= fun () ->
+           Eio_unix.sleep 10.0;
            Zfs.destroy t tmp_ds `Only
-        )
     )
   in
-  Lwt.return (Dataset.path t tmp_ds, release)
+  Dataset.path t tmp_ds, release
 
 let delete_cache t name =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
+  Eio.Mutex.use_ro cache.lock @@ fun () ->
   Log.debug (fun f -> f "zfs: delete_cache %S" (name :> string));
-  if cache.n_clones > 0 then Lwt_result.fail `Busy
+  if cache.n_clones > 0 then Error `Busy
   else (
     let main_ds = Dataset.cache name in
     if Dataset.exists t main_ds then (
-      Zfs.destroy t main_ds `And_snapshots >>= fun () ->
-      Lwt_result.return ()
-    ) else Lwt_result.return ()
+      Zfs.destroy t main_ds `And_snapshots
+    );
+    Ok ()
   )
 
 let complete_deletes _t =
   (* The man-page says "Pending changes are generally accounted for within a few seconds" *)
-  Lwt_unix.sleep 5.0
+  Eio_unix.sleep 5.0

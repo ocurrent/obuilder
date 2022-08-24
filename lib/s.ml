@@ -16,8 +16,8 @@ module type STORE = sig
   val build :
     t -> ?base:id ->
     id:id ->
-    (string -> (unit, 'e) Lwt_result.t) ->
-    (unit, 'e) Lwt_result.t
+    (string -> (unit, 'e) result) ->
+    (unit, 'e) result
   (** [build t ~id fn] runs [fn tmpdir] to add a new item to the store under
       key [id]. On success, [tmpdir] is saved as [id], which can be used
       as the [base] for further builds, until it is expired from the cache.
@@ -28,7 +28,7 @@ module type STORE = sig
       exists (i.e. for which [result] returns a path).
       @param base Initialise [tmpdir] as a clone of [base]. *)
 
-  val delete : t -> id -> unit Lwt.t
+  val delete : t -> id -> unit
   (** [delete t id] removes [id] from the store, if present. *)
 
   val result : t -> id -> string option
@@ -42,7 +42,7 @@ module type STORE = sig
     user:Obuilder_spec.user ->
     t ->
     string ->
-    (string * (unit -> unit Lwt.t)) Lwt.t
+    (string * (unit -> unit))
   (** [cache ~user t name] creates a writeable copy of the latest snapshot of the
       cache [name]. It returns the path of this fresh copy and a function which
       must be called to free it when done.
@@ -52,11 +52,11 @@ module type STORE = sig
       version of the cache, unless the cache has already been updated since
       it was snapshotted, in which case this writeable copy is simply discarded. *)
 
-  val delete_cache : t -> string -> (unit, [> `Busy]) Lwt_result.t
+  val delete_cache : t -> string -> (unit, [> `Busy]) result
   (** [delete_cache t name] removes the cache [name], if present.
       If the cache is currently in use, the store may instead return [Error `Busy]. *)
 
-  val complete_deletes : t -> unit Lwt.t
+  val complete_deletes : t -> unit
   (** [complete_deletes t] attempts to wait for previously executed deletes to finish,
       so that the free space is accurate. *)
 end
@@ -65,13 +65,16 @@ module type SANDBOX = sig
   type t
 
   val run :
-    cancelled:unit Lwt.t ->
-    ?stdin:Os.unix_fd ->
+  sw:Eio__core.Switch.t ->
+    dir:#Eio.Dir.t ->
+    process:Eio.Process.t ->
+    cancelled:unit Eio.Promise.t ->
+    ?stdin:<Eio.Flow.source; Eio_unix.unix_fd> ->
     log:Build_log.t ->
     t ->
     Config.t ->
     string ->
-    (unit, [`Cancelled | `Msg of string]) Lwt_result.t
+    (unit, [`Cancelled | `Msg of string]) result
   (** [run ~cancelled t config dir] runs the operation [config] in a sandbox with root
       filesystem [rootfs].
       @param cancelled Resolving this kills the process (and returns [`Cancelled]).
@@ -88,29 +91,29 @@ module type BUILDER = sig
     t ->
     context ->
     Obuilder_spec.t ->
-    (id, [> `Cancelled | `Msg of string]) Lwt_result.t
+    (id, [> `Cancelled | `Msg of string]) result
 
-  val delete : ?log:(id -> unit) -> t -> id -> unit Lwt.t
+  val delete : ?log:(id -> unit) -> t -> id -> unit
   (** [delete ?log t id] removes [id] from the store, along with all of its dependencies.
       This is for testing. Note that is not safe to perform builds while deleting:
       the delete might fail because an item got a new child during the delete, or
       we might delete something that the build is using.
       @param log Called just before deleting each item, so it can be displayed. *)
 
-  val prune : ?log:(id -> unit) -> t -> before:Unix.tm -> int -> int Lwt.t
+  val prune : ?log:(id -> unit) -> t -> before:Unix.tm -> int -> int
   (** [prune t ~before n] attempts to remove up to [n] items from the store,
       all of which were last used before [before].
       Returns the number of items removed.
       @param log Called just before deleting each item, so it can be displayed. *)
 
-  val healthcheck : ?timeout:float -> t -> (unit, [> `Msg of string]) Lwt_result.t
+  val healthcheck : ?timeout:float -> t -> (unit, [> `Msg of string]) result
   (** [healthcheck t] performs a check that [t] is working correctly.
       @param timeout Cancel and report failure after this many seconds.
                      This excludes the time to fetch the base image. *)
 end
 
 module type FETCHER = sig
-  val fetch : log:Build_log.t -> rootfs:string -> string -> Config.env Lwt.t
+val fetch : sw:Eio.Switch.t -> process:Eio.Process.t -> log:Build_log.t -> rootfs:string -> string -> Config.env
   (** [fetch ~log ~rootfs base] initialises the [rootfs] directory by
       fetching and extracting the [base] image.
       Returns the image's environment.

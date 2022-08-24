@@ -1,16 +1,16 @@
 (* Collect log data from builds, for unit-tests. *)
 
-open Lwt.Infix
+open Eio
 
 type t = {
   label : string;
   buf : Buffer.t;
-  cond : unit Lwt_condition.t;
+  cond : Eio.Condition.t;
 }
 
 let create label =
   let buf = Buffer.create 1024 in
-  let cond = Lwt_condition.create () in
+  let cond = Condition.create () in
   { label; buf; cond }
 
 let add t tag x =
@@ -20,7 +20,7 @@ let add t tag x =
     | `Note -> Buffer.add_string t.buf (";" ^ x ^ "\n")
     | `Output -> Buffer.add_string t.buf x
   end;
-  Lwt_condition.broadcast t.cond ()
+  Condition.broadcast t.cond
 
 let contents t =
   Buffer.contents t.buf
@@ -36,13 +36,13 @@ let remove_notes x =
 
 let rec await t expect =
   let got = Buffer.contents t.buf |> remove_notes in
-  if got = expect then Lwt.return_unit
+  if got = expect then ()
   else if String.length got > String.length expect then (
     Fmt.failwith "Log expected %S but got %S" expect got
   ) else (
     let common = min (String.length expect) (String.length got) in
     if String.sub got 0 common = String.sub expect 0 common then (
-      Lwt_condition.wait t.cond >>= fun () ->
+      Condition.await t.cond;
       await t expect
     ) else (
       Fmt.failwith "Log expected %S but got %S" expect got

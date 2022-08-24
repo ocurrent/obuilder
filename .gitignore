@@ -2,3 +2,7 @@
 _build
 _opam
 .vscode
+
+tar.*
+lwt_eio.*
+eioio

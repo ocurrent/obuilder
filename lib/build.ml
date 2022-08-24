@@ -1,8 +1,8 @@
-open Lwt.Infix
+open Eio
 open Sexplib.Std
 
 let ( / ) = Filename.concat
-let ( >>!= ) = Lwt_result.bind
+let ( >>!= ) = Result.bind
 
 let hostname = "builder"
 
@@ -48,6 +48,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
   type t = {
     store : Store.t;
     sandbox : Sandbox.t;
+    process : Process.t;
+    dir : Dir.t;
   }
 
   (* Inputs to run that should affect the hash. i.e. if anything in here changes
@@ -71,26 +73,31 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       |> Sha256.to_hex
     in
     let { base; workdir; user; env; cmd; shell; network; mount_secrets } = run_input in
-    Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
+    Switch.run @@ fun sw ->
+    let r = 
+      Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
         let to_release = ref [] in
-        Lwt.finalize
+        Fun.protect
           (fun () ->
-             cache |> Lwt_list.map_s (fun { Obuilder_spec.Cache.id; target; buildkit_options = _ } ->
-                 Store.cache ~user t.store id >|= fun (src, release) ->
-                 to_release := release :: !to_release;
-                 { Config.Mount.src; dst = target }
-               )
-             >>= fun mounts ->
+            let mounts =  
+              Fiber.map (fun { Obuilder_spec.Cache.id; target; buildkit_options = _ } ->
+                  let src, release = Store.cache ~user t.store id in
+                  to_release := release :: !to_release;
+                  { Config.Mount.src; dst = target }
+                ) cache
+             in
              let argv = shell @ [cmd] in
              let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~mount_secrets ~network in
-             Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
-             Lwt_unix.close close_me >>= fun () ->
-             Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp
+             Os.with_pipe_to_child ~sw @@ fun ~r:stdin ~w:close_me ->
+             (* Flow.close close_me; *)
+             let stdin = (stdin :> <Flow.source; Eio_unix.unix_fd>) in
+             Sandbox.run ~sw ~dir:t.dir ~process:t.process ~cancelled ~stdin ~log t.sandbox config result_tmp
           )
-          (fun () ->
-             !to_release |> Lwt_list.iter_s (fun f -> f ())
+          ~finally:(fun () ->
+             !to_release |> Fiber.iter (fun f -> f ())
           )
       )
+          in Logs.info (fun f -> f "BUILD"); r
 
   type copy_details = {
     base : S.id;
@@ -117,20 +124,20 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     let dst = if Filename.is_relative dst then workdir / dst else dst in
     begin
       match from with
-      | `Context -> Lwt_result.return src_dir
+      | `Context -> Ok src_dir
       | `Build name ->
         match Scope.find_opt name scope with
         | None -> Fmt.failwith "Unknown build %S" name   (* (shouldn't happen; gets caught earlier) *)
         | Some id ->
           match Store.result t.store id with
           | None ->
-            Lwt_result.fail (`Msg (Fmt.str "Build result %S not found" id))
+            Error (`Msg (Fmt.str "Build result %S not found" id))
           | Some dir ->
-            Lwt_result.return (dir / "rootfs")
+            Ok (dir / "rootfs")
     end >>!= fun src_dir ->
     let src_manifest = sequence (List.map (Manifest.generate ~exclude ~src_dir) src) in
     match Result.bind src_manifest (to_copy_op ~dst) with
-    | Error _ as e -> Lwt.return e
+    | Error _ as e -> e
     | Ok op ->
       let details = {
         base;
@@ -139,6 +146,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       } in
       (* Fmt.pr "COPY: %a@." Sexplib.Sexp.pp_hum (sexp_of_copy_details details); *)
       let id = Sha256.to_hex (Sha256.string (Sexplib.Sexp.to_string (sexp_of_copy_details details))) in
+      Switch.run @@ fun sw ->
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
           let argv = ["tar"; "-xf"; "-"] in
           let config = Config.v
@@ -151,24 +159,25 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
               ~mounts:[]
               ~network:[]
           in
-          Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
-          let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
-          let send =
+          Os.with_pipe_to_child ~sw @@ fun ~r:from_us ~w:to_untar ->
+          let to_untar = Lwt_unix.of_unix_file_descr (Eio_unix.FD.peek to_untar) in
+          let result = Sandbox.run ~sw ~dir:t.dir ~process:t.process ~cancelled ~stdin:(from_us :> <Flow.source; Eio_unix.unix_fd>) ~log t.sandbox config result_tmp in
+          let () =
             (* If the sending thread finishes (or fails), close the writing socket
                immediately so that the tar process finishes too. *)
-            Lwt.finalize
+            Fun.protect
               (fun () ->
                  match op with
                  | `Copy_items (src_manifest, dst_dir) ->
-                   Tar_transfer.send_files ~src_dir ~src_manifest ~dst_dir ~to_untar ~user
+                   Lwt_eio.Promise.await_lwt 
+                   (Tar_transfer.send_files ~src_dir ~src_manifest ~dst_dir ~to_untar ~user)
                  | `Copy_item (src_manifest, dst) ->
+                  Lwt_eio.Promise.await_lwt @@
                    Tar_transfer.send_file ~src_dir ~src_manifest ~dst ~to_untar ~user
               )
-              (fun () -> Lwt_unix.close to_untar)
+              ~finally:(fun () -> Lwt_eio.Promise.await_lwt @@ Lwt_unix.close to_untar)
           in
-          proc >>= fun result ->
-          send >>= fun () ->
-          Lwt.return result
+          result
         )
 
   let pp_op ~(context:Context.t) f op =
@@ -195,7 +204,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       (resolved_secret :: result) ) (Ok []) secrets
 
   let rec run_steps t ~(context:Context.t) ~base = function
-    | [] -> Lwt_result.return base
+    | [] -> Ok base
     | op :: ops ->
       context.log `Heading Fmt.(str "%a" (pp_op ~context) op);
       let k = run_steps t ops in
@@ -209,7 +218,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
           resolve_secrets secrets mount_secrets |> Result.map @@ fun mount_secrets ->
           (switch, { base; workdir; user; env; cmd; shell; network; mount_secrets }, log)
         in
-        Lwt.return result >>!= fun (switch, run_input, log) ->
+        result >>!= fun (switch, run_input, log) ->
         run t ~switch ~log ~cache run_input >>!= fun base ->
         k ~base ~context
       | `Copy x ->
@@ -221,41 +230,43 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       | `Shell shell ->
         k ~base ~context:{context with shell}
 
-  let get_base t ~log base =
+  let get_base t ~sw ~log base =
     log `Heading (Fmt.str "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
     let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
-        Log.info (fun f -> f "Base image not present; importing %S..." base);
+        Log.info (fun f -> f "Base image not present; importing %S...%S" base tmp);
         let rootfs = tmp / "rootfs" in
-        Os.sudo ["mkdir"; "--mode=755"; "--"; rootfs] >>= fun () ->
-        Fetch.fetch ~log ~rootfs base >>= fun env ->
-        Os.write_file ~path:(tmp / "env")
-          (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
-        Lwt_result.return ()
+        Os.sudo ~sw ~process:t.process ["mkdir"; "--mode=755"; "--"; rootfs];
+        let env = Fetch.fetch ~sw ~log ~rootfs ~process:t.process base in
+        Os.write_file ~dir:t.dir ~path:(tmp / "env")
+          (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env}));
+        Ok ()
       )
     >>!= fun id ->
     let path = Option.get (Store.result t.store id) in
     let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
-    Lwt_result.return (id, env)
+    Ok (id, env)
 
-  let rec build ~scope t context { Obuilder_spec.child_builds; from = base; ops } =
+  let rec build ~scope ~dir t context { Obuilder_spec.child_builds; from = base; ops } = 
     let rec aux context = function
-      | [] -> Lwt_result.return context
+      | [] ->
+        Ok context
       | (name, child_spec) :: child_builds ->
         context.Context.log `Heading Fmt.(str "(build %S ...)" name);
-        build ~scope t context child_spec >>!= fun child_result ->
+        build ~dir ~scope t context child_spec >>!= fun child_result ->
         context.Context.log `Note Fmt.(str "--> finished %S" name);
         let context = Context.with_binding name child_result context in
         aux context child_builds
     in
     aux context child_builds >>!= fun context ->
-    get_base t ~log:context.Context.log base >>!= fun (id, env) ->
+    Switch.run @@ fun sw ->
+    get_base t ~sw ~log:context.Context.log base >>!= fun (id, env) ->
     let context = { context with env = context.env @ env } in
     run_steps t ~context ~base:id ops
 
   let build t context spec =
-    let r = build ~scope:[] t context spec in
-    (r : (string, [ `Cancelled | `Msg of string ]) Lwt_result.t :> (string, [> `Cancelled | `Msg of string ]) Lwt_result.t)
+    let r = try build ~dir:t.dir ~scope:[] t context spec with Cancel.Cancelled _ -> Error (`Cancelled) in
+    (r : (string, [ `Cancelled | `Msg of string ]) result :> (string, [> `Cancelled | `Msg of string ]) result)
 
   let delete ?log t id =
     Store.delete ?log t.store id
@@ -269,39 +280,36 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     | `Output -> Buffer.add_string buffer x
 
   let healthcheck ?(timeout=30.0) t =
-    Os.with_pipe_from_child (fun ~r ~w ->
+    Switch.run @@ fun sw ->
+    Os.with_pipe_from_child ~sw (fun ~r:_ ~w ->
         let pp f = Fmt.string f "docker version" in
-        let result = Os.exec_result ~pp ~stdout:`Dev_null ~stderr:(`FD_move_safely w) ["docker"; "version"] in
-        let r = Lwt_io.(of_fd ~mode:input) r ~close:Lwt.return in
-        Lwt_io.read r >>= fun err ->
-        result >>= function
-        | Ok () -> Lwt_result.return ()
-        | Error (`Msg m) -> Lwt_result.fail (`Msg (Fmt.str "%s@.%s" m (String.trim err)))
+        let result = Os.exec_result ~sw ~process:t.process ~pp ~stderr:(w :> Flow.sink) ["docker"; "version"] in
+        result (* TODO: error message *)
       ) >>!= fun () ->
     let buffer = Buffer.create 1024 in
     let log = log_to buffer in
     (* Get the base image first, before starting the timer. *)
-    let switch = Lwt_switch.create () in
-    let context = Context.v ~switch ~log ~src_dir:"/tmp" () in
-    get_base t ~log healthcheck_base >>= function
-    | Error (`Msg _) as x -> Lwt.return x
+    let context = Context.v ~log ~src_dir:"/tmp" () in
+    Switch.run @@ fun sw ->
+    get_base t ~sw ~log healthcheck_base |> function
+    | Error (`Msg _) as x -> x
     | Error `Cancelled -> failwith "Cancelled getting base image (shouldn't happen!)"
     | Ok (id, env) ->
       let context = { context with env } in
       (* Start the timer *)
-      Lwt.async (fun () ->
-          Lwt_unix.sleep timeout >>= fun () ->
-          Lwt_switch.turn_off switch
+      Fiber.fork ~sw (fun () ->
+          Eio_unix.sleep timeout;
+          Switch.fail sw (Failure "Timeout!")
         );
-      run_steps t ~context ~base:id healthcheck_ops >>= function
-      | Ok id -> Store.delete t.store id >|= Result.ok
+      run_steps t ~context ~base:id healthcheck_ops |> function
+      | Ok id -> Store.delete t.store id |> Result.ok
       | Error (`Msg msg) as x ->
         let log = String.trim (Buffer.contents buffer) in
-        if log = "" then Lwt.return x
-        else Lwt.return (Fmt.error_msg "%s@.%s" msg log)
-      | Error `Cancelled -> Lwt.return (Fmt.error_msg "Timeout running healthcheck")
+        if log = "" then x
+        else (Fmt.error_msg "%s@.%s" msg log)
+      | Error `Cancelled -> (Fmt.error_msg "Timeout running healthcheck")
 
-  let v ~store ~sandbox =
-    let store = Store.wrap store in
-    { store; sandbox }
+  let v ~store ~sandbox ~process ~dir =
+    let store = Store.wrap dir store in
+    { store; sandbox; process; dir }
 end

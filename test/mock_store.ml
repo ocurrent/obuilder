@@ -1,4 +1,4 @@
-open Lwt.Infix
+open Eio
 
 module Os = Obuilder.Os
 
@@ -6,11 +6,12 @@ let ( / ) = Filename.concat
 
 type t = {
   dir : string;
-  cond : unit Lwt_condition.t;
+  cond : Condition.t;
+  process : Process.t;
   mutable builds : int;
 }
 
-let delay_store = ref Lwt.return_unit
+let delay_store = ref (Promise.create_resolved ())
 
 let rec waitpid_non_intr pid =
   try Unix.waitpid [] pid
@@ -23,8 +24,9 @@ let rm_r path =
   | _ -> failwith "rm -r failed!"
 
 let build t ?base ~id fn =
+  Switch.run @@ fun sw ->
   t.builds <- t.builds + 1;
-  Lwt.finalize
+  Fun.protect
     (fun () ->
        base |> Option.iter (fun base -> assert (not (String.contains base '/')));
        let dir = t.dir / id in
@@ -32,26 +34,26 @@ let build t ?base ~id fn =
        let tmp_dir = dir ^ "-tmp" in
        assert (not (Sys.file_exists tmp_dir));
        begin match base with
-         | None -> Os.ensure_dir tmp_dir; Lwt.return_unit
+         | None -> Os.ensure_dir tmp_dir
          | Some base ->
-           Lwt_process.exec ("", [| "cp"; "-r"; t.dir / base; tmp_dir |]) >>= function
-           | Unix.WEXITED 0 -> Lwt.return_unit
+           match Process.(status @@ spawn ~sw t.process "cp" [ "cp"; "-r"; t.dir / base; tmp_dir ]) with
+           | Process.Exited 0 -> ()
            | _ -> failwith "cp failed!"
-       end >>= fun () ->
-       fn tmp_dir >>= fun r ->
-       !delay_store >>= fun () ->
+       end;
+       (* ignore (Sys.readdir (tmp_dir / ".." / "..") |> Array.to_list |> String.concat "-" |> failwith); *)
+       let r = fn tmp_dir in
+       Promise.await !delay_store;
        match r with
        | Ok () ->
          Unix.rename tmp_dir dir;
-         Lwt_result.return ()
+         Ok ()
        | Error _ as e ->
          rm_r tmp_dir;
-         Lwt.return e
+         e
     )
-    (fun () ->
+    ~finally:(fun () ->
        t.builds <- t.builds - 1;
-       Lwt_condition.broadcast t.cond ();
-       Lwt.return_unit
+       Condition.broadcast t.cond
     )
 
 let state_dir t = t.dir / "state"
@@ -62,36 +64,47 @@ let result t id =
   let dir = path t id in
   match Os.check_dir dir with
   | `Present -> Some dir
-  | `Missing -> None
+  | `Missing ->
+    None
 
 let rec finish t =
   if t.builds > 0 then (
     Logs.info (fun f -> f "Waiting for %d builds to finish" t.builds);
-    Lwt_condition.wait t.cond >>= fun () ->
+    Condition.await t.cond;
     finish t
-  ) else Lwt.return_unit
+  )
 
-let with_store fn =
-  Lwt_io.with_temp_dir ~prefix:"mock-store-" @@ fun dir ->
-  let t = { dir; cond = Lwt_condition.create (); builds = 0 } in
+let prng = lazy (Random.State.make_self_init ())
+
+let temp_file_name temp_dir prefix suffix =
+  let rnd = Random.State.int (Lazy.force prng) 0x1000000 in
+  Filename.concat temp_dir (Printf.sprintf "%s%06x%s" prefix rnd suffix)
+
+let with_store ~dir ~process fn =
+  let tmpdir =
+    temp_file_name (Filename.get_temp_dir_name ()) "obuilder-runc-" ""
+  in
+  (try Dir.mkdir ~perm:0o700 dir tmpdir with Dir.Already_exists _ -> failwith "YIKE");
+  Dir.with_open_dir dir tmpdir @@ fun _tmp ->
+  let t = { dir = tmpdir; process; cond = Condition.create (); builds = 0 } in
   Obuilder.Os.ensure_dir (state_dir t);
-  Lwt.finalize
+  Fun.protect
     (fun () -> fn t)
-    (fun () -> finish t)
+    ~finally:(fun () -> finish t)
 
 let delete t id =
   match result t id with
-  | Some path -> rm_r path; Lwt.return_unit
-  | None -> Lwt.return_unit
+  | Some path -> rm_r path
+  | None -> ()
 
-let find ~output t =
+let find ~dir ~output t =
   let rec aux = function
-    | [] -> Lwt.return_none
+    | [] -> None
     | x :: xs ->
       let output_path = t.dir / x / "rootfs" / "output" in
       if Sys.file_exists output_path then (
-        Lwt_io.(with_file ~mode:input) output_path Lwt_io.read >>= fun data ->
-        if data = output then Lwt.return_some x
+        let data = Dir.load dir output_path in 
+        if data = output then Some x
         else aux xs
       ) else aux xs
   in
@@ -102,4 +115,4 @@ let cache ~user:_ _t _ = assert false
 
 let delete_cache _t _ = assert false
 
-let complete_deletes _t = Lwt.return_unit
+let complete_deletes _t = ()

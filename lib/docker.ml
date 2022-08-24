@@ -1,9 +1,9 @@
-open Lwt.Infix
-
-let export_env base : Config.env Lwt.t =
-  Os.pread ["docker"; "image"; "inspect";
-            "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|};
-            "--"; base] >|= fun env ->
+let export_env ~sw ~process base : Config.env =
+  let env =
+    Os.pread ~sw ~process ["docker"; "image"; "inspect";
+              "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|};
+              "--"; base] 
+  in
   String.split_on_char '\x00' env
   |> List.filter_map (function
       | "\n" -> None
@@ -13,25 +13,25 @@ let export_env base : Config.env Lwt.t =
         | Some _ as pair -> pair
     )
 
-let with_container ~log base fn =
-  Os.with_pipe_from_child (fun ~r ~w ->
+let with_container ~sw ~process ~log base fn =
+  let cid = Os.with_pipe_from_child ~sw (fun ~r ~w ->
       (* We might need to do a pull here, so log the output to show progress. *)
-      let copy = Build_log.copy ~src:r ~dst:log in
-      Os.pread ~stderr:(`FD_move_safely w) ["docker"; "create"; "--"; base] >>= fun cid ->
-      copy >|= fun () ->
+      (* let copy () = Build_log.copy ~src:(r :> <Eio.Flow.source; Eio_unix.unix_fd>) ~dst:log in *)
+      (* ignore (failwith "with container"); *)
+      let cid = Os.pread ~sw ~process ~stderr:(w :> Eio.Flow.sink) ["docker"; "create"; "--"; base] in
+      (* copy (); *)
       String.trim cid
-    ) >>= fun cid ->
-  Lwt.finalize
+    )
+  in
+  Fun.protect
     (fun () -> fn cid)
-    (fun () -> Os.exec ~stdout:`Dev_null ["docker"; "rm"; "--"; cid])
+    ~finally:(fun () -> Os.exec ~sw ~process ["docker"; "rm"; "--"; cid])
 
 
-let fetch ~log ~rootfs base =
-  with_container ~log base (fun cid ->
-    Os.with_pipe_between_children @@ fun ~r ~w ->
-    let exporter = Os.exec ~stdout:(`FD_move_safely w) ["docker"; "export"; "--"; cid] in
-    let tar = Os.sudo ~stdin:(`FD_move_safely r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
-    exporter >>= fun () ->
-    tar
-  ) >>= fun () ->
-  export_env base
+let fetch ~sw ~process ~log ~rootfs base =
+    with_container ~sw ~process ~log base (fun cid ->
+      Os.with_pipe_between_children ~sw @@ fun ~r ~w ->
+      Os.exec ~sw ~process ~stdout:(w :> Eio.Flow.sink) ["docker"; "export"; "--"; cid];
+      Os.sudo ~sw ~process ~stdin:(r :> Eio.Flow.source) ["tar"; "-C"; rootfs; "-xf"; "-"]
+    );
+    export_env ~sw ~process base

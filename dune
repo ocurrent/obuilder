@@ -3,4 +3,6 @@
   (name main)
   (package obuilder)
   (preprocess (pps ppx_deriving.show))
-  (libraries lwt lwt.unix fmt fmt.cli fmt.tty tar-unix obuilder cmdliner logs.fmt logs.cli))
+  (libraries eio_main fmt fmt.cli fmt.tty tar-unix obuilder cmdliner logs.fmt logs.cli))
+
+(vendored_dirs lwt_eio.0.2 eioio tar.2.0.1)

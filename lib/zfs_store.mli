@@ -2,5 +2,5 @@
 
 include S.STORE
 
-val create : pool:string -> t Lwt.t
+val create : process:Eio.Process.t -> pool:string -> t
 (** [create ~pool] is a new store in zfs pool [pool]. *)

@@ -32,8 +32,8 @@ module Test(Store : S.STORE) = struct
   let test_store t =
     assert (Store.result t "unknown" = None);
     (* Build without a base *)
-    Store.delete t "base" >>= fun () ->
-    Store.build t ~id:"base" (fun tmpdir -> write ~path:(tmpdir / "output") "ok" >|= Result.ok) >>= fun r ->
+    Store.delete t "base";
+    let r = Store.build t ~id:"base" (fun tmpdir -> write ~path:(tmpdir / "output") "ok" >|= Result.ok) in
     assert (r = Ok ());
     assert_output "ok" t "base";
     (* Build with a base *)
@@ -55,7 +55,7 @@ module Test(Store : S.STORE) = struct
     assert (Store.result t "fail" = None);
     Lwt.return_unit
 
-  let test_cache t =
+  let test_cache ~sw ~process t =
     let uid = Unix.getuid () in
     let gid = Unix.getgid () in
     let user = { Spec.uid = 123; gid = 456 } in
@@ -67,7 +67,7 @@ module Test(Store : S.STORE) = struct
     assert ((Unix.lstat c).Unix.st_uid = 123);
     assert ((Unix.lstat c).Unix.st_gid = 456);
     let user = { Spec.uid; gid } in
-    Os.exec ["sudo"; "chown"; Printf.sprintf "%d:%d" uid gid; "--"; c] >>= fun () ->
+    Os.exec ~sw ~process ["sudo"; "chown"; Printf.sprintf "%d:%d" uid gid; "--"; c];
     assert (Sys.readdir c = [| |]);
     write ~path:(c / "data") "v1" >>= fun () ->
     r () >>= fun () ->
@@ -209,12 +209,12 @@ module Test(Store : S.STORE) = struct
     aux ()
 end
 
-let stress spec conf =
+let stress ~sw ~process spec conf =
   Lwt_main.run begin
     spec >>= fun (Store_spec.Store ((module Store), store)) ->
     let module T = Test(Store) in
     T.test_store store >>= fun () ->
-    T.test_cache store >>= fun () ->
+    T.test_cache ~sw ~process store >>= fun () ->
     T.stress_builds store conf >>= fun () ->
     T.prune store conf
   end

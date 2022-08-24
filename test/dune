@@ -2,6 +2,6 @@
   (name test)
   (package obuilder)
   (deps base.tar)
-  (libraries alcotest-lwt obuilder str logs.fmt))
+  (libraries eio eio_main alcotest-lwt obuilder str logs.fmt))
 
 (dirs :standard \ test1)

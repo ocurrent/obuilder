@@ -1,7 +1,4 @@
 (** Configuration information to set up a store. *)
-
-open Lwt.Infix
-
 type t = [
   | `Btrfs of string  (* Path *)
   | `Zfs of string    (* Pool *)
@@ -24,18 +21,18 @@ let pp f = function
 
 type store = Store : (module S.STORE with type t = 'a) * 'a -> store
 
-let to_store mode = function
+let to_store ~process mode = function
   | `Btrfs path ->
-    Btrfs_store.create path >|= fun store ->
+    let store = Btrfs_store.create process path in
     Store ((module Btrfs_store), store)
   | `Zfs pool ->
-    Zfs_store.create ~pool >|= fun store ->
+    let store = Zfs_store.create ~process ~pool in
     Store ((module Zfs_store), store)
   | `Rsync path ->
-    Rsync_store.create ~path ~mode () >|= fun store ->
+    let store = Rsync_store.create ~process ~path ~mode () in
     Store ((module Rsync_store), store)
 
-let cmdliner =
+let cmdliner process =
   let open Cmdliner in
   let store_t = Arg.conv (of_string, pp) in
   let store =
@@ -59,4 +56,4 @@ let cmdliner =
       ~docv:"RSYNC_MODE"
       ["rsync-mode"]
   in
-  Term.(const to_store $ rsync_mode $ store)
+  Term.(const (to_store ~process) $ rsync_mode $ store)
