@@ -27,4 +27,6 @@ module Make (Raw : S.STORE) : sig
     (string * (unit -> unit Lwt.t)) Lwt.t
 
   val wrap : Raw.t -> t
+
+  val unwrap : t -> unit
 end
