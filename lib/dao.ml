@@ -90,3 +90,17 @@ let lru t ~before n =
   |> List.map @@ function
   | Sqlite3.Data.[ TEXT id ] -> id
   | x -> Fmt.failwith "Invalid row: %a" Db.dump_row x
+
+let close t =
+  Sqlite3.finalize t.begin_transaction |> Db.or_fail ~cmd:"finalize";
+  Sqlite3.finalize t.commit |> Db.or_fail ~cmd:"finalize";
+  Sqlite3.finalize t.rollback |> Db.or_fail ~cmd:"finalize";
+  Sqlite3.finalize t.add |> Db.or_fail ~cmd:"finalize";
+  Sqlite3.finalize t.set_used |> Db.or_fail ~cmd:"finalize";
+  Sqlite3.finalize t.update_rc |> Db.or_fail ~cmd:"finalize";
+  Sqlite3.finalize t.exists |> Db.or_fail ~cmd:"finalize";
+  Sqlite3.finalize t.children |> Db.or_fail ~cmd:"finalize";
+  Sqlite3.finalize t.delete |> Db.or_fail ~cmd:"finalize";
+  Sqlite3.finalize t.lru |> Db.or_fail ~cmd:"finalize";
+  Sqlite3.finalize t.parent |> Db.or_fail ~cmd:"finalize";
+  Db.close t.db

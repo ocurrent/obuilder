@@ -305,4 +305,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
   let v ~store ~sandbox =
     let store = Store.wrap store in
     { store; sandbox }
+
+  let finish t =
+    Store.unwrap t.store;
+    Lwt.return_unit
 end
