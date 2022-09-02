@@ -26,6 +26,7 @@ let with_config fn =
   Mock_store.with_store @@ fun store ->
   let sandbox = Mock_sandbox.create () in
   let builder = B.v ~store ~sandbox in
+  Fun.flip Lwt.finalize (fun () -> B.finish builder) @@ fun () ->
   let src_dir = Mock_store.state_dir store / "src" in
   Os.ensure_dir src_dir;
   fn ~src_dir ~store ~sandbox ~builder

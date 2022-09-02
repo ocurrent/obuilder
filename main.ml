@@ -30,6 +30,7 @@ let read_whole_file path =
 let build () store spec conf src_dir secrets =
   Lwt_main.run begin
     create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+    Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     let spec =
       try Obuilder.Spec.t_of_sexp (Sexplib.Sexp.load_sexp spec)
       with Failure msg ->
@@ -53,6 +54,7 @@ let build () store spec conf src_dir secrets =
 let healthcheck () store conf =
   Lwt_main.run begin
     create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+    Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     Builder.healthcheck builder >|= function
     | Error (`Msg m) ->
       Fmt.epr "Healthcheck failed: %s@." m;
@@ -64,6 +66,7 @@ let healthcheck () store conf =
 let delete () store conf id =
   Lwt_main.run begin
     create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+    Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
   end
 

@@ -173,4 +173,7 @@ module Make (Raw : S.STORE) = struct
     let db = Db.of_dir (db_dir / "db.sqlite") in
     let dao = Dao.create db in
     { raw; dao; in_progress = Builds.empty }
+
+  let unwrap t =
+    Dao.close t.dao
 end
