@@ -144,6 +144,7 @@ module Make (Raw : S.STORE) = struct
 
   let prune_batch ?(log=ignore) t ~before limit =
     let items = Dao.lru t.dao ~before limit in
+    let items = List.filter (fun id -> not (Builds.mem id t.in_progress)) items in
     let n = List.length items in
     Log.info (fun f -> f "Pruning %d items (of %d requested)" n limit);
     items |> Lwt_list.iter_s (fun id ->
