@@ -140,7 +140,11 @@ module Make (Raw : S.STORE) = struct
         Raw.delete t.raw id >|= fun () ->
         Dao.delete t.dao id
     in
-    aux id
+    if Builds.mem id t.in_progress then begin
+      Log.warn (fun f -> f "Trying to delete ID %S but it is still in progress!" id);
+      Lwt.return_unit (* Ignore the deletion if the job is still in progress *)
+    end else
+      aux id
 
   let prune_batch ?(log=ignore) t ~before limit =
     let items = Dao.lru t.dao ~before limit in
