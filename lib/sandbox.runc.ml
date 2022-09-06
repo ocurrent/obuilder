@@ -108,7 +108,9 @@ module Json_config = struct
 
   let make {Config.cwd; argv; hostname; user; env; mounts; network; mount_secrets} t ~config_dir ~results_dir : Yojson.Safe.t =
     let user =
-      let { Obuilder_spec.uid; gid } = user in
+      let { Obuilder_spec.uid; gid } = match user with
+        | `Unix user -> user
+        | `Windows _ -> assert false (* runc not supported on Windows *) in
       `Assoc [
         "uid", `Int uid;
         "gid", `Int gid;

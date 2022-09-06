@@ -57,7 +57,7 @@ module Test(Store : S.STORE) = struct
   let test_cache t =
     let uid = Unix.getuid () in
     let gid = Unix.getgid () in
-    let user = { Spec.uid = 123; gid = 456 } in
+    let user = `Unix { Spec.uid = 123; gid = 456 } in
     let id = "c1" in
     (* Create a new cache *)
     Store.delete_cache t id >>= fun x ->
@@ -65,7 +65,7 @@ module Test(Store : S.STORE) = struct
     Store.cache ~user t id >>= fun (c, r) ->
     assert ((Unix.lstat c).Unix.st_uid = 123);
     assert ((Unix.lstat c).Unix.st_gid = 456);
-    let user = { Spec.uid; gid } in
+    let user = `Unix { Spec.uid; gid } in
     Os.exec ["sudo"; "chown"; Printf.sprintf "%d:%d" uid gid; "--"; c] >>= fun () ->
     assert (Sys.readdir c = [| |]);
     write ~path:(c / "data") "v1" >>= fun () ->
