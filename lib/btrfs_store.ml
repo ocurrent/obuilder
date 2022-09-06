@@ -165,8 +165,11 @@ let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   (* Create writeable clone. *)
   let gen = cache.gen in
   Btrfs.subvolume_snapshot `RW ~src:snapshot tmp >>= fun () ->
-  let { Obuilder_spec.uid; gid } = user in
-  Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; tmp] >>= fun () ->
+  begin match user with
+    | `Unix { Obuilder_spec.uid; gid } ->
+      Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; tmp]
+    | `Windows _ -> assert false (* btrfs not supported on Windows*)
+  end >>= fun () ->
   let release () =
     Lwt_mutex.with_lock cache.lock @@ fun () ->
     begin

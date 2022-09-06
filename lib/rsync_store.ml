@@ -3,7 +3,7 @@
    efficient. *)
 open Lwt.Infix
 
-(* The caching approach (and much of the code) is copied from the btrfs 
+(* The caching approach (and much of the code) is copied from the btrfs
    implementation *)
 type cache = {
   lock : Lwt_mutex.t;
@@ -144,7 +144,9 @@ let cache ~user t name =
   end >>= fun () ->
   (* Create writeable clone. *)
   let gen = cache.gen in
-  let { Obuilder_spec.uid; gid } = user in
+  let { Obuilder_spec.uid; gid } = match user with
+    | `Unix user -> user
+    | `Windows _ -> assert false (* rsync not supported on Windows *) in
   Rsync.copy_children ~chown:(Printf.sprintf "%d:%d" uid gid) ~src:snapshot ~dst:tmp () >>= fun () ->
   let release () =
       Lwt_mutex.with_lock cache.lock @@ fun () ->

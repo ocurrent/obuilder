@@ -15,21 +15,27 @@ let pp_wrap =
     Fmt.(list ~sep:(any " \\@\n    ") (using String.trim string))
 
 let pp_cache ~ctx f { Cache.id; target; buildkit_options } =
+  let buildkit_options = match ctx.user with
+    | `Unix {uid; gid = _} -> ("uid", string_of_int uid) :: buildkit_options
+    | `Windows _ -> assert false
+  in
   let buildkit_options =
     ("--mount=type", "cache") ::
     ("id", id) ::
     ("target", target) ::
-    ("uid", string_of_int ctx.user.uid) ::
     buildkit_options
   in
   Fmt.pf f "%a" Fmt.(list ~sep:(any ",") pp_pair) buildkit_options
 
 let pp_mount_secret ~ctx f { Secret.id; target; buildkit_options } =
+  let buildkit_options = match ctx.user with
+    | `Unix {uid; gid = _} -> ("uid", string_of_int uid) :: buildkit_options
+    | `Windows _ -> assert false
+  in
   let buildkit_options =
     ("--mount=type", "secret") ::
     ("id", id) ::
     ("target", target) ::
-    ("uid", string_of_int ctx.user.uid) ::
     buildkit_options
   in
   Fmt.pf f "%a" Fmt.(list ~sep:(any ",") pp_pair) buildkit_options
@@ -48,8 +54,9 @@ let pp_copy ~ctx f { Spec.from; src; dst; exclude = _ } =
   let chown =
     if ctx.user = Spec.root then None
     else (
-      let { Spec.uid; gid } = ctx.user in
-      Some (Printf.sprintf "%d:%d" uid gid)
+      match ctx.user with
+      | `Unix { uid; gid } -> Some (Printf.sprintf "%d:%d" uid gid)
+      | `Windows _ -> None
     )
   in
   Fmt.pf f "COPY %a%a%a %s"
@@ -79,7 +86,8 @@ let pp_op ~buildkit ctx f : Spec.op -> ctx = function
   | `Run x when buildkit      -> pp_run ~ctx f x; ctx
   | `Run x                    -> pp_run ~ctx f { x with cache = []; secrets = []}; ctx
   | `Copy x                   -> pp_copy ~ctx f x; ctx
-  | `User ({ uid; gid } as u) -> Fmt.pf f "USER %d:%d" uid gid; { user = u }
+  | `User (`Unix { uid; gid } as u) -> Fmt.pf f "USER %d:%d" uid gid; { user = u }
+  | `User (`Windows { name } as u) -> Fmt.pf f "USER %s" name; { user = u }
   | `Env (k, v)               -> Fmt.pf f "ENV %s=\"%s\"" k (quote ~escape:'\\' v); ctx
 
 let rec convert ~buildkit f (name, { Spec.child_builds; from; ops }) =
