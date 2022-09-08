@@ -93,3 +93,27 @@ jobs:
           sudo wget https://github.com/opencontainers/runc/releases/download/$RUNC_VERSION/runc.amd64 -O /usr/local/bin/runc
 
       - run: ./.run-gha-tests.sh rsync
+
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+        ocaml-compiler:
+          - 4.14.x
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Use OCaml ${{ matrix.ocaml-compiler }}
+        uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
+
+      - run: opam install . --deps-only --with-test
+
+      - run: opam exec -- dune build
