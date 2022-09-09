@@ -24,7 +24,7 @@ let pp f = function
 
 type store = Store : (module S.STORE with type t = 'a) * 'a -> store
 
-let to_store mode = function
+let to_store rsync_mode = function
   | `Btrfs path ->
     Btrfs_store.create path >|= fun store ->
     Store ((module Btrfs_store), store)
@@ -32,31 +32,42 @@ let to_store mode = function
     Zfs_store.create ~path >|= fun store ->
     Store ((module Zfs_store), store)
   | `Rsync path ->
-    Rsync_store.create ~path ~mode () >|= fun store ->
+    Rsync_store.create ~path ~mode:rsync_mode () >|= fun store ->
     Store ((module Rsync_store), store)
 
+open Cmdliner
+
+let store_t = Arg.conv (of_string, pp)
+
+let store names =
+  Arg.opt Arg.(some store_t) None @@
+  Arg.info
+    ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path) or $(b,zfs:pool) for the OBuilder cache."
+    ~docv:"STORE"
+    names
+
+let rsync_mode =
+  let options =
+    [("copy", Rsync_store.Copy);
+     ("hardlink", Rsync_store.Hardlink);
+     ("hardlink_unsafe", Rsync_store.Hardlink_unsafe)]
+  in
+  Arg.value @@
+  Arg.opt (Arg.enum options) Rsync_store.Copy @@
+  Arg.info
+    ~doc:(Printf.sprintf "Optimize for speed or low disk usage. $(docv) must be one of %s."
+            (Arg.doc_alts_enum options))
+    ~docv:"RSYNC_MODE"
+    ["rsync-mode"]
+
+(** A Cmdliner term where the store is required. *)
 let cmdliner =
-  let open Cmdliner in
-  let store_t = Arg.conv (of_string, pp) in
-  let store =
-    Arg.required @@
-    Arg.opt Arg.(some store_t) None @@
-    Arg.info
-      ~doc:"$(b,btrfs:/path) or $(b,rsync:/path) or $(b,zfs:pool) for build cache."
-      ~docv:"STORE"
-      ["store"]
+  Term.(const to_store $ rsync_mode $ (Arg.required @@ (store ["store"])))
+
+(** A Cmdliner term where the store is optional. *)
+let cmdliner_opt =
+  let make rsync_mode = function
+    | None -> None
+    | Some store -> Some (to_store rsync_mode store)
   in
-  let rsync_mode =
-    let options =
-      [("copy", Rsync_store.Copy);
-       ("hardlink", Rsync_store.Hardlink);
-       ("hardlink_unsafe", Rsync_store.Hardlink_unsafe)]
-    in
-    Arg.value @@
-    Arg.opt (Arg.enum options) Rsync_store.Copy @@
-    Arg.info
-      ~doc:"$(b,copy) or $(b,hardlink), to optimize for speed or low disk usage."
-      ~docv:"RSYNC_MODE"
-      ["rsync-mode"]
-  in
-  Term.(const to_store $ rsync_mode $ store)
+  Term.(const make $ rsync_mode $ (Arg.value @@ (store ["obuilder-store"])))
