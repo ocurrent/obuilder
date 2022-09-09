@@ -140,6 +140,8 @@ let delete_if_exists t ds mode =
 
 let state_dir t = Dataset.path t Dataset.state
 
+let root t = t.pool
+
 let create ~pool =
   let t = { pool; caches = Hashtbl.create 10; next = 0 } in
   (* Ensure any left-over temporary datasets are removed before we start. *)

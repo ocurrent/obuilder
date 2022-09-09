@@ -13,6 +13,9 @@ type logger = tag -> string -> unit
 module type STORE = sig
   type t
 
+  val root : t -> string
+  (** [root t] returns the root of the store. *)
+
   val build :
     t -> ?base:id ->
     id:id ->
