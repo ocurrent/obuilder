@@ -103,3 +103,5 @@ let cache ~user:_ _t _ = assert false
 let delete_cache _t _ = assert false
 
 let complete_deletes _t = Lwt.return_unit
+
+let root t = t.dir

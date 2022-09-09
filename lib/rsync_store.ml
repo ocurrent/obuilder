@@ -3,7 +3,7 @@
    efficient. *)
 open Lwt.Infix
 
-(* The caching approach (and much of the code) is copied from the btrfs 
+(* The caching approach (and much of the code) is copied from the btrfs
    implementation *)
 type cache = {
   lock : Lwt_mutex.t;
@@ -78,6 +78,8 @@ module Path = struct
 
   let result_tmp t id = t.path / result_tmp_dirname / id
 end
+
+let root t = t.path
 
 let create ~path ?(mode = Copy) () =
   Rsync.create path >>= fun () ->
