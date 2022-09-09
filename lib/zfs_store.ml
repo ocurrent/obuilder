@@ -141,6 +141,8 @@ let delete_if_exists t ds mode =
 
 let state_dir t = Dataset.path t Dataset.state
 
+let root t = t.pool
+
 let prefix_and_pool path =
   let pool = Filename.basename path in
   match Filename.chop_suffix_opt ~suffix:pool path with

@@ -101,6 +101,8 @@ let check_kernel_version () =
   | _ ->
       Fmt.failwith "Could not parse output of 'uname -r' (%S)" kver
 
+let root t = t.root
+
 let create root =
   check_kernel_version () >>= fun () ->
   Os.ensure_dir (root / "result");
