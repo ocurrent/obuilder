@@ -20,6 +20,7 @@ module Docker = Docker
 
 module Config = Config
 module Runc_sandbox = Runc_sandbox
+module Runj_sandbox = Runj_sandbox
 
 (** {2 Builders} *)
 

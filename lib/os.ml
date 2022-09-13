@@ -147,3 +147,14 @@ let ensure_dir path =
   match check_dir path with
   | `Present -> ()
   | `Missing -> Unix.mkdir path 0o777
+
+type system =
+  | Linux
+  | FreeBSD
+
+let system = lazy begin
+  match ExtUnix.All.((uname ()).Uname.sysname) with
+  | "Linux" -> Linux
+  | "FreeBSD" -> FreeBSD
+  | os -> failwith ("OS '"^os^"' is not supported")
+end

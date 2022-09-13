@@ -17,6 +17,7 @@
   astring
   (fmt (>= 0.8.9))
   logs
+  extunix
   (cmdliner (>= 1.1.0))
   (tar-unix (>= 2.0.0))
   (yojson (>= "1.6.0"))
