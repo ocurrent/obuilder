@@ -74,8 +74,8 @@ let children t id =
     |> Result.ok
   | x -> Fmt.failwith "Invalid row: %a" Db.dump_row x
 
-let delete _t _id =
-(*
+let delete t id =
+  () |> Lwt_preemptive.detach @@ fun () ->
   with_transaction t (fun () ->
       match Db.query_one t.parent Sqlite3.Data.[ TEXT id ] with
       | [ TEXT parent ] ->
@@ -85,8 +85,6 @@ let delete _t _id =
         Db.exec t.delete Sqlite3.Data.[ TEXT id ]
       | x -> Fmt.failwith "Invalid row: %a" Db.dump_row x
     )
-*)
-    ()
 
 let lru t ~before n =
   Db.query t.lru Sqlite3.Data.[ TEXT (format_timestamp before); INT (Int64.of_int n) ]

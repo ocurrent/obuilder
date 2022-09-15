@@ -137,7 +137,7 @@ module Make (Raw : S.STORE) = struct
       | Ok deps ->
         Lwt_list.iter_s aux deps >>= fun () ->
         log id;
-        Raw.delete t.raw id >|= fun () ->
+        Raw.delete t.raw id >>= fun () ->
         Dao.delete t.dao id
     in
     if Builds.mem id t.in_progress then begin
@@ -153,7 +153,7 @@ module Make (Raw : S.STORE) = struct
     Log.info (fun f -> f "Pruning %d items (of %d requested)" n limit);
     items |> Lwt_list.iter_s (fun id ->
         log id;
-        Raw.delete t.raw id >|= fun () ->
+        Raw.delete t.raw id >>= fun () ->
         Dao.delete t.dao id
       )
     >>= fun () ->
