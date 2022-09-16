@@ -2,4 +2,18 @@
   (name obuilder)
   (public_name obuilder)
   (preprocess (pps ppx_sexp_conv))
-  (libraries lwt lwt.unix fmt yojson tar-unix sexplib sqlite3 astring logs sha obuilder-spec cmdliner extunix))
+  (libraries
+    lwt
+    lwt.unix
+    fmt
+    yojson
+    tar-unix
+    sexplib
+    sqlite3
+    astring
+    logs
+    sha
+    obuilder-spec
+    cmdliner
+    extunix
+    docker_hub))
