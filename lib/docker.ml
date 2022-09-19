@@ -41,6 +41,7 @@ let fetch ~log:_ ~rootfs base =
     Os.with_pipe_between_children @@ fun ~r ~w ->
     let exporter = Os.exec ~stdout:(`FD_move_safely w) ["cat"; output_file] in
     let tar = Os.sudo ~stdin:(`FD_move_safely r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
+    Os_specific_utils.chflags ~dir:rootfs >>= fun () -> (* Needed to be able to delete the directory on FreeBSD *)
     exporter >>= fun () ->
     tar
   ) >|= fun () ->

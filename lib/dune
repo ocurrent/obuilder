@@ -28,3 +28,15 @@
  (target sandbox.ml)
  (enabled_if (= %{system} freebsd))
  (action (copy# %{deps} %{target})))
+
+(rule
+ (deps os_specific_utils.linux.ml)
+ (target os_specific_utils.ml)
+ (enabled_if (= %{system} linux))
+ (action (copy# %{deps} %{target})))
+
+(rule
+ (deps os_specific_utils.freebsd.ml)
+ (target os_specific_utils.ml)
+ (enabled_if (= %{system} freebsd))
+ (action (copy# %{deps} %{target})))
