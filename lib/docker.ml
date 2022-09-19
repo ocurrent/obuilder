@@ -26,7 +26,7 @@ let fetch ~log:_ ~rootfs base =
   | None ->
       Docker_hub.Manifests.fetch tag token >>= handle_errors >>= fun manifests ->
       let elements = Docker_hub.Manifests.elements manifests in
-      let current_platform = Lazy.force Docker_hub.Platform.current in
+      let current_platform = Docker_hub.Platform.current in
       let {Docker_hub.Manifests.digest; _} =
         List.find (fun {Docker_hub.Manifests.platform; _} ->
           Docker_hub.Platform.equal platform current_platform
