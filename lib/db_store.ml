@@ -48,7 +48,7 @@ module Make (Raw : S.STORE) = struct
     match Raw.result t.raw id with
     | Some dir ->
       let now = Unix.(gmtime (gettimeofday ())) in
-      Dao.set_used t.dao ~id ~now;
+      Dao.set_used t.dao ~id ~now >>= fun () ->
       let log_file = dir / "log" in
       begin
         if Sys.file_exists log_file then Build_log.of_saved log_file
@@ -66,7 +66,7 @@ module Make (Raw : S.STORE) = struct
         )
       >>!= fun () ->
       let now = Unix.(gmtime (gettimeofday () )) in
-      Dao.add t.dao ?parent:base ~id ~now;
+      Dao.add t.dao ?parent:base ~id ~now >>= fun () ->
       Lwt_result.return (`Saved, id)
 
   let log_ty client_log ~id = function
@@ -129,7 +129,7 @@ module Make (Raw : S.STORE) = struct
 
   let delete ?(log=ignore) t id =
     let rec aux id =
-      match Dao.children t.dao id with
+      Dao.children t.dao id >>= function
       | Error `No_such_id ->
         log id;
         Log.warn (fun f -> f "ID %S not in database!" id);
@@ -147,7 +147,7 @@ module Make (Raw : S.STORE) = struct
       aux id
 
   let prune_batch ?(log=ignore) t ~before limit =
-    let items = Dao.lru t.dao ~before limit in
+    Dao.lru t.dao ~before limit >>= fun items ->
     let items = List.filter (fun id -> not (Builds.mem id t.in_progress)) items in
     let n = List.length items in
     Log.info (fun f -> f "Pruning %d items (of %d requested)" n limit);

@@ -50,6 +50,7 @@ let with_transaction t fn =
   | exception ex -> Db.exec t.rollback []; raise ex
 
 let add ?parent ~id ~now t =
+  () |> Lwt_preemptive.detach @@ fun () ->
   let now = format_timestamp now in
   match parent with
   | None -> Db.exec t.add Sqlite3.Data.[ TEXT id; TEXT now; TEXT now; NULL ];
@@ -60,10 +61,12 @@ let add ?parent ~id ~now t =
       )
 
 let set_used ~id ~now t =
+  () |> Lwt_preemptive.detach @@ fun () ->
   let now = format_timestamp now in
   Db.exec t.set_used Sqlite3.Data.[ TEXT now; TEXT id ]
 
 let children t id =
+  () |> Lwt_preemptive.detach @@ fun () ->
   match Db.query_one t.exists Sqlite3.Data.[ TEXT id ] with
   | [ INT 0L ] -> Error `No_such_id
   | [ INT 1L ] ->
@@ -87,6 +90,7 @@ let delete t id =
     )
 
 let lru t ~before n =
+  () |> Lwt_preemptive.detach @@ fun () ->
   Db.query t.lru Sqlite3.Data.[ TEXT (format_timestamp before); INT (Int64.of_int n) ]
   |> List.map @@ function
   | Sqlite3.Data.[ TEXT id ] -> id
