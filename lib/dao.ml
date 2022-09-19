@@ -16,11 +16,10 @@ type t = {
 let m = Mutex.create ()
 
 let thread_detach f =
-  Lwt_preemptive.detach (fun x ->
+  Lwt_preemptive.detach (fun () ->
     Mutex.lock m;
-    let v = f x in
-    Mutex.unlock m;
-    v
+    Fun.protect f
+      ~finally:(fun () -> Mutex.unlock m)
   ) ()
 
 let format_timestamp time =
