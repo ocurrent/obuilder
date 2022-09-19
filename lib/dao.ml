@@ -43,6 +43,8 @@ let create db =
   let parent = Sqlite3.prepare db {| SELECT parent FROM builds WHERE id = ? |} in
   { db; begin_transaction; commit; rollback; add; set_used; update_rc; exists; children; delete; lru; parent }
 
+let () = Lwt_preemptive.init 1 1 ignore
+
 let with_transaction t fn =
   Db.exec t.begin_transaction [];
   match fn () with
