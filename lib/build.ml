@@ -269,19 +269,6 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     | `Output -> Buffer.add_string buffer x
 
   let healthcheck ?(timeout=30.0) t =
-    begin match Lazy.force Os.system with
-    | Linux ->
-        Os.with_pipe_from_child (fun ~r ~w ->
-          let pp f = Fmt.string f "docker version" in
-          let result = Os.exec_result ~pp ~stdout:`Dev_null ~stderr:(`FD_move_safely w) ["docker"; "version"] in
-          let r = Lwt_io.(of_fd ~mode:input) r ~close:Lwt.return in
-          Lwt_io.read r >>= fun err ->
-          result >>= function
-          | Ok () -> Lwt_result.return ()
-          | Error (`Msg m) -> Lwt_result.fail (`Msg (Fmt.str "%s@.%s" m (String.trim err)))
-        )
-    | FreeBSD -> Lwt.return (Ok ()) (* No need for docker on FreeBSD *)
-    end >>!= fun () ->
     let buffer = Buffer.create 1024 in
     let log = log_to buffer in
     (* Get the base image first, before starting the timer. *)

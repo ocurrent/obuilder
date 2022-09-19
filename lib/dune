@@ -15,5 +15,16 @@
     sha
     obuilder-spec
     cmdliner
-    extunix
     docker_hub))
+
+(rule
+ (deps sandbox.runc.ml)
+ (target sandbox.ml)
+ (enabled_if (= %{system} linux))
+ (action (copy# %{deps} %{target})))
+
+(rule
+ (deps sandbox.runj.ml)
+ (target sandbox.ml)
+ (enabled_if (= %{system} freebsd))
+ (action (copy# %{deps} %{target})))

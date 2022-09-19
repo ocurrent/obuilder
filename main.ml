@@ -2,12 +2,7 @@ open Lwt.Infix
 
 let ( / ) = Filename.concat
 
-module Sandbox = (val
-  match Lazy.force Obuilder.Os.system with
-  | Linux -> (module Obuilder.Runc_sandbox : Obuilder.S.SANDBOX_INSTANCE)
-  | FreeBSD -> (module Obuilder.Runj_sandbox : Obuilder.S.SANDBOX_INSTANCE)
-)
-
+module Sandbox = Obuilder.Sandbox
 module Fetcher = Obuilder.Docker
 module Store_spec = Obuilder.Store_spec
 
