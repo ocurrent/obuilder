@@ -10,6 +10,7 @@ module Context = Build.Context
 
 module Btrfs_store = Btrfs_store
 module Zfs_store = Zfs_store
+module Rsync_store = Rsync_store
 module Store_spec = Store_spec
 
 (** {2 Fetchers} *)

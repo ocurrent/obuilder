@@ -13,8 +13,7 @@ type t = {
 }
 
 let with_dup fd fn =
-  let fd = Lwt_unix.dup fd in
-  Lwt_unix.set_close_on_exec fd;
+  let fd = Lwt_unix.dup ~cloexec:true fd in
   Lwt.finalize
     (fun () -> fn fd)
     (fun () -> Lwt_unix.close fd)
@@ -30,7 +29,8 @@ let tail ?switch t dst =
   match t.state with
   | `Finished -> invalid_arg "tail: log is finished!"
   | `Readonly path ->
-    Lwt_io.(with_file ~mode:input) path @@ fun ch ->
+    let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
+    Lwt_io.(with_file ~mode:input ~flags) path @@ fun ch ->
     let buf = Bytes.create max_chunk_size in
     let rec aux () =
       Lwt_io.read_into ch buf 0 max_chunk_size >>= function

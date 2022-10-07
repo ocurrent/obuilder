@@ -1,12 +1,40 @@
-### unreleased
+### v0.4
 
-- Use GNU tar format instead of UStar for `copy` operations (@TheLortex ...).
+- Use GNU tar format instead of UStar for `copy` operations (@TheLortex #82, reviewed @dra27).
   This enables copying from sources containing long file names (>100 characters).
 
 - Add support for secrets (@TheLortex #63, reviewed by @talex5).
   The obuilder spec's `run` command supports a new `secrets` fields, which allows to temporarily
   mount secret files in an user-specified location. The sandbox build context has an additional
   `secrets` parameter to provide values for the requested keys.
+
+- Limit permissions on temporary directories (@talex5 #67)
+
+- Check Linux kernel version support for btrfs (@kit-ty-kate #68)
+
+- Generalise obuilder sandbox, removing runc/linux specifc pieces and 
+  making the S.SANDBOX interface more general
+  (@patricoferris #58, reviewed by @talex5, @avsm, @MisterDA)
+  
+- Convert --fast-sync back to a flag (@talex5 #72)
+
+- Support Fmt.cli and Logs.cli flags. (@MisterDA #74, reviewed by @talex5)
+  For Fmt the new options are --color=always|never|auto
+  For Log the new options are:
+    -v, --verbose Increase verbosity
+    --verbosity=LEVEL (absent=warning)
+        Be more or less verbose. LEVEL must be one of quiet, error,
+        warning, info or debug. Takes over -v.
+
+- Minor cleanup changes (@talex5 #76)
+
+- Fix deprecations in Fmt 0.8.10 (@tmcgilchrist #80)
+
+- Remove travis-ci and replace with Github Actions (@MisterDA #84)
+
+- Add RSync store backend for obuilder to support macOS builders (@patricoferris #88, reviewed @talex5)
+
+- Fixes for ZFS tests in CI (@patricoferris #91)
 
 ### v0.3
 

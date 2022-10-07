@@ -1,5 +1,10 @@
 # OBuilder
 
+[![GitHub CI][github-shield]][github-ci]
+[![docs][docs-shield]][docs]
+[![OCaml-CI Build Status][ocaml-ci-shield]][ocaml-ci]
+
+
 OBuilder takes a build script (similar to a Dockerfile) and performs the steps in it in a sandboxed environment.
 
 After each step, OBuild uses the snapshot feature of the filesystem (ZFS or Btrfs) to store the state of the build. There is also an Rsync backend that copies the build state.
@@ -320,3 +325,13 @@ See [LICENSE][] for the full license text.
 [OCluster]: https://github.com/ocurrent/ocluster
 [LICENSE]: ./LICENSE
 [macOS]: ./macOS.md
+
+[github-shield]: https://github.com/ocurrent/obuilder/actions/workflows/main.yml/badge.svg
+[github-ci]: https://github.com/ocurrent/obuilder/actions/workflows/main.yml
+
+[docs-shield]:https://img.shields.io/badge/doc-online-blue.svg
+[docs]: https://ocurrent.github.io/obuilder/
+
+[ocaml-ci]: https://ci.ocamllabs.io/github/ocurrent/obuilder
+[ocaml-ci-shield]: https://img.shields.io/endpoint?url=https%3A%2F%2Fci.ocamllabs.io%2Fbadge%2Focurrent%2Fobuilder%2Fmaster&logo=ocaml
+

@@ -1,3 +1,6 @@
-(executable
-  (name stress)
-  (libraries obuilder cmdliner fmt.tty))
+; No-op test to attach stress.exe to the obuilder package
+(test
+ (name stress)
+ (libraries obuilder cmdliner fmt.tty)
+ (package obuilder)
+ (action (progn)))

@@ -116,7 +116,8 @@ let rec write_all fd buf ofs len =
   )
 
 let write_file ~path contents =
-  Lwt_io.(with_file ~mode:output) path @@ fun ch ->
+  let flags = [Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
+  Lwt_io.(with_file ~mode:output ~flags) path @@ fun ch ->
   Lwt_io.write ch contents
 
 let with_pipe_from_child fn =
