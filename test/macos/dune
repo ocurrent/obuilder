@@ -1,9 +1,6 @@
 (rule
  (alias macos)
- (deps 
-   ./specs/simple.macos.spec
-   ./macos.sh 
-   ../../main.exe)
+ (deps (source_tree specs))
  (targets ./simple.out)
  (action 
    (with-stdout-to ./simple.out (run ./macos.sh))))

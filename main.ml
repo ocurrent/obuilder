@@ -2,7 +2,7 @@ open Lwt.Infix
 
 let ( / ) = Filename.concat
 
-module Sandbox = Obuilder.Runc_sandbox
+module Sandbox = Obuilder.Sandbox
 module Fetcher = Obuilder.Docker
 module Store_spec = Obuilder.Store_spec
 
@@ -15,9 +15,8 @@ let log tag msg =
   | `Output -> output_string stdout msg; flush stdout
 
 let create_builder spec conf =
-  let open Obuilder in
-  Store_spec.to_store spec >>= fun (Store ((module Store), store)) ->
-  let module Builder = Obuilder.Builder(Store)(Sandbox)(Docker) in
+  spec >>= fun (Store_spec.Store ((module Store), store)) ->
+  let module Builder = Obuilder.Builder(Store)(Sandbox)(Fetcher) in
   Sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)
