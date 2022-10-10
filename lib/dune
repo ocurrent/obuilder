@@ -14,4 +14,5 @@
   (name obuilder)
   (public_name obuilder)
   (preprocess (pps ppx_sexp_conv))
+  (flags (:standard -w -69))
   (libraries lwt lwt.unix fmt yojson tar-unix sexplib sqlite3 astring logs sha obuilder-spec cmdliner))
