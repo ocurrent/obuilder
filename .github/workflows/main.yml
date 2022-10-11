@@ -8,7 +8,7 @@ on:
     - cron: 0 1 * * MON
 
 env:
-  RUNC_VERSION: v1.1.3
+  RUNC_VERSION: v1.1.4
 
 jobs:
   build:
