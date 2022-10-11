@@ -51,4 +51,6 @@ jobs:
         run: |
           sudo wget https://github.com/opencontainers/runc/releases/download/$RUNC_VERSION/runc.amd64 -O /usr/local/bin/runc
 
-      - run: ./.run-gha-tests.sh
+      - run: ./.run-gha-tests.sh btrfs
+      - run: ./.run-gha-tests.sh zfs
+      - run: ./.run-gha-tests.sh rsync
