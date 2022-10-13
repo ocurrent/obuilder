@@ -88,11 +88,11 @@ end = struct
     else fn ()
 end
 
-let user = { Obuilder_spec.uid = Unix.getuid (); gid = Unix.getgid () }
+let user = `Unix { Obuilder_spec.uid = Unix.getuid (); gid = Unix.getgid () }
 
 module Zfs = struct
   let chown ~user t ds =
-    let { Obuilder_spec.uid; gid } = user in
+    let { Obuilder_spec.uid; gid } = match user with `Unix user -> user | `Windows _ -> assert false in
     Os.sudo ["chown"; strf "%d:%d" uid gid; Dataset.path t ds]
 
   let create t ds =
@@ -139,6 +139,8 @@ let delete_if_exists t ds mode =
   else Lwt.return_unit
 
 let state_dir t = Dataset.path t Dataset.state
+
+let root t = t.pool
 
 let create ~pool =
   let t = { pool; caches = Hashtbl.create 10; next = 0 } in

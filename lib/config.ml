@@ -9,6 +9,7 @@ module Mount = struct
   type t = { (* TODO: options *)
     src : string;              (* In host namespace *)
     dst : string;              (* In container namespace *)
+    readonly : bool;
   }
 end
 
@@ -28,7 +29,8 @@ type t = {
   mounts : Mount.t list;
   network : string list;
   mount_secrets : Secret.t list;
+  entrypoint : string option;
 }
 
-let v ~cwd ~argv ~hostname ~user ~env ~mounts ~network ~mount_secrets =
-  { cwd; argv; hostname; user; env; mounts; network; mount_secrets }
+let v ~cwd ~argv ~hostname ~user ~env ~mounts ~network ~mount_secrets ?entrypoint () =
+  { cwd; argv; hostname; user; env; mounts; network; mount_secrets; entrypoint; }

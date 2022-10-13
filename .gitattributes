@@ -1,0 +1,4 @@
+*.cmd   text eol=crlf
+*.bash  text eol=lf
+*.sh    text eol=lf
+test/test.ml    text eol=lf

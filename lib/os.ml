@@ -25,7 +25,9 @@ let pp_signal f x =
   else if x = sigterm then Fmt.string f "term"
   else Fmt.int f x
 
-let pp_cmd = Fmt.box Fmt.(list ~sep:sp (quote string))
+let pp_cmd f (cmd, argv) =
+  let argv = if cmd = "" then argv else cmd :: argv in
+  Fmt.hbox Fmt.(list ~sep:sp (quote string)) f argv
 
 let redirection = function
   | `FD_move_safely x -> `FD_copy x.raw
@@ -43,42 +45,46 @@ let default_exec ?cwd ?stdin ?stdout ?stderr ~pp argv =
     let stdin  = Option.map redirection stdin in
     let stdout = Option.map redirection stdout in
     let stderr = Option.map redirection stderr in
-    Lwt_process.exec ?cwd ?stdin ?stdout ?stderr argv
+    try Lwt_result.ok (Lwt_process.exec ?cwd ?stdin ?stdout ?stderr argv)
+    with e -> Lwt_result.fail e
   in
   Option.iter close_redirection stdin;
   Option.iter close_redirection stdout;
   Option.iter close_redirection stderr;
-  proc >|= function
-  | Unix.WEXITED n -> Ok n
-  | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %d" pp x
-  | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp pp_signal x
+  proc >|= fun proc ->
+  Result.fold ~ok:(function
+      | Unix.WEXITED n -> Ok n
+      | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %d" pp x
+      | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp pp_signal x)
+    ~error:(fun e ->
+        Fmt.error_msg "%t raised %s\n%s" pp (Printexc.to_string e) (Printexc.get_backtrace ())) proc
 
 (* Overridden in unit-tests *)
 let lwt_process_exec = ref default_exec
 
-let exec_result ?cwd ?stdin ?stdout ?stderr ~pp argv =
-  Logs.info (fun f -> f "Exec %a" pp_cmd argv);
-  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>= function
-  | Ok 0 -> Lwt_result.return ()
+let exec_result ?cwd ?stdin ?stdout ?stderr ~pp ?(is_success=((=) 0)) ?(cmd="") argv =
+  Logs.info (fun f -> f "Exec %a" pp_cmd (cmd, argv));
+  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp (cmd, Array.of_list argv) >>= function
+  | Ok n when is_success n -> Lwt_result.ok Lwt.return_unit
   | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
   | Error e -> Lwt_result.fail (e : [`Msg of string] :> [> `Msg of string])
 
-let exec ?cwd ?stdin ?stdout ?stderr argv =
-  Logs.info (fun f -> f "Exec %a" pp_cmd argv);
-  let pp f = pp_cmd f argv in
-  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp ("", Array.of_list argv) >>= function
-  | Ok 0 -> Lwt.return_unit
+let exec ?cwd ?stdin ?stdout ?stderr ?(is_success=((=) 0)) ?(cmd="") argv =
+  Logs.info (fun f -> f "Exec %a" pp_cmd (cmd, argv));
+  let pp f = pp_cmd f (cmd, argv) in
+  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp (cmd, Array.of_list argv) >>= function
+  | Ok n when is_success n -> Lwt.return_unit
   | Ok n -> Lwt.fail_with (Fmt.str "%t failed with exit status %d" pp n)
   | Error (`Msg m) -> Lwt.fail (Failure m)
 
 let running_as_root = not (Sys.unix) || Unix.getuid () = 0
 
 let sudo ?stdin args =
-  let args = if running_as_root then args else "sudo" :: args in
+  let args = if running_as_root then args else "sudo" :: "--" :: args in
   exec ?stdin args
 
 let sudo_result ?cwd ?stdin ?stdout ?stderr ~pp args =
-  let args = if running_as_root then args else "sudo" :: args in
+  let args = if running_as_root then args else "sudo" :: "--" :: args in
   exec_result ?cwd ?stdin ?stdout ?stderr ~pp args
 
 let rec write_all fd buf ofs len =
@@ -147,3 +153,12 @@ let ensure_dir path =
   match check_dir path with
   | `Present -> ()
   | `Missing -> Unix.mkdir path 0o777
+
+let copy ?(superuser=false) ~src dst =
+  if Sys.win32 then
+    exec ["robocopy"; src; dst; "/MIR"; "/NFL"; "/NDL"; "/NJH"; "/NJS"; "/NC"; "/NS"; "/NP"]
+      ~is_success:(fun n -> n = 0 || n = 1)
+  else if superuser then
+    sudo ["cp"; "-a"; "--"; src; dst ]
+  else
+    exec ["cp"; "-a"; "--"; src; dst ]

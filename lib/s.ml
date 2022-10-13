@@ -13,6 +13,9 @@ type logger = tag -> string -> unit
 module type STORE = sig
   type t
 
+  val root : t -> string
+  (** [root t] returns the root of the store. *)
+
   val build :
     t -> ?base:id ->
     id:id ->
@@ -89,6 +92,10 @@ module type BUILDER = sig
     context ->
     Obuilder_spec.t ->
     (id, [> `Cancelled | `Msg of string]) Lwt_result.t
+
+  val finish : t -> unit Lwt.t
+  (** [finish builder] close allocated resources and store state (e.g., sqlite3
+      databases). *)
 
   val delete : ?log:(id -> unit) -> t -> id -> unit Lwt.t
   (** [delete ?log t id] removes [id] from the store, along with all of its dependencies.

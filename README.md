@@ -104,7 +104,7 @@ The initial filesystem snapshot is `BASE`. `run` and `copy` operations create ne
 The initial context is supplied by the user (see [build.mli](lib/build.mli) for details).
 By default:
 - The environment is taken from the Docker configuration of `BASE`.
-- The user is `(uid 0) (gid 0)`.
+- The user is `(uid 0) (gid 0)` on Linux, `(name ContainerAdministrator)` on Windows.
 - The workdir is `/`.
 - The shell is `/bin/bash -c`.
 
@@ -268,6 +268,7 @@ Notes:
 
 ```sexp
 (user (uid UID) (gid GID))
+(user (name NAME))      ; on Windows
 ```
 
 Example:

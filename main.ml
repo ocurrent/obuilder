@@ -30,6 +30,7 @@ let read_whole_file path =
 let build () store spec conf src_dir secrets =
   Lwt_main.run begin
     create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+    Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     let spec =
       try Obuilder.Spec.t_of_sexp (Sexplib.Sexp.load_sexp spec)
       with Failure msg ->
@@ -53,6 +54,7 @@ let build () store spec conf src_dir secrets =
 let healthcheck () store conf =
   Lwt_main.run begin
     create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+    Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     Builder.healthcheck builder >|= function
     | Error (`Msg m) ->
       Fmt.epr "Healthcheck failed: %s@." m;
@@ -64,13 +66,14 @@ let healthcheck () store conf =
 let delete () store conf id =
   Lwt_main.run begin
     create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+    Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
   end
 
-let dockerfile () buildkit spec =
+let dockerfile () buildkit escape spec =
   Sexplib.Sexp.load_sexp spec
   |> Obuilder_spec.t_of_sexp
-  |> Obuilder_spec.Docker.dockerfile_of_spec ~buildkit
+  |> Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:escape
   |> print_endline
 
 open Cmdliner
@@ -139,11 +142,20 @@ let buildkit =
     ~doc:"Output extended BuildKit syntax."
     ["buildkit"]
 
+let escape =
+  let styles = [("unix", `Unix); ("windows", `Windows)] in
+  let doc = Arg.doc_alts_enum styles |> Printf.sprintf "Dockerfile escape style, must be %s." in
+  Arg.value @@
+  Arg.opt Arg.(enum styles) (if Sys.unix then `Unix else `Windows) @@
+  Arg.info ~doc
+    ~docv:"STYLE"
+    ["escape"]
+
 let dockerfile =
   let doc = "Convert a spec to Dockerfile format." in
   let info = Cmd.info ~doc "dockerfile" in
   Cmd.v info
-    Term.(const dockerfile $ setup_log $ buildkit $ spec_file)
+    Term.(const dockerfile $ setup_log $ buildkit $ escape $ spec_file)
 
 let healthcheck =
   let doc = "Perform a self-test." in

@@ -23,13 +23,11 @@
   sexplib
   ppx_deriving
   ppx_sexp_conv
-  sha
+  (sha (>= 1.15.1))
   sqlite3
   (obuilder-spec (= :version))
-  (ocaml (>= 4.10.0))
-  (alcotest-lwt :with-test))
- (conflicts
-  (result (< "1.5"))))
+  (ocaml (>= 4.14.0))
+  (alcotest-lwt :with-test)))
 (package
  (name obuilder-spec)
  (synopsis "Build specification format")

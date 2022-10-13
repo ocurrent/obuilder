@@ -8,7 +8,7 @@ on:
     - cron: 0 1 * * MON
 
 env:
-  RUNC_VERSION: v1.1.3
+  RUNC_VERSION: v1.1.4
 
 jobs:
   build:
@@ -26,8 +26,12 @@ jobs:
       # The ppa is needed because of https://www.mail-archive.com/ubuntu-bugs@lists.ubuntu.com/msg5972997.html
       - run: |
           sudo add-apt-repository ppa:jonathonf/zfs && \
-          sudo apt-get --allow-releaseinfo-change update && \
-          sudo apt-get install -y btrfs-progs zfs-dkms zfsutils-linux
+          sudo apt-get --allow-releaseinfo-change update
+
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: btrfs-progs zfs-dkms zfsutils-linux
+          version: 1
 
       - name: Checkout code
         uses: actions/checkout@v3
@@ -51,4 +55,65 @@ jobs:
         run: |
           sudo wget https://github.com/opencontainers/runc/releases/download/$RUNC_VERSION/runc.amd64 -O /usr/local/bin/runc
 
-      - run: ./.run-gha-tests.sh
+      - run: ./.run-gha-tests.sh btrfs
+      - run: ./.run-gha-tests.sh zfs
+
+  build_rsync:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+        ocaml-compiler:
+          - 4.14.x
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Use OCaml ${{ matrix.ocaml-compiler }}
+        uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
+
+      - run: opam install . --deps-only --with-test
+
+      - name: Cache runc
+        id: cache-runc
+        uses: actions/cache@v3
+        with:
+          path: /usr/local/bin/runc
+          key: ${{ env.RUNC_VERSION }}
+
+      - name: Download runc
+        if: steps.cache-runc.outputs.cache-hit != 'true'
+        run: |
+          sudo wget https://github.com/opencontainers/runc/releases/download/$RUNC_VERSION/runc.amd64 -O /usr/local/bin/runc
+
+      - run: ./.run-gha-tests.sh rsync
+
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+        ocaml-compiler:
+          - 4.14.x
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Use OCaml ${{ matrix.ocaml-compiler }}
+        uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
+
+      - run: opam install . --deps-only --with-test
+
+      - run: opam exec -- dune build

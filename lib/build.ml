@@ -78,11 +78,11 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
              cache |> Lwt_list.map_s (fun { Obuilder_spec.Cache.id; target; buildkit_options = _ } ->
                  Store.cache ~user t.store id >|= fun (src, release) ->
                  to_release := release :: !to_release;
-                 { Config.Mount.src; dst = target }
+                 { Config.Mount.src; dst = target; readonly = false }
                )
              >>= fun mounts ->
              let argv = shell @ [cmd] in
-             let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~mount_secrets ~network in
+             let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~mount_secrets ~network () in
              Os.with_pipe_to_child @@ fun ~r:stdin ~w:close_me ->
              Lwt_unix.close close_me >>= fun () ->
              Sandbox.run ~cancelled ~stdin ~log t.sandbox config result_tmp
@@ -150,6 +150,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
               ~mount_secrets:[]
               ~mounts:[]
               ~network:[]
+              ()
           in
           Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
           let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
@@ -304,4 +305,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
   let v ~store ~sandbox =
     let store = Store.wrap store in
     { store; sandbox }
+
+  let finish t =
+    Store.unwrap t.store;
+    Lwt.return_unit
 end

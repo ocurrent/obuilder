@@ -80,8 +80,8 @@ let exec ?cwd ?stdin ?stdout ?stderr ~pp cmd =
     Fmt.pr "exec: %a@." Fmt.(Dump.array string) argv;
     begin match Array.to_list argv with
       | "docker" :: args -> exec_docker ?stdout args
-      | "sudo" :: ("tar" :: _ as tar) -> Os.default_exec ?cwd ?stdin ?stdout ~pp ("", Array.of_list tar)
-      | "sudo" :: "mkdir" :: args
+      | "sudo" :: "--" :: ("tar" :: _ as tar) -> Os.default_exec ?cwd ?stdin ?stdout ~pp ("", Array.of_list tar)
+      | "sudo" :: "--" :: "mkdir" :: args
       | "mkdir" :: args -> mkdir args
       | x -> Fmt.failwith "Unknown mock command %a" Fmt.(Dump.list string) x
     end

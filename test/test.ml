@@ -26,6 +26,7 @@ let with_config fn =
   Mock_store.with_store @@ fun store ->
   let sandbox = Mock_sandbox.create () in
   let builder = B.v ~store ~sandbox in
+  Fun.flip Lwt.finalize (fun () -> B.finish builder) @@ fun () ->
   let src_dir = Mock_store.state_dir store / "src" in
   Os.ensure_dir src_dir;
   fn ~src_dir ~store ~sandbox ~builder
@@ -429,7 +430,7 @@ let test_tar_long_filename _switch () =
     Lwt_unix.openfile (dst_dir / "out.tar") [Lwt_unix.O_WRONLY; Lwt_unix.O_CREAT] 0
     >>= fun to_untar ->
     let src_manifest = Manifest.generate ~exclude:[] ~src_dir "." |> Result.get_ok in
-    let user = {Spec.uid=1000; gid=1000} in
+    let user = Spec.(`Unix { uid=1000; gid=1000 }) in
     Tar_transfer.send_file
       ~src_dir
       ~src_manifest
@@ -485,10 +486,10 @@ let test_sexp () =
       (user (uid 1) (gid 2))
      )|}
 
-let test_docker () =
+let test_docker_unix () =
   let test ~buildkit name expect sexp =
     let spec = Spec.t_of_sexp (Sexplib.Sexp.of_string sexp) in
-    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit spec in
+    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`Unix spec in
     let expect = remove_indent expect in
     Alcotest.(check string) name expect got
   in
@@ -582,6 +583,59 @@ let test_docker () =
        (shell "command1"))
      ) |}
 
+let test_docker_windows () =
+  let test ~buildkit name expect sexp =
+    let spec = Spec.t_of_sexp (Sexplib.Sexp.of_string sexp) in
+    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`Windows spec in
+    let expect = remove_indent expect in
+    Alcotest.(check string) name expect got
+  in
+  test ~buildkit:false "Dockerfile"
+    {| #escape=`
+       FROM base
+       # A test comment
+       WORKDIR C:/src
+       RUN command1
+       SHELL [ "C:/Windows/System32/cmd.exe", "/c" ]
+       RUN command2 && `
+           command3
+       COPY a b c
+       COPY a b c
+       ENV DEBUG="1"
+       USER Zaphod
+       COPY a b c
+    |} {|
+     ((from base)
+      (comment "A test comment")
+      (workdir C:/src)
+      (run (shell "command1"))
+      (shell C:/Windows/System32/cmd.exe /c)
+      (run
+       (cache (a (target /data))
+              (b (target /srv)))
+       (shell "command2 &&
+               command3"))
+      (copy (src a b) (dst c))
+      (copy (src a b) (dst c) (exclude .git _build))
+      (env DEBUG 1)
+      (user (name Zaphod))
+      (copy (src a b) (dst c))
+     ) |};
+  test ~buildkit:false "Multi-stage"
+    {| #escape=`
+       FROM base as tools
+       RUN make tools
+
+       FROM base
+       COPY --from=tools binary /usr/local/bin/
+    |} {|
+     ((build tools
+             ((from base)
+              (run (shell "make tools"))))
+      (from base)
+      (copy (from (build tools)) (src binary) (dst /usr/local/bin/))
+     ) |}
+
 let manifest =
   Alcotest.result
     (Alcotest.testable
@@ -666,14 +720,32 @@ let test_secrets_simple _switch () =
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
   Log.check "Check b log"
     {| (from base)
-        ;---> saved as .*
+        ;---> saved as ".*"
          /: (run (secrets (test (target /testsecret)) (test2 (target /run/secrets/test2)))
-         ........(shell Append))
+         [ ]+(shell Append))
          Append
-        ;---> saved as .*
+        ;---> saved as ".*"
        |}
     log;
   Lwt.return_unit
+
+let test_exec_nul _switch () =
+  Os.lwt_process_exec := Os.default_exec;
+  let args = ["dummy"; "stdout"] in
+  Os.exec ~stdout:`Dev_null ~stderr:`Dev_null args >>= fun actual ->
+  Alcotest.(check unit) "stdout" actual ();
+  let args = ["dummy"; "stderr"] in
+  Os.exec ~stdout:`Dev_null ~stderr:`Dev_null args >|= fun actual ->
+  Alcotest.(check unit) "stderr" actual ();
+  Os.lwt_process_exec := Mock_exec.exec
+
+let test_pread_nul _switch () =
+  Os.lwt_process_exec := Os.default_exec;
+  let expected = "the quick brown fox jumps over the lazy dog" in
+  let args = ["dummy"; "stdout"] in
+  Os.pread ~stderr:`Dev_null args >|= fun actual ->
+  Alcotest.(check string) "stdout" actual expected;
+  Os.lwt_process_exec := Mock_exec.exec
 
 let () =
   let open Alcotest_lwt in
@@ -682,7 +754,8 @@ let () =
       "spec", [
         test_case_sync "Sexp"     `Quick test_sexp;
         test_case_sync "Cache ID" `Quick test_cache_id;
-        test_case_sync "Docker"   `Quick test_docker;
+        test_case_sync "Docker UNIX"    `Quick test_docker_unix;
+        test_case_sync "Docker Windows" `Quick test_docker_windows;
       ];
       "build", [
         test_case "Simple"     `Quick test_simple;
@@ -706,6 +779,10 @@ let () =
       ];
       "manifest", [
         test_case "Copy"       `Quick test_copy;
+      ];
+      "process", [
+        test_case "Execute a process" `Quick test_exec_nul;
+        test_case "Read stdout of a process" `Quick test_pread_nul;
       ];
     ]
   end
