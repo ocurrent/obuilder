@@ -667,11 +667,11 @@ let test_secrets_simple _switch () =
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
   Log.check "Check b log"
     {| (from base)
-        ;---> saved as .*
+        ;---> saved as ".*"
          /: (run (secrets (test (target /testsecret)) (test2 (target /run/secrets/test2)))
-         ........(shell Append))
+         [ ]+(shell Append))
          Append
-        ;---> saved as .*
+        ;---> saved as ".*"
        |}
     log;
   Lwt.return_unit
