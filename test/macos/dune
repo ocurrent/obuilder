@@ -1,9 +1,10 @@
 (rule
  (alias macos)
+ (enabled_if (= %{system} macos))
  (deps (source_tree specs))
  (targets ./simple.out)
  (action 
-   (with-stdout-to ./simple.out (run ./macos.sh))))
+  (with-stdout-to ./simple.out (run ./macos.sh))))
 
 (rule
  (alias macos)
