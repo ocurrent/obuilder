@@ -13,6 +13,15 @@ type t = {
   parent : Sqlite3.stmt;
 }
 
+let m = Mutex.create ()
+
+let thread_detach f =
+  Lwt_preemptive.detach (fun () ->
+    Mutex.lock m;
+    Fun.protect f
+      ~finally:(fun () -> Mutex.unlock m)
+  ) ()
+
 let format_timestamp time =
   let { Unix.tm_year; tm_mon; tm_mday; tm_hour; tm_min; tm_sec; _ } = time in
   Fmt.str "%04d-%02d-%02d %02d:%02d:%02d" (tm_year + 1900) (tm_mon + 1) tm_mday tm_hour tm_min tm_sec
@@ -50,6 +59,7 @@ let with_transaction t fn =
   | exception ex -> Db.exec t.rollback []; raise ex
 
 let add ?parent ~id ~now t =
+  thread_detach @@ fun () ->
   let now = format_timestamp now in
   match parent with
   | None -> Db.exec t.add Sqlite3.Data.[ TEXT id; TEXT now; TEXT now; NULL ];
@@ -60,10 +70,12 @@ let add ?parent ~id ~now t =
       )
 
 let set_used ~id ~now t =
+  thread_detach @@ fun () ->
   let now = format_timestamp now in
   Db.exec t.set_used Sqlite3.Data.[ TEXT now; TEXT id ]
 
 let children t id =
+  thread_detach @@ fun () ->
   match Db.query_one t.exists Sqlite3.Data.[ TEXT id ] with
   | [ INT 0L ] -> Error `No_such_id
   | [ INT 1L ] ->
@@ -75,6 +87,7 @@ let children t id =
   | x -> Fmt.failwith "Invalid row: %a" Db.dump_row x
 
 let delete t id =
+  thread_detach @@ fun () ->
   with_transaction t (fun () ->
       match Db.query_one t.parent Sqlite3.Data.[ TEXT id ] with
       | [ TEXT parent ] ->
@@ -86,6 +99,7 @@ let delete t id =
     )
 
 let lru t ~before n =
+  thread_detach @@ fun () ->
   Db.query t.lru Sqlite3.Data.[ TEXT (format_timestamp before); INT (Int64.of_int n) ]
   |> List.map @@ function
   | Sqlite3.Data.[ TEXT id ] -> id
