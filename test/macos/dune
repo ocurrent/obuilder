@@ -8,4 +8,5 @@
 
 (rule
  (alias macos)
+ (enabled_if (= %{system} macos))
  (action (diff simple.expected simple.out)))
