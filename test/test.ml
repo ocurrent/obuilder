@@ -5,6 +5,7 @@ module B = Builder(Mock_store)(Mock_sandbox)(Docker)
 
 let ( / ) = Filename.concat
 let ( >>!= ) = Lwt_result.bind
+let sprintf = Printf.sprintf
 
 let () =
   Logs.(set_level ~all:true (Some Info));
@@ -749,6 +750,15 @@ let test_pread_nul _switch () =
 
 let () =
   let open Alcotest_lwt in
+  let test_case name speed f =
+    let wrap switch () =
+      let s = 10.0 in
+      let timeout = Lwt_unix.sleep s >|= fun () ->
+                    Alcotest.(check reject (sprintf "timeout %fs" s) () ()) in
+      Lwt.pick ([f switch (); timeout])
+    in
+    test_case name speed wrap
+  in
   Lwt_main.run begin
     run "OBuilder" [
       "spec", [
