@@ -10,6 +10,12 @@ type t = {
   mutable builds : int;
 }
 
+let unix_path path =
+  if Sys.win32 then
+    Lwt_process.pread ("", [| "cygpath"; "-u"; path|]) >|= fun str -> String.trim str
+  else
+    Lwt.return path
+
 let delay_store = ref Lwt.return_unit
 
 let rec waitpid_non_intr pid =
@@ -34,7 +40,8 @@ let build t ?base ~id fn =
        begin match base with
          | None -> Os.ensure_dir tmp_dir; Lwt.return_unit
          | Some base ->
-           Lwt_process.exec ("", [| "cp"; "-r"; t.dir / base; tmp_dir |]) >>= function
+           Lwt.both (unix_path (t.dir / base)) (unix_path tmp_dir) >>= fun (src, dst) ->
+           Lwt_process.exec ("", [| "cp"; "-r"; src; dst |]) >>= function
            | Unix.WEXITED 0 -> Lwt.return_unit
            | _ -> failwith "cp failed!"
        end >>= fun () ->
@@ -45,6 +52,7 @@ let build t ?base ~id fn =
          Unix.rename tmp_dir dir;
          Lwt_result.return ()
        | Error _ as e ->
+         unix_path tmp_dir >>= fun tmp_dir ->
          rm_r tmp_dir;
          Lwt.return e
     )
