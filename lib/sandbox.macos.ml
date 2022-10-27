@@ -165,7 +165,7 @@ let fuse_path =
   Arg.required @@
   Arg.opt Arg.(some file) None @@
   Arg.info
-    ~doc:"Folder to mount FUSE filesystem on, typically this is either /usr/local or /opt/homebrew."
+    ~doc:"Directory to mount FUSE filesystem on, typically this is either /usr/local or /opt/homebrew."
     ~docv:"FUSE_PATH"
     ["fuse-path"]
 
