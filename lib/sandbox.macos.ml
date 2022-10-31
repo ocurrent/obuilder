@@ -7,6 +7,8 @@ type t = {
   (* Where zfs dynamic libraries are -- can't be in /usr/local/lib
      see notes in .mli file under "Various Gotchas"... *)
   fallback_library_path : string;
+  (* FUSE file system mount point *)
+  fuse_path : string;
   (* Scoreboard -- where we keep our symlinks for knowing homedirs for users *)
   scoreboard : string;
   (* Should the sandbox mount and unmount the FUSE filesystem *)
@@ -22,6 +24,7 @@ open Sexplib.Conv
 type config = {
   uid: int;
   fallback_library_path : string;
+  fuse_path : string;
   scoreboard : string;
   no_fuse : bool;
 }[@@deriving sexp]
@@ -54,7 +57,7 @@ let copy_to_log ~src ~dst =
 let post_build ~result_dir ~home_dir (t : t) =
   Os.sudo ["rsync"; "-aHq"; "--delete"; home_dir ^ "/"; result_dir ] >>= fun () ->
   if not t.fuse_mounted || t.no_fuse then Lwt.return () else
-  let f = ["umount"; "-f"; "/usr/local"] in
+  let f = ["umount"; "-f"; t.fuse_path] in
   Os.sudo f >>= fun _ -> t.fuse_mounted <- false; Lwt.return ()
 
 (* Using rsync to delete old files seems to be a good deal faster. *)
@@ -68,7 +71,7 @@ let pre_build ~result_dir ~home_dir (t : t) =
     Lwt.return (t.chowned <- true)
   end) >>= fun () ->
   if t.fuse_mounted || t.no_fuse then Lwt.return () else
-  let f = [ "obuilderfs"; t.scoreboard ; "/usr/local"; "-o"; "allow_other" ] in
+  let f = [ "obuilderfs"; t.scoreboard ; t.fuse_path; "-o"; "allow_other" ] in
   Os.sudo f >>= fun _ -> t.fuse_mounted <- true; Lwt.return ()
 
 let user_name ~prefix ~uid =
@@ -97,7 +100,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
   let proc_id = ref None in
   let proc =
     let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
-    let pp f = Os.pp_cmd f config.Config.argv in
+    let pp f = Os.pp_cmd f ("", config.Config.argv) in
     Os.sudo_result ~pp set_homedir >>= fun _ ->
     Os.sudo_result ~pp update_scoreboard >>= fun _ ->
     pre_build ~result_dir ~home_dir t >>= fun _ ->
@@ -133,6 +136,7 @@ let create ~state_dir:_ c =
     uid = c.uid;
     gid = 1000;
     fallback_library_path = c.fallback_library_path;
+    fuse_path = c.fuse_path;
     scoreboard = c.scoreboard;
     no_fuse = c.no_fuse;
     fuse_mounted = false;
@@ -157,6 +161,14 @@ let fallback_library_path =
     ~docv:"FALLBACK"
     ["fallback"]
 
+let fuse_path =
+  Arg.required @@
+  Arg.opt Arg.(some file) None @@
+  Arg.info
+    ~doc:"Directory to mount FUSE filesystem on, typically this is either /usr/local or /opt/homebrew."
+    ~docv:"FUSE_PATH"
+    ["fuse-path"]
+
 let scoreboard =
   Arg.required @@
   Arg.opt Arg.(some file) None @@
@@ -176,7 +188,7 @@ let no_fuse =
     ["no-fuse"]
 
 let cmdliner : config Term.t =
-  let make uid fallback_library_path scoreboard no_fuse =
-    { uid; fallback_library_path; scoreboard; no_fuse }
+  let make uid fallback_library_path fuse_path scoreboard no_fuse =
+    { uid; fallback_library_path; fuse_path; scoreboard; no_fuse }
   in
-  Term.(const make $ uid $ fallback_library_path $ scoreboard $ no_fuse)
+  Term.(const make $ uid $ fallback_library_path $ fuse_path $ scoreboard $ no_fuse)
