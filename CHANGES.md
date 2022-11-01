@@ -1,3 +1,19 @@
+### unreleased
+
+- Add --fuse-path to allow selection of the path redirected by FUSE (@mtelvers #128, reviewed by @MisterDA )
+- Pre-requisites for Windows support using docker for Windows (@MisterDA #116, reviewed by @tmcgilchrist)
+- Add support for Docker/Windows spec (@MisterDA #117, reviewed by @tmcgilchrist)
+- Depend on Lwt.5.6.1 for bugfixes (@MisterDA #108, reviewed by @tmcgilchrist)
+
+- Add macOS support (@patricoferris #87, reviewed by @tmcgilchrist @talex5 @kit-ty-kate)
+- Enable macOS tests only on macOS (@MisterDA #126, reviewed by @tmcgilchrist)
+- Dune 3.0 generates empty intf for executables (@MisterDA #111, reviewed by @talex5)
+- Fix warnings and CI failure (@MisterDA #110, reviewed by @talex5)
+
+- Expose store root and cmdliner term with non-required store (@MisterDA #119, reviewed by @tmcgilchrist)
+- Expose Rsync_store module (@MisterDA #114, reviewed by @talex5)
+- Rsync hard-links to save space (@art-w #102, reviewed by @patricoferris)
+
 ### v0.4
 
 - Use GNU tar format instead of UStar for `copy` operations (@TheLortex #82, reviewed @dra27).
