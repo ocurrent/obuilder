@@ -775,18 +775,7 @@ let () =
     in
     test_case name speed wrap
   in
-  Lwt_main.run begin
-    let manifest =
-      if not Sys.win32 then [test_case "Copy using Manifest" `Quick test_copy_ocaml]
-      else []
-    in
-    run "OBuilder" [
-      "spec", [
-        test_case_sync "Sexp"     `Quick test_sexp;
-        test_case_sync "Cache ID" `Quick test_cache_id;
-        test_case_sync "Docker Windows" `Quick test_docker_windows;
-        test_case_sync "Docker UNIX"    `Quick test_docker_unix;
-      ];
+  let needs_docker = [
       "build", [
         test_case "Simple"     `Quick test_simple;
         test_case "Prune"      `Quick test_prune;
@@ -804,6 +793,23 @@ let () =
         test_case "Simple"     `Quick test_secrets_simple;
         test_case "No secret provided" `Quick test_secrets_not_provided;
       ];
+    ] in
+  let is_win32_gha =
+    match Sys.getenv "CI", Sys.getenv "GITHUB_ACTIONS", Sys.win32 with
+    | "true", "true", true -> true
+    | _ | exception _ -> false in
+  Lwt_main.run begin
+    let manifest =
+      if not Sys.win32 then [test_case "Copy using Manifest" `Quick test_copy_ocaml]
+      else []
+    in
+    run "OBuilder" ([
+      "spec", [
+        test_case_sync "Sexp"     `Quick test_sexp;
+        test_case_sync "Cache ID" `Quick test_cache_id;
+        test_case_sync "Docker Windows" `Quick test_docker_windows;
+        test_case_sync "Docker UNIX"    `Quick test_docker_unix;
+      ];
       "tar_transfer", [
         test_case "Long filename"  `Quick test_tar_long_filename;
       ];
@@ -812,5 +818,5 @@ let () =
         test_case "Execute a process" `Quick test_exec_nul;
         test_case "Read stdout of a process" `Quick test_pread_nul;
       ];
-    ]
+    ] @ (if not is_win32_gha then needs_docker else []))
   end
