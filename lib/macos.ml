@@ -41,7 +41,7 @@ let descendants ~pid =
       let+ s = pread ["sudo"; "pgrep"; "-P"; string_of_int pid ] in
       let pids = Astring.String.cuts ~sep:"\n" s in
       List.filter_map int_of_string_opt pids)
-    (* Errors if there are none, probably errors for other reasons too... *)
+    (* Errors if there are none, probably errors for other reasons too… *)
     (fun _ -> Lwt.return [])
 
 let kill ~pid =
@@ -69,7 +69,7 @@ let copy_template ~base ~local =
 let change_home_directory_for ~user ~home_dir =
   ["dscl"; "."; "-create"; "/Users/" ^ user ; "NFSHomeDirectory"; home_dir ]
 
-(* Used by the FUSE filesystem to indicate where a users home directory should be ...*)
+(* Used by the FUSE filesystem to indicate where a users home directory should be …*)
 let update_scoreboard ~uid ~scoreboard ~home_dir =
   ["ln"; "-Fhs"; home_dir; scoreboard ^ "/" ^ string_of_int uid]
 

@@ -228,7 +228,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     log `Heading (Fmt.str "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
     let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
-        Log.info (fun f -> f "Base image not present; importing %S..." base);
+        Log.info (fun f -> f "Base image not present; importing %S…" base);
         let rootfs = tmp / "rootfs" in
         Os.sudo ["mkdir"; "-m"; "755"; "--"; rootfs] >>= fun () ->
         Fetch.fetch ~log ~rootfs base >>= fun env ->
@@ -245,7 +245,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     let rec aux context = function
       | [] -> Lwt_result.return context
       | (name, child_spec) :: child_builds ->
-        context.Context.log `Heading Fmt.(str "(build %S ...)" name);
+        context.Context.log `Heading Fmt.(str "(build %S …)" name);
         build ~scope t context child_spec >>!= fun child_result ->
         context.Context.log `Note Fmt.(str "--> finished %S" name);
         let context = Context.with_binding name child_result context in

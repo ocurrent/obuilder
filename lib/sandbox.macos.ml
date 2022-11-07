@@ -5,7 +5,7 @@ type t = {
   uid: int;
   gid: int;
   (* Where zfs dynamic libraries are -- can't be in /usr/local/lib
-     see notes in .mli file under "Various Gotchas"... *)
+     see notes in .mli file under "Various Gotchas"… *)
   fallback_library_path : string;
   (* FUSE file system mount point *)
   fuse_path : string;
@@ -80,7 +80,7 @@ let user_name ~prefix ~uid =
 let home_directory user = Filename.concat "/Users/" user
 
 (* A build step in macos:
-   - Should be properly sandboxed using sandbox-exec (coming soon...)
+   - Should be properly sandboxed using sandbox-exec (coming soon…)
    - Umask g+w to work across users if restored from a snapshot
    - Set the new home directory of the user to something static and copy in the environment
    - Should be executed by the underlying user (t.uid) *)
@@ -120,7 +120,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
       if Lwt.is_sleeping proc then (
         match !proc_id with
           | Some pid -> Macos.kill_all_descendants ~pid
-          | None -> Log.warn (fun f -> f "Failed to find pid..."); Lwt.return ()
+          | None -> Log.warn (fun f -> f "Failed to find pid…"); Lwt.return ()
           )
       else Lwt.return_unit  (* Process has already finished *)
     in
