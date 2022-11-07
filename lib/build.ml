@@ -29,7 +29,9 @@ module Context = struct
     secrets : (string * string) list;
   }
 
-  let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?(workdir="/") ?(shell=["/bin/bash"; "-c"]) ?(secrets=[]) ~log ~src_dir () =
+  let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?workdir ?shell ?(secrets=[]) ~log ~src_dir () =
+    let workdir = Option.value ~default:(if Sys.win32 then {|C:/|} else "/") workdir in
+    let shell = Option.value ~default:(if Sys.win32 then ["cmd"; "/S"; "/C"] else ["/bin/bash"; "-c"]) shell in
     { switch; env; src_dir; user; workdir; shell; log; scope = Scope.empty; secrets }
 
   let with_binding name value t =
@@ -122,7 +124,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
         match Scope.find_opt name scope with
         | None -> Fmt.failwith "Unknown build %S" name   (* (shouldn't happen; gets caught earlier) *)
         | Some id ->
-          match Store.result t.store id with
+          Store.result t.store id >>= function
           | None ->
             Lwt_result.fail (`Msg (Fmt.str "Build result %S not found" id))
           | Some dir ->
@@ -226,7 +228,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     log `Heading (Fmt.str "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
     let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
-        Log.info (fun f -> f "Base image not present; importing %S..." base);
+        Log.info (fun f -> f "Base image not present; importing %S…" base);
         let rootfs = tmp / "rootfs" in
         Os.sudo ["mkdir"; "-m"; "755"; "--"; rootfs] >>= fun () ->
         Fetch.fetch ~log ~rootfs base >>= fun env ->
@@ -234,8 +236,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
           (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
         Lwt_result.return ()
       )
-    >>!= fun id ->
-    let path = Option.get (Store.result t.store id) in
+    >>!= fun id -> Store.result t.store id
+    >|= Option.get >>= fun path ->
     let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
     Lwt_result.return (id, env)
 
@@ -243,7 +245,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     let rec aux context = function
       | [] -> Lwt_result.return context
       | (name, child_spec) :: child_builds ->
-        context.Context.log `Heading Fmt.(str "(build %S ...)" name);
+        context.Context.log `Heading Fmt.(str "(build %S …)" name);
         build ~scope t context child_spec >>!= fun child_result ->
         context.Context.log `Note Fmt.(str "--> finished %S" name);
         let context = Context.with_binding name child_result context in

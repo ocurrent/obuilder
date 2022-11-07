@@ -34,8 +34,12 @@ module type STORE = sig
   val delete : t -> id -> unit Lwt.t
   (** [delete t id] removes [id] from the store, if present. *)
 
-  val result : t -> id -> string option
+  val result : t -> id -> string option Lwt.t
   (** [result t id] is the path of the build result for [id], if present. *)
+
+  val log_file : t -> id -> string Lwt.t
+  (** [log_file t id] is the path of the build logs for [id]. The file may
+      not exist if the build has never been run, or failed. *)
 
   val state_dir : t -> string
   (** [state_dir] is the path of a directory which can be used to store mutable

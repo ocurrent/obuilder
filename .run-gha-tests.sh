@@ -86,4 +86,3 @@ case "$1" in
         printf "Usage: .run-gha-tests.sh [btrfs|rsync|zfs]" >&2
         exit 1
 esac
-

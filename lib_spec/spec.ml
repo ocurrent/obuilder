@@ -6,7 +6,7 @@ type sexp = Sexplib.Sexp.t =
   | Atom of string
   | List of sexp list
 
-(* Convert fields matched by [p] from (name v1 v2 ...) to (name (v1 v2 ...)) *)
+(* Convert fields matched by [p] from (name v1 v2 …) to (name (v1 v2 …)) *)
 let inflate_record p =
   let open Sexplib.Sexp in function
   | Atom _ as x -> Fmt.failwith "Invalid record field: %a" Sexplib.Sexp.pp_hum x
@@ -17,7 +17,7 @@ let inflate_record p =
     in
     List (List.map expand xs)
 
-(* Convert fields matched by [p] from (name (v1 v2 ...)) to (name v1 v2 ...) *)
+(* Convert fields matched by [p] from (name (v1 v2 …)) to (name v1 v2 …) *)
 let deflate_record p =
   let open Sexplib.Sexp in function
   | Atom _ as x -> Fmt.failwith "Invalid record field: %a" Sexplib.Sexp.pp_hum x
@@ -111,7 +111,7 @@ type op = [
 
 (* For some ops, we remove the extra () in the sexp string format,
    formatting them as if they were in-line records. e.g.
-   (copy ((src ...) (dst ...))) becomes (copy (src ...) (dst ...)). *)
+   (copy ((src …) (dst …))) becomes (copy (src …) (dst …)). *)
 let inline = function
   | "run" | "copy" | "user" | "env" -> true
   | _ -> false

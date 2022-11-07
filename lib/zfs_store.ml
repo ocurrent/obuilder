@@ -213,8 +213,16 @@ let build t ?base ~id fn =
 let result t id =
   let ds = Dataset.result id in
   let path = Dataset.path t ds ~snapshot:default_snapshot in
-  if Sys.file_exists path then Some path
-  else None
+  if Sys.file_exists path then Lwt.return_some path
+  else Lwt.return_none
+
+let log_file t id =
+  result t id >|= function
+  | Some dir -> Filename.concat dir "log"
+  | None ->
+    let ds = Dataset.result id in
+    let clone = Dataset.path t ds in
+    Filename.concat clone "log"
 
 let get_cache t name =
   match Hashtbl.find_opt t.caches name with

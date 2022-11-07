@@ -4,7 +4,7 @@ val dockerfile_of_spec : buildkit:bool -> os:[`Unix | `Windows] -> Spec.t -> str
 
     However, note that:
 
-    - In "(copy (excludes ...) ...)" the excludes part is ignored. You will need to ensure
+    - In "(copy (excludes …) …)" the excludes part is ignored. You will need to ensure
       you have a suitable ".dockerignore" file.
     - The conversion is not robust against malicious input, as the escaping rules are unclear.
 

@@ -70,6 +70,10 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      - name: Free space
+        # https://github.com/actions/runner-images/issues/2840#issuecomment-790492173
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+
       - name: Checkout code
         uses: actions/checkout@v3
 
@@ -116,4 +120,4 @@ jobs:
 
       - run: opam install . --deps-only --with-test
 
-      - run: opam exec -- dune build
+      - run: opam exec -- dune runtest

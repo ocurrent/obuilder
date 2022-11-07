@@ -83,7 +83,7 @@ When performing a build, the user gives OBuilder a specification file (as descri
 and a source directory, containing files which may be copied into the image using `copy`.
 
 ```sexp
-((from BASE) OP...)
+((from BASE) OP…)
 ```
 
 Example:
@@ -128,7 +128,7 @@ For example:
  (run (shell "hello")))
 ```
 
-At the moment, the `(build ...)` items must appear before the `(from ...)` line.
+At the moment, the `(build …)` items must appear before the `(from …)` line.
 
 
 ### workdir
@@ -149,7 +149,7 @@ If the path given is relative, it is combined with the previous setting.
 ### shell
 
 ```sexp
-(shell ARG...)
+(shell ARG…)
 ```
 
 Example:
@@ -165,9 +165,9 @@ The command run will be this list of arguments followed by the single argument `
 
 ```sexp
 (run
- (cache CACHE...)?
- (network NETWORK...)?
- (secrets SECRET...)?
+ (cache CACHE…)?
+ (network NETWORK…)?
+ (secrets SECRET…)?
  (shell COMMAND))
 
 ```
@@ -188,7 +188,7 @@ Examples:
 
 Runs the single argument `COMMAND` using the values in the current context (set by `workdir` and `shell`).
 
-The `(cache CACHE...)` field can be used to mount one or more persistent caches for the command.
+The `(cache CACHE…)` field can be used to mount one or more persistent caches for the command.
 Each `CACHE` takes the form `(NAME (target PATH))`, where `NAME` uniquely identifies the cache to use
 and `PATH` is the mount point within the container.
 
@@ -198,14 +198,14 @@ A mutable copy of the cache is created for the command. When the command finishe
 this copy becomes the new version of the cache, unless some other command updated the same cache first, in
 which case this one is discarded.
 
-The `(network NETWORK...)` field specifies which network(s) the container will be connected to.
+The `(network NETWORK…)` field specifies which network(s) the container will be connected to.
 `(network host)` is a special value which runs the container in the host's network namespace.
 Otherwise, a fresh network namespace is created for the container, with interfaces for the given
 networks (if any).
 
 Currently, no other networks can be used, so the only options are `host` or an isolated private network.
 
-The `(secrets SECRET...)` field can be used to request values for chosen keys, mounted as read-only files in
+The `(secrets SECRET…)` field can be used to request values for chosen keys, mounted as read-only files in
 the image. Each `SECRET` entry is under the form `(ID (target PATH))`, where `ID` selects the secret, and
 `PATH` is the location of the mounted secret file within the container.
 The sandbox context API contains a `secrets` parameter to provide values to the runtime.
@@ -219,10 +219,10 @@ When used with Docker, make sure to use the **buildkit** syntax, as only buildki
 
 ```sexp
 (copy
- (from ...)?
- (src SRC...)
+ (from …)?
+ (src SRC…)
  (dst DST)
- (exclude EXCL...)?)
+ (exclude EXCL…)?)
 ```
 
 Examples:
@@ -257,7 +257,7 @@ Otherwise, it is the source directory provided by the user.
 Notes:
 
 - Unlike Docker's `COPY` operation, OBuilder copies the files using the current
-  user and group IDs, as set with `(user ...)`.
+  user and group IDs, as set with `(user …)`.
 
 - Both `SRC` and `DST` use `/` as the directory separator on all platforms.
 
@@ -304,12 +304,12 @@ obuilder dockerfile -f example.spec > Dockerfile
 
 The dockerfile should work the same way as the spec file, except for these limitations:
 
-- In `(copy (excludes ...) ...)` the excludes part is ignored.
+- In `(copy (excludes …) …)` the excludes part is ignored.
   You will need to ensure you have a suitable `.dockerignore` file instead.
 
 - If you want to include caches or to use secrets, use `--buildkit` to output in the extended BuildKit syntax.
 
-- All `(network ...)` fields are ignored, as Docker does not allow per-step control of
+- All `(network …)` fields are ignored, as Docker does not allow per-step control of
   networking.
 
 ## Experimental macOS Support

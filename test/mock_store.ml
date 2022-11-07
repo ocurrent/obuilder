@@ -10,6 +10,12 @@ type t = {
   mutable builds : int;
 }
 
+let unix_path path =
+  if Sys.win32 then
+    Lwt_process.pread ("", [| "cygpath"; "-u"; path|]) >|= fun str -> String.trim str
+  else
+    Lwt.return path
+
 let delay_store = ref Lwt.return_unit
 
 let rec waitpid_non_intr pid =
@@ -34,7 +40,8 @@ let build t ?base ~id fn =
        begin match base with
          | None -> Os.ensure_dir tmp_dir; Lwt.return_unit
          | Some base ->
-           Lwt_process.exec ("", [| "cp"; "-r"; t.dir / base; tmp_dir |]) >>= function
+           Lwt.both (unix_path (t.dir / base)) (unix_path tmp_dir) >>= fun (src, dst) ->
+           Lwt_process.exec ("", [| "cp"; "-r"; src; dst |]) >>= function
            | Unix.WEXITED 0 -> Lwt.return_unit
            | _ -> failwith "cp failed!"
        end >>= fun () ->
@@ -45,6 +52,7 @@ let build t ?base ~id fn =
          Unix.rename tmp_dir dir;
          Lwt_result.return ()
        | Error _ as e ->
+         unix_path tmp_dir >>= fun tmp_dir ->
          rm_r tmp_dir;
          Lwt.return e
     )
@@ -61,8 +69,11 @@ let path t id = t.dir / id
 let result t id =
   let dir = path t id in
   match Os.check_dir dir with
-  | `Present -> Some dir
-  | `Missing -> None
+  | `Present -> Lwt.return_some dir
+  | `Missing -> Lwt.return_none
+
+let log_file t id =
+  Lwt.return (t.dir / "logs" / (id  ^ ".log"))
 
 let rec finish t =
   if t.builds > 0 then (
@@ -75,12 +86,13 @@ let with_store fn =
   Lwt_io.with_temp_dir ~prefix:"mock-store-" @@ fun dir ->
   let t = { dir; cond = Lwt_condition.create (); builds = 0 } in
   Obuilder.Os.ensure_dir (state_dir t);
+  Obuilder.Os.ensure_dir (t.dir / "logs");
   Lwt.finalize
     (fun () -> fn t)
     (fun () -> finish t)
 
 let delete t id =
-  match result t id with
+  result t id >>= function
   | Some path -> rm_r path; Lwt.return_unit
   | None -> Lwt.return_unit
 

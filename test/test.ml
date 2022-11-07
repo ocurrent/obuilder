@@ -5,6 +5,8 @@ module B = Builder(Mock_store)(Mock_sandbox)(Docker)
 
 let ( / ) = Filename.concat
 let ( >>!= ) = Lwt_result.bind
+let sprintf = Printf.sprintf
+let root = if Sys.win32 then "C:/" else "/"
 
 let () =
   Logs.(set_level ~all:true (Some Info));
@@ -31,12 +33,22 @@ let with_config fn =
   Os.ensure_dir src_dir;
   fn ~src_dir ~store ~sandbox ~builder
 
+let with_default_exec fn =
+  Lwt.finalize (fun () ->
+      Os.lwt_process_exec := Os.default_exec;
+      fn ())
+    (fun () -> Os.lwt_process_exec := Mock_exec.exec; Lwt.return_unit)
+
+let with_file path flags perms fn =
+  Lwt_unix.openfile path flags perms >>= fun fd ->
+  Lwt.finalize (fun () -> fn fd) (fun () -> Lwt_unix.close fd)
+
 let mock_op ?(result=Lwt_result.return ()) ?(delay_store=Lwt.return_unit) ?cancel ?output () =
   fun ~cancelled ?stdin:_ ~log (config:Obuilder.Config.t) dir ->
   Mock_store.delay_store := delay_store;
   let cmd =
     match config.argv with
-    | ["/bin/bash"; "-c"; cmd] -> cmd
+    | ["/bin/bash"; "-c"; cmd] | ["cmd"; "/S"; "/C"; cmd] -> cmd
     | x -> Fmt.str "%a" Fmt.(Dump.list string) x
   in
   Build_log.printf log "%s@." cmd >>= fun () ->
@@ -65,23 +77,23 @@ let test_simple _switch () =
   B.build builder context spec >>!= get store "output" >>= fun result ->
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
   Log.check "Check log"
-    {|(from base)
+    (sprintf {|(from base)
       ;---> saved as .*
-      /: (run (shell Append))
+      %s: (run (shell Append))
       Append
       ;---> saved as .*
-     |} log;
+     |} root) log;
   (* Check result is cached *)
   Log.clear log;
   B.build builder context spec >>!= get store "output" >>= fun result ->
   Alcotest.(check build_result) "Final result cached" (Ok "base-distro\nrunner") result;
   Log.check "Check cached log"
-    {|(from base)
+    (sprintf {|(from base)
       ;---> using .* from cache
-      /: (run (shell Append))
+      %s: (run (shell Append))
       Append
       ;---> using .* from cache
-     |} log;
+     |} root) log;
   Lwt.return_unit
 
 let test_prune _switch () =
@@ -94,12 +106,12 @@ let test_prune _switch () =
   B.build builder context spec >>!= get store "output" >>= fun result ->
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
   Log.check "Check log"
-    {|(from base)
+    (sprintf {|(from base)
       ;---> saved as .*
-      /: (run (shell Append))
+      %s: (run (shell Append))
       Append
       ;---> saved as .*
-     |} log;
+     |} root) log;
   let log id = Logs.info (fun f -> f "Deleting %S" id) in
   B.prune ~log builder ~before:start 10 >>= fun n ->
   Alcotest.(check int) "Nothing before start time" 0 n;
@@ -123,35 +135,35 @@ let test_concurrent _switch () =
   Mock_sandbox.expect sandbox (mock_op ~output:`Append_cmd ());
   Mock_sandbox.expect sandbox (mock_op ~output:`Append_cmd ());
   let b1 = B.build builder context1 spec1 in
-  Log.await log1 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
+  Log.await log1 (sprintf "(from base)\n%s: (run (shell A))\nA\n" root) >>= fun () ->
   let b2 = B.build builder context2 spec2 in
-  Log.await log2 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
+  Log.await log2 (sprintf "(from base)\n%s: (run (shell A))\nA\n" root) >>= fun () ->
   Lwt.wakeup a_done (Ok ());
   b1 >>!= get store "output" >>= fun b1 ->
   b2 >>!= get store "output" >>= fun b2 ->
   Alcotest.(check build_result) "Final result" (Ok "AB") b1;
   Alcotest.(check build_result) "Final result" (Ok "AC") b2;
   Log.check "Check AB log"
-    {| (from base)
+    (sprintf {| (from base)
       ;---> saved as .*
-       /: (run (shell A))
+       %s: (run (shell A))
        A
       ;---> saved as .*
-       /: (run (shell B))
+       %s: (run (shell B))
        B
       ;---> saved as .*
-     |}
+     |} root root)
     log1;
   Log.check "Check AC log"
-    {| (from base)
+    (sprintf {| (from base)
       ;---> using .* from cache
-       /: (run (shell A))
+       %s: (run (shell A))
        A
       ;---> saved as .*
-       /: (run (shell C))
+       %s: (run (shell C))
        C
       ;---> saved as .*
-     |}
+     |} root root)
     log2;
   Lwt.return ()
 
@@ -167,27 +179,27 @@ let test_concurrent_failure _switch () =
   let a, a_done = Lwt.wait () in
   Mock_sandbox.expect sandbox (mock_op ~result:a ());
   let b1 = B.build builder context1 spec1 in
-  Log.await log1 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
+  Log.await log1 (sprintf "(from base)\n%s: (run (shell A))\nA\n" root) >>= fun () ->
   let b2 = B.build builder context2 spec2 in
-  Log.await log2 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
+  Log.await log2 (sprintf "(from base)\n%s: (run (shell A))\nA\n" root) >>= fun () ->
   Lwt.wakeup a_done (Error (`Msg "Mock build failure"));
   b1 >>!= get store "output" >>= fun b1 ->
   b2 >>!= get store "output" >>= fun b2 ->
   Alcotest.(check build_result) "B1 result" (Error (`Msg "Mock build failure")) b1;
   Alcotest.(check build_result) "B2 result" (Error (`Msg "Mock build failure")) b2;
   Log.check "Check AB log"
-    {| (from base)
+    (sprintf {| (from base)
       ;---> saved as .*
-       /: (run (shell A))
+       %s: (run (shell A))
        A
-     |}
+     |} root)
     log1;
   Log.check "Check AC log"
-    {| (from base)
+    (sprintf {| (from base)
       ;---> using .* from cache
-       /: (run (shell A))
+       %s: (run (shell A))
        A
-     |}
+     |} root)
     log2;
   Lwt.return ()
 
@@ -204,27 +216,27 @@ let test_concurrent_failure_2 _switch () =
   let a, a_done = Lwt.wait () in
   Mock_sandbox.expect sandbox (mock_op ~result:(Lwt_result.fail (`Msg "Mock build failure")) ~delay_store:a ());
   let b1 = B.build builder context1 spec1 in
-  Log.await log1 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
+  Log.await log1 (sprintf "(from base)\n%s: (run (shell A))\nA\n" root) >>= fun () ->
   let b2 = B.build builder context2 spec2 in
-  Log.await log2 "(from base)\n/: (run (shell A))\nA\n" >>= fun () ->
+  Log.await log2 (sprintf "(from base)\n%s: (run (shell A))\nA\n" root) >>= fun () ->
   Lwt.wakeup a_done ();
   b1 >>!= get store "output" >>= fun b1 ->
   b2 >>!= get store "output" >>= fun b2 ->
   Alcotest.(check build_result) "B1 result" (Error (`Msg "Mock build failure")) b1;
   Alcotest.(check build_result) "B2 result" (Error (`Msg "Mock build failure")) b2;
   Log.check "Check AB log"
-    {| (from base)
+    (sprintf {| (from base)
       ;---> saved as .*
-       /: (run (shell A))
+       %s: (run (shell A))
        A
-     |}
+     |} root)
     log1;
   Log.check "Check AC log"
-    {| (from base)
+    (sprintf {| (from base)
       ;---> using .* from cache
-       /: (run (shell A))
+       %s: (run (shell A))
        A
-     |}
+     |} root)
     log2;
   Lwt.return ()
 
@@ -237,16 +249,16 @@ let test_cancel _switch () =
   let r, set_r = Lwt.wait () in
   Mock_sandbox.expect sandbox (mock_op ~result:r ~cancel:set_r ());
   let b = B.build builder context spec in
-  Log.await log "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  Log.await log (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   Lwt_switch.turn_off switch >>= fun () ->
   b >>= fun result ->
   Alcotest.(check build_result) "Final result" (Error `Cancelled) result;
   Log.check "Check log"
-    {|(from base)
+    (sprintf {|(from base)
       ;---> saved as .*
-      /: (run (shell Wait))
+      %s: (run (shell Wait))
       Wait
-     |} log;
+     |} root) log;
   Lwt.return_unit
 
 (* Two users are sharing a build. One cancels. *)
@@ -262,28 +274,28 @@ let test_cancel_2 _switch () =
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
   let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
   let b1 = B.build builder context1 spec in
-  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  Log.await log1 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   let b2 = B.build builder context2 spec in
-  Log.await log2 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  Log.await log2 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   Lwt_switch.turn_off switch1 >>= fun () ->
   b1 >>= fun result1 ->
   Alcotest.(check build_result) "User 1 result" (Error `Cancelled) result1;
   Log.check "Check log"
-    {|(from base)
+    (sprintf {|(from base)
       ;---> saved as .*
-      /: (run (shell Wait))
+      %s: (run (shell Wait))
       Wait
-     |} log1;
+     |} root) log1;
   Lwt.wakeup set_r (Ok ());
   b2 >>!= get store "output" >>= fun result2 ->
   Alcotest.(check build_result) "Final result" (Ok "ok") result2;
   Log.check "Check log"
-    {|(from base)
+    (sprintf {|(from base)
       ;---> using .* from cache
-      /: (run (shell Wait))
+      %s: (run (shell Wait))
       Wait
       ;---> saved as .*
-     |} log2;
+     |} root) log2;
   Lwt.return_unit
 
 (* Two users are sharing a build. Both cancel. *)
@@ -299,27 +311,27 @@ let test_cancel_3 _switch () =
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
   let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
   let b1 = B.build builder context1 spec in
-  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  Log.await log1 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   let b2 = B.build builder context2 spec in
-  Log.await log2 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  Log.await log2 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   Lwt_switch.turn_off switch1 >>= fun () ->
   b1 >>= fun result1 ->
   Alcotest.(check build_result) "User 1 result" (Error `Cancelled) result1;
   Log.check "Check log"
-    {|(from base)
+    (sprintf {|(from base)
       ;---> saved as .*
-      /: (run (shell Wait))
+      %s: (run (shell Wait))
       Wait
-     |} log1;
+     |} root) log1;
   Lwt_switch.turn_off switch2 >>= fun () ->
   b2 >>!= get store "output" >>= fun result2 ->
   Alcotest.(check build_result) "User 2 result" (Error `Cancelled) result2;
   Log.check "Check log"
-    {|(from base)
+    (sprintf {|(from base)
       ;---> using .* from cache
-      /: (run (shell Wait))
+      %s: (run (shell Wait))
       Wait
-     |} log2;
+     |} root) log2;
   r >>= fun r ->
   let r = Result.map (fun () -> "-") r in
   Alcotest.(check build_result) "Build cancelled" (Error `Cancelled) r;
@@ -338,13 +350,13 @@ let test_cancel_4 _switch () =
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
   let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
   let b1 = B.build builder context1 spec in
-  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  Log.await log1 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   Lwt.wakeup set_r (Error (`Msg "Build failed"));
   (* Begin a new build. *)
   let r2, set_r2 = Lwt.wait () in
   Mock_sandbox.expect sandbox (mock_op ~result:r2 ~cancel:set_r2 ~output:(`Constant "ok") ());
   let b2 = B.build builder context2 spec in
-  Log.await log2 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  Log.await log2 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   (* Cancel the original build. *)
   Lwt_switch.turn_off switch1 >>= fun () ->
   b1 >>= fun result1 ->
@@ -354,7 +366,7 @@ let test_cancel_4 _switch () =
   let switch3 = Lwt_switch.create () in
   let context3 = Context.v ~switch:switch3 ~src_dir ~log:(Log.add log3) () in
   let b3 = B.build builder context3 spec in
-  Log.await log3 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  Log.await log3 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   Lwt.wakeup set_r2 (Ok ());
   b2 >>!= get store "output" >>= fun result2 ->
   Alcotest.(check build_result) "User 2 result" (Ok "ok") result2;
@@ -373,7 +385,7 @@ let test_cancel_5 _switch () =
   let switch1 = Lwt_switch.create () in
   let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
   let b1 = B.build builder context1 spec in
-  Log.await log1 "(from base)\n/: (run (shell Wait))\nWait\n" >>= fun () ->
+  Log.await log1 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   Lwt_switch.turn_off switch1 >>= fun () ->
   b1 >>= fun result1 ->
   Alcotest.(check build_result) "User 1 result" (Error `Cancelled) result1;
@@ -383,7 +395,7 @@ let test_cancel_5 _switch () =
   let switch2 = Lwt_switch.create () in
   let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
   let b2 = B.build builder context2 spec in
-  Log.await log2 "(from base)\n/: (run (shell Wait))\n" >>= fun () ->
+  Log.await log2 (sprintf "(from base)\n%s: (run (shell Wait))\n" root) >>= fun () ->
   Lwt.wakeup set_delay ();
   b2 >>!= get store "output" >>= fun result1 ->
   Alcotest.(check build_result) "User 2 result" (Ok "ok") result1;
@@ -419,16 +431,17 @@ let test_delete _switch () =
 
 let test_tar_long_filename _switch () =
   let do_test length =
-    Logs.info (fun m -> m "Test copy length %d " length);
+    Logs.info (fun f -> f "Test copy length %d " length);
     Lwt_io.with_temp_dir ~prefix:"test-copy-src-" @@ fun src_dir ->
     Lwt_io.with_temp_dir ~prefix:"test-copy-dst-" @@ fun dst_dir ->
-    let filename = String.make length 'a' in
+    let filename = src_dir / String.make length 'a' in
+    Logs.info (fun f -> f "length: %d %s" (String.length filename) filename);
     Lwt_io.(with_file ~mode:output)
-      (src_dir / filename)
+      filename
       (fun ch -> Lwt_io.write ch "file-data")
     >>= fun () ->
-    Lwt_unix.openfile (dst_dir / "out.tar") [Lwt_unix.O_WRONLY; Lwt_unix.O_CREAT] 0
-    >>= fun to_untar ->
+    with_file (dst_dir / "out.tar") Lwt_unix.[O_WRONLY; O_CREAT; O_CLOEXEC] 0
+    @@ fun to_untar ->
     let src_manifest = Manifest.generate ~exclude:[] ~src_dir "." |> Result.get_ok in
     let user = Spec.(`Unix { uid=1000; gid=1000 }) in
     Tar_transfer.send_file
@@ -440,7 +453,8 @@ let test_tar_long_filename _switch () =
   in
   do_test 80 >>= fun () ->
   do_test 160 >>= fun () ->
-  do_test 240
+  (* Maximum path length on Windows is 260 characters. *)
+  do_test (260 - 1 (* NUL *) - String.length {|C:\cygwin64\tmp\build_123456_dune\test-copy-src-123456\|})
 
 let sexp = Alcotest.of_pp Sexplib.Sexp.pp_hum
 
@@ -644,47 +658,52 @@ let manifest =
     (Alcotest.of_pp (fun f (`Msg m) -> Fmt.string f m))
 
 (* Test copy step. *)
-let test_copy _switch () =
-  Lwt_io.with_temp_dir ~prefix:"test-copy-" @@ fun src_dir ->
+let test_copy generate =
+  Lwt_io.with_temp_dir ~prefix:"test-copy-bash-" @@ fun src_dir ->
   Lwt_io.(with_file ~mode:output) (src_dir / "file") (fun ch -> Lwt_io.write ch "file-data") >>= fun () ->
+  let root = if Sys.unix then "/root" else "C:/Windows" in
   (* Files *)
   let f1hash = Sha256.string "file-data" in
-  Alcotest.(check manifest) "File" (Ok (`File ("file", f1hash)))
-  @@ Manifest.generate ~exclude:[] ~src_dir "file";
-  Alcotest.(check manifest) "File" (Ok (`File ("file", f1hash)))
-  @@ Manifest.generate ~exclude:[] ~src_dir "./file";
-  Alcotest.(check manifest) "File" (Ok (`File ("file", f1hash)))
-  @@ Manifest.generate ~exclude:[] ~src_dir "/file";
-  Alcotest.(check manifest) "Missing" (Error (`Msg {|Source path "file2" not found|}))
-  @@ Manifest.generate ~exclude:[] ~src_dir "file2";
-  Alcotest.(check manifest) "Not dir" (Error (`Msg {|Not a directory: file (in "file/file2")|}))
-  @@ Manifest.generate ~exclude:[] ~src_dir "file/file2";
-  Alcotest.(check manifest) "Parent" (Error (`Msg {|Can't use .. in source paths! (in "../file")|}))
-  @@ Manifest.generate ~exclude:[] ~src_dir "../file";
+  generate ~exclude:[] ~src_dir "file" >>= fun r ->
+  Alcotest.(check manifest) "File" (Ok (`File ("file", f1hash))) r;
+  generate ~exclude:[] ~src_dir "./file" >>= fun r ->
+  Alcotest.(check manifest) "File relative" (Ok (`File ("file", f1hash))) r;
+  generate ~exclude:[] ~src_dir "/file" >>= fun r ->
+  Alcotest.(check manifest) "File absolute" (Ok (`File ("file", f1hash))) r;
+  generate ~exclude:[] ~src_dir "file2" >>= fun r ->
+  Alcotest.(check manifest) "Missing" (Error (`Msg {|Source path "file2" not found|})) r;
+  generate ~exclude:[] ~src_dir "file/file2" >>= fun r ->
+  Alcotest.(check manifest) "Not dir" (Error (`Msg {|Not a directory: file (in "file/file2")|})) r;
+  generate ~exclude:[] ~src_dir "../file" >>= fun r ->
+  Alcotest.(check manifest) "Parent" (Error (`Msg {|Can't use .. in source paths! (in "../file")|})) r;
   (* Symlinks *)
-  Unix.symlink "/root" (src_dir / "link");
-  Alcotest.(check manifest) "Link" (Ok (`Symlink (("link", "/root"))))
-  @@ Manifest.generate ~exclude:[] ~src_dir "link";
-  Alcotest.(check manifest) "Follow link" (Error (`Msg {|Not a regular file: link (in "link/file")|}))
-  @@ Manifest.generate ~exclude:[] ~src_dir "link/file";
+  Unix.symlink ~to_dir:true root (src_dir / "link");
+  generate ~exclude:[] ~src_dir "link" >>= fun r ->
+  Alcotest.(check manifest) "Link" (Ok (`Symlink (("link", root)))) r;
+  generate ~exclude:[] ~src_dir "link/file" >>= fun r ->
+  Alcotest.(check manifest) "Follow link" (Error (`Msg {|Not a regular file: link (in "link/file")|})) r;
   (* Directories *)
+  generate ~exclude:["file"] ~src_dir "" >>= fun r ->
   Alcotest.(check manifest) "Tree"
-    (Ok (`Dir ("", [`Symlink ("link", "/root")])))
-  @@ Manifest.generate ~exclude:["file"] ~src_dir "";
+    (Ok (`Dir ("", [`Symlink ("link", root)]))) r;
+  generate ~exclude:[] ~src_dir "." >>= fun r ->
   Alcotest.(check manifest) "Tree"
     (Ok (`Dir ("", [`File ("file", f1hash);
-                    `Symlink ("link", "/root")])))
-  @@ Manifest.generate ~exclude:[] ~src_dir ".";
+                    `Symlink ("link", root)]))) r;
   Unix.mkdir (src_dir / "dir1") 0o700;
   Unix.mkdir (src_dir / "dir1" / "dir2") 0o700;
   Lwt_io.(with_file ~mode:output) (src_dir / "dir1" / "dir2" / "file2") (fun ch -> Lwt_io.write ch "file2") >>= fun () ->
   let f2hash = Sha256.string "file2" in
-  Alcotest.(check manifest) "Nested file" (Ok (`File ("dir1/dir2/file2", f2hash)))
-  @@ Manifest.generate ~exclude:[] ~src_dir "dir1/dir2/file2";
+  generate ~exclude:[] ~src_dir "dir1/dir2/file2" >>= fun r ->
+  Alcotest.(check manifest) "Nested file" (Ok (`File ("dir1/dir2/file2", f2hash))) r;
+  generate ~exclude:[] ~src_dir "dir1" >>= fun r ->
   Alcotest.(check manifest) "Tree"
-    (Ok (`Dir ("dir1", [`Dir ("dir1/dir2", [`File ("dir1/dir2/file2", f2hash)])])))
-  @@ Manifest.generate ~exclude:[] ~src_dir "dir1";
+    (Ok (`Dir ("dir1", [`Dir ("dir1/dir2", [`File ("dir1/dir2/file2", f2hash)])]))) r;
   Lwt.return_unit
+
+(* Test the Manifest module. *)
+let test_copy_ocaml _switch () =
+  test_copy (fun ~exclude ~src_dir src -> Lwt_result.lift (Manifest.generate ~exclude ~src_dir src))
 
 let test_cache_id () =
   let check expected id =
@@ -719,44 +738,44 @@ let test_secrets_simple _switch () =
   B.build builder context spec >>!= get store "output" >>= fun result ->
   Alcotest.(check build_result) "Final result" (Ok "base-distro\nrunner") result;
   Log.check "Check b log"
-    {| (from base)
-        ;---> saved as .*
-         /: (run (secrets (test (target /testsecret)) (test2 (target /run/secrets/test2)))
-         ........(shell Append))
+    (sprintf {| (from base)
+        ;---> saved as ".*"
+         %s: (run (secrets (test (target /testsecret)) (test2 (target /run/secrets/test2)))
+         [ ]+(shell Append))
          Append
-        ;---> saved as .*
-       |}
+        ;---> saved as ".*"
+       |} root)
     log;
   Lwt.return_unit
 
 let test_exec_nul _switch () =
-  Os.lwt_process_exec := Os.default_exec;
+  with_default_exec @@ fun () ->
   let args = ["dummy"; "stdout"] in
   Os.exec ~stdout:`Dev_null ~stderr:`Dev_null args >>= fun actual ->
   Alcotest.(check unit) "stdout" actual ();
   let args = ["dummy"; "stderr"] in
   Os.exec ~stdout:`Dev_null ~stderr:`Dev_null args >|= fun actual ->
-  Alcotest.(check unit) "stderr" actual ();
-  Os.lwt_process_exec := Mock_exec.exec
+  Alcotest.(check unit) "stderr" actual ()
 
 let test_pread_nul _switch () =
-  Os.lwt_process_exec := Os.default_exec;
+  with_default_exec @@ fun () ->
   let expected = "the quick brown fox jumps over the lazy dog" in
   let args = ["dummy"; "stdout"] in
   Os.pread ~stderr:`Dev_null args >|= fun actual ->
-  Alcotest.(check string) "stdout" actual expected;
-  Os.lwt_process_exec := Mock_exec.exec
+  Alcotest.(check string) "stdout" actual expected
 
 let () =
   let open Alcotest_lwt in
-  Lwt_main.run begin
-    run "OBuilder" [
-      "spec", [
-        test_case_sync "Sexp"     `Quick test_sexp;
-        test_case_sync "Cache ID" `Quick test_cache_id;
-        test_case_sync "Docker UNIX"    `Quick test_docker_unix;
-        test_case_sync "Docker Windows" `Quick test_docker_windows;
-      ];
+  let test_case name speed f =
+    let wrap switch () =
+      let s = 10.0 in
+      let timeout = Lwt_unix.sleep s >|= fun () ->
+                    Alcotest.(check reject (sprintf "timeout %fs" s) () ()) in
+      Lwt.pick ([f switch (); timeout])
+    in
+    test_case name speed wrap
+  in
+  let needs_docker = [
       "build", [
         test_case "Simple"     `Quick test_simple;
         test_case "Prune"      `Quick test_prune;
@@ -774,15 +793,30 @@ let () =
         test_case "Simple"     `Quick test_secrets_simple;
         test_case "No secret provided" `Quick test_secrets_not_provided;
       ];
+    ] in
+  let is_win32_gha =
+    match Sys.getenv "CI", Sys.getenv "GITHUB_ACTIONS", Sys.win32 with
+    | "true", "true", true -> true
+    | _ | exception _ -> false in
+  Lwt_main.run begin
+    let manifest =
+      if not Sys.win32 then [test_case "Copy using Manifest" `Quick test_copy_ocaml]
+      else []
+    in
+    run "OBuilder" ([
+      "spec", [
+        test_case_sync "Sexp"     `Quick test_sexp;
+        test_case_sync "Cache ID" `Quick test_cache_id;
+        test_case_sync "Docker Windows" `Quick test_docker_windows;
+        test_case_sync "Docker UNIX"    `Quick test_docker_unix;
+      ];
       "tar_transfer", [
         test_case "Long filename"  `Quick test_tar_long_filename;
       ];
-      "manifest", [
-        test_case "Copy"       `Quick test_copy;
-      ];
+      "manifest", manifest;
       "process", [
         test_case "Execute a process" `Quick test_exec_nul;
         test_case "Read stdout of a process" `Quick test_pread_nul;
       ];
-    ]
+    ] @ (if not is_win32_gha then needs_docker else []))
   end
