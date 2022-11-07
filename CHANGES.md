@@ -2,6 +2,7 @@
 
 - Add --fuse-path to allow selection of the path redirected by FUSE (@mtelvers #128, reviewed by @MisterDA )
 - Pre-requisites for Windows support using docker for Windows (@MisterDA #116, reviewed by @tmcgilchrist)
+- Additional tests and prerequistes for Windows support (@MisterDA #130, reviewed by @tmcgilchrist)
 - Add support for Docker/Windows spec (@MisterDA #117, reviewed by @tmcgilchrist)
 - Depend on Lwt.5.6.1 for bugfixes (@MisterDA #108, reviewed by @tmcgilchrist)
 
