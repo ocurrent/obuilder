@@ -18,12 +18,12 @@
   (fmt (>= 0.8.9))
   logs
   (cmdliner (>= 1.1.0))
-  (tar-unix (>= 2.0.0))
+  (tar-unix (>= 2.0.1))
   (yojson (>= "1.6.0"))
   sexplib
   ppx_deriving
   ppx_sexp_conv
-  (sha (>= 1.15.1))
+  (sha (>= 1.15.2))
   sqlite3
   (obuilder-spec (= :version))
   (ocaml (>= 4.14.0))
