@@ -69,15 +69,15 @@ case "$1" in
         sudo mkdir /rsync
         sudo chown "$(whoami)" /rsync
 
-        opam exec -- dune exec -- obuilder healthcheck --store=rsync:/rsync
-        opam exec -- dune exec -- ./stress/stress.exe --store=rsync:/rsync
+        opam exec -- dune exec -- obuilder healthcheck --store=rsync:/rsync --rsync-mode hardlink_unsafe
+        opam exec -- dune exec -- ./stress/stress.exe --store=rsync:/rsync --rsync-mode hardlink_unsafe
 
         # Populate the caches from our own GitHub Actions cache
         sudo mkdir -p /rsync/cache/c-opam-archives
         sudo cp -r ~/.opam/download-cache/* /rsync/cache/c-opam-archives/
         sudo chown -R 1000:1000 /rsync/cache/c-opam-archives
 
-        opam exec -- dune exec -- obuilder build -f example.spec . --store=rsync:/rsync
+        opam exec -- dune exec -- obuilder build -f example.spec . --store=rsync:/rsync --rsync-mode hardlink_unsafe
 
         sudo rm -rf /rsync
         ;;
