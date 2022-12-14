@@ -66,6 +66,10 @@ jobs:
           - ubuntu-latest
         ocaml-compiler:
           - 4.14.x
+        rsync_mode:
+          # - rsync_hardlink_unsafe
+          - rsync_hardlink
+          - rsync_copy
 
     runs-on: ${{ matrix.os }}
 
@@ -96,7 +100,7 @@ jobs:
         run: |
           sudo wget https://github.com/opencontainers/runc/releases/download/$RUNC_VERSION/runc.amd64 -O /usr/local/bin/runc
 
-      - run: ./.run-gha-tests.sh rsync
+      - run: ./.run-gha-tests.sh ${{matrix.rsync_mode}}
 
   windows:
     strategy:

@@ -5,7 +5,7 @@ include S.STORE
 type mode =
   | Copy (** Fast but uses more disk space. *)
   | Hardlink (** Slow but consumes less disk space. *)
-  | Hardlink_unsafe (** Reasonnably fast and uses less disk space, but no
+  | Hardlink_unsafe (** Reasonably fast and uses less disk space, but no
                         checksum verification. Only for testing during
                         development, do not use in production. *)
 
