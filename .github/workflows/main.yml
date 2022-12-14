@@ -67,7 +67,7 @@ jobs:
         ocaml-compiler:
           - 4.14.x
         rsync_mode:
-          - rsync_hardlink_unsafe
+          # - rsync_hardlink_unsafe
           - rsync_hardlink
           - rsync_copy
 
