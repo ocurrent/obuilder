@@ -35,7 +35,7 @@ case "$1" in
         cp -r ~/.opam/download-cache/* /btrfs/cache/c-opam-archives/
         sudo chown -R 1000:1000 /btrfs/cache/c-opam-archives
 
-        opam exec -- dune exec -- obuilder build -f example.spec . --store=btrfs:/btrfs
+        opam exec -- dune exec -- obuilder build -f example.spec . --store=btrfs:/btrfs --color=always
 
         sudo umount /btrfs
         sudo losetup -d "$BTRFS_LOOP"
@@ -58,7 +58,7 @@ case "$1" in
         sudo chown -R 1000:1000 /zfs/cache/c-opam-archives
         sudo zfs snapshot zfs/cache/c-opam-archives@snap
 
-        opam exec -- dune exec -- obuilder build -f example.spec . --store=zfs:zfs
+        opam exec -- dune exec -- obuilder build -f example.spec . --store=zfs:zfs --color=always
 
         sudo zpool destroy zfs
         sudo losetup -d "$ZFS_LOOP"
@@ -94,10 +94,10 @@ case "$1" in
         sudo cp -r ~/.opam/download-cache/* /rsync/cache/c-opam-archives/
         sudo chown -R 1000:1000 /rsync/cache/c-opam-archives
 
-        opam exec -- dune exec -- obuilder build -f example.spec . --store=rsync:/rsync --rsync-mode hardlink
+        opam exec -- dune exec -- obuilder build -f example.spec . --store=rsync:/rsync --rsync-mode hardlink --color=always
 
         sudo rm -rf /rsync
-        ;; 
+        ;;
 
    rsync_copy)
         sudo mkdir /rsync
@@ -111,7 +111,7 @@ case "$1" in
         sudo cp -r ~/.opam/download-cache/* /rsync/cache/c-opam-archives/
         sudo chown -R 1000:1000 /rsync/cache/c-opam-archives
 
-        opam exec -- dune exec -- obuilder build -f example.spec . --store=rsync:/rsync --rsync-mode copy
+        opam exec -- dune exec -- obuilder build -f example.spec . --store=rsync:/rsync --rsync-mode copy --color=always
 
         sudo rm -rf /rsync
         ;;
