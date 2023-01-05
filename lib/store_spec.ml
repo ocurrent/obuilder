@@ -39,11 +39,12 @@ open Cmdliner
 
 let store_t = Arg.conv (of_string, pp)
 
-let store names =
+let store ?docs names =
   Arg.opt Arg.(some store_t) None @@
   Arg.info
     ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path) or $(b,zfs:pool) for the OBuilder cache."
     ~docv:"STORE"
+    ?docs
     names
 
 let rsync_mode_opt =
@@ -57,6 +58,7 @@ let rsync_mode_opt =
       ~doc:(Printf.sprintf "Optimize for speed or low disk usage. $(docv) must be %s."
               (Arg.doc_alts_enum options))
       ~docv:"RSYNC_MODE"
+      ~docs:"RSYNC STORE"
       ["rsync-mode"]
 
 let rsync_mode =
@@ -78,7 +80,7 @@ let of_t store rsync_mode =
 let v =
   Term.(const of_t
         $ Arg.value @@ store ["store"]
-        $ Arg.value @@ rsync_mode_opt )
+        $ Arg.value @@ rsync_mode_opt)
 
 (** Parse cli arguments for t and initialise a [store]. *)
 let cmdliner =
