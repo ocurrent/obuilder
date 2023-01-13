@@ -62,6 +62,16 @@ let kill_all_descendants ~pid =
   in
     kill_all pid
 
+let rm ~directory =
+  let pp _ ppf = Fmt.pf ppf "[ RM ]" in
+  let delete = ["rm"; "-r"; directory ] in
+  let* t = sudo_result ~pp:(pp "RM") delete in
+    match t with
+    | Ok () -> Lwt.return ()
+    | Error (`Msg m) ->
+      Log.warn (fun f -> f "Failed to remove %s because %s" directory m);
+      Lwt.return ()
+
 let copy_template ~base ~local =
   let pp s ppf = Fmt.pf ppf "[ %s ]" s in
   sudo_result ~pp:(pp "RSYNC") ["rsync"; "-avq"; base ^ "/"; local]

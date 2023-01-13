@@ -17,6 +17,7 @@ type t = {
   mutable fuse_mounted : bool;
   (* Whether we have chowned/chmoded the data *)
   mutable chowned : bool;
+  lock : Lwt_mutex.t;
 }
 
 open Sexplib.Conv
@@ -54,14 +55,22 @@ let copy_to_log ~src ~dst =
    For macOS we also need to create the illusion of building in a static
    home directory, and to achieve this we copy in the pre-build environment
    and copy back out the result. It's not super efficienct, but is necessary.*)
-let post_build ~result_dir ~home_dir (t : t) =
-  Os.sudo ["rsync"; "-aHq"; "--delete"; home_dir ^ "/"; result_dir ] >>= fun () ->
+
+let unmount_fuse t =
   if not t.fuse_mounted || t.no_fuse then Lwt.return () else
   let f = ["umount"; "-f"; t.fuse_path] in
   Os.sudo f >>= fun _ -> t.fuse_mounted <- false; Lwt.return ()
 
+let post_build ~result_dir ~home_dir t =
+  Os.sudo ["rsync"; "-aHq"; "--delete"; home_dir ^ "/"; result_dir ] >>= fun () ->
+  unmount_fuse t
+
+let post_cancellation ~result_tmp t =
+  Macos.rm ~directory:result_tmp >>= fun () ->
+  unmount_fuse t
+
 (* Using rsync to delete old files seems to be a good deal faster. *)
-let pre_build ~result_dir ~home_dir (t : t) =
+let pre_build ~result_dir ~home_dir t =
   Os.sudo [ "mkdir"; "-p"; "/tmp/obuilder-empty" ] >>= fun () ->
   Os.sudo [ "rsync"; "-aHq"; "--delete"; "/tmp/obuilder-empty/"; home_dir ^ "/" ] >>= fun () ->
   Os.sudo [ "rsync"; "-aHq"; result_dir ^ "/"; home_dir ] >>= fun () ->
@@ -85,6 +94,7 @@ let home_directory user = Filename.concat "/Users/" user
    - Set the new home directory of the user to something static and copy in the environment
    - Should be executed by the underlying user (t.uid) *)
 let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
+  Lwt_mutex.with_lock t.lock (fun () ->
   Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
   let result_dir = Filename.concat result_tmp "rootfs" in
   let user = user_name ~prefix:"mac" ~uid:t.uid in
@@ -117,19 +127,19 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
   in
   Lwt.on_termination cancelled (fun () ->
     let aux () =
-      if Lwt.is_sleeping proc then (
+      (if Lwt.is_sleeping proc then
         match !proc_id with
-          | Some pid -> Macos.kill_all_descendants ~pid
+          | Some pid -> Macos.kill_all_descendants ~pid >>= fun () -> Lwt_unix.sleep 5.0
           | None -> Log.warn (fun f -> f "Failed to find pid…"); Lwt.return ()
-          )
-      else Lwt.return_unit  (* Process has already finished *)
+      else Lwt.return_unit) (* Process has already finished *)
+          >>= fun () -> post_cancellation ~result_tmp t
     in
       Lwt.async aux
   );
   proc >>= fun r ->
   copy_log >>= fun () ->
     if Lwt.is_sleeping cancelled then Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
-    else Lwt_result.fail `Cancelled
+    else Lwt_result.fail `Cancelled)
 
 let create ~state_dir:_ c =
   Lwt.return {
@@ -141,6 +151,7 @@ let create ~state_dir:_ c =
     no_fuse = c.no_fuse;
     fuse_mounted = false;
     chowned = false;
+    lock = Lwt_mutex.create ();
   }
 
 let uid =

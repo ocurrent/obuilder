@@ -101,15 +101,15 @@ let build t ?base ~id fn =
       (fun r ->
       begin match r with
           | Ok () -> Rsync.rename_with_sharing ~mode:t.mode ~base ~src:result_tmp ~dst:result
-          | Error _ -> Lwt.return_unit
+          | Error _ -> Rsync.delete result_tmp
       end >>= fun () ->
       Lwt.return r
       )
-  (fun ex ->
-      Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
-      Rsync.delete result_tmp >>= fun () ->
-      Lwt.fail ex
-  )
+      (fun ex ->
+          Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
+          Rsync.delete result_tmp >>= fun () ->
+          Lwt.fail ex
+      )
 
 let delete t id =
   let path = Path.result t id in
