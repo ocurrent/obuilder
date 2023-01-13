@@ -1,4 +1,5 @@
 open Lwt.Infix
+open Lwt.Syntax
 
 (* This is rather complicated, because (unlike btrfs):
    - zfs won't let you delete datasets that other datasets are cloned from.
@@ -50,10 +51,10 @@ module Dataset : sig
   val cache : string -> dataset
   val cache_tmp : int -> string -> dataset
 
-  val full_name : ?snapshot:string -> t -> dataset -> string
+  val full_name : ?snapshot:string -> ?subvolume:string -> t -> dataset -> string
   val path : ?snapshot:string -> t -> dataset -> string
 
-  val exists : ?snapshot:string -> t -> dataset -> bool
+  val exists : ?snapshot:string -> t -> dataset -> bool Lwt.t
   val if_missing : ?snapshot:string -> t -> dataset -> (unit -> unit Lwt.t) -> unit Lwt.t
 end = struct
   type dataset = string
@@ -69,10 +70,12 @@ end = struct
   let cache name = "cache/" ^ Escape.cache name
   let cache_tmp i name = strf "cache-tmp/%d-%s" i (Escape.cache name)
 
-  let full_name ?snapshot t ds =
-    match snapshot with
-    | None -> strf "%s/%s" t.pool ds
-    | Some snapshot -> strf "%s/%s@%s" t.pool ds snapshot
+  let full_name ?snapshot ?subvolume t ds =
+    match snapshot, subvolume with
+    | None, None -> strf "%s/%s" t.pool ds
+    | Some snapshot, None -> strf "%s/%s@%s" t.pool ds snapshot
+    | None, Some subvolume -> strf "%s/%s/%s" t.pool ds subvolume
+    | Some snapshot, Some subvolume -> strf "%s/%s/%s@%s" t.pool ds subvolume snapshot
 
   let path ?snapshot t ds =
     match snapshot with
@@ -80,13 +83,14 @@ end = struct
     | Some snapshot -> strf "%s%s/%s/.zfs/snapshot/%s" t.prefix t.pool ds snapshot
 
   let exists ?snapshot t ds =
-    match Os.check_dir (path ?snapshot t ds) with
-    | `Missing -> false
-    | `Present -> true
+    Lwt_process.pread ("", [| "zfs"; "list"; "-p"; "-H"; full_name t ds ?snapshot |]) >>= function
+    | "" -> Lwt.return false
+    | _ -> Lwt.return true
 
   let if_missing ?snapshot t ds fn =
-    if exists ?snapshot t ds then Lwt.return_unit
-    else fn ()
+    exists ?snapshot t ds >>= function
+    | true -> Lwt.return_unit
+    | false -> fn ()
 end
 
 let user = `Unix { Obuilder_spec.uid = Unix.getuid (); gid = Unix.getgid () }
@@ -102,9 +106,9 @@ module Zfs = struct
   let destroy t ds mode =
     let opts =
       match mode with
-      | `Only -> []
-      | `And_snapshots -> ["-r"]
-      | `And_snapshots_and_clones -> ["-R"]
+      | `Only -> ["-f"]
+      | `And_snapshots -> ["-r"; "-f"]
+      | `And_snapshots_and_clones -> ["-R"; "-f"]
     in
     Os.sudo (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds])
 
@@ -120,8 +124,40 @@ module Zfs = struct
   let clone t ~src ~snapshot dst =
     Os.sudo ["zfs"; "clone"; "--"; Dataset.full_name t src ~snapshot; Dataset.full_name t dst]
 
+  let mounted ?snapshot t ~ds =
+    Lwt_process.pread ("", [| "zfs"; "get"; "-pH"; "mounted"; Dataset.full_name t ds ?snapshot |]) >>= fun s ->
+    match ( Scanf.sscanf s "%s %s %s %s" (fun _ _ yesno _ -> yesno = "yes") ) with
+    | state -> Lwt.return state
+    | exception Scanf.Scan_failure _ -> Lwt.return false
+
+  let mount ?snapshot t ~ds =
+    mounted t ~ds ?snapshot >>= fun m ->
+    if not m then
+      let pp _ ppf = Fmt.pf ppf "zfs mount" in
+      let* t = Os.sudo_result ~pp:(pp "zfs mount") ~is_success:(fun n -> n = 0 || n = 16) ["zfs"; "mount"; "--"; Dataset.full_name t ds ?snapshot] in
+        match t with
+        | Ok () -> Lwt.return ()
+        | Error (`Msg m) ->
+          Log.info (fun f -> f "%s" m);
+          Lwt.return ()
+    else Lwt.return ()
+
+  let unmount ?snapshot t ~ds =
+    Os.sudo ["zfs"; "unmount"; "-f"; Dataset.full_name t ds ?snapshot]
+
+  let clone_with_children t ~src ~snapshot dst =
+    Os.sudo ["zfs"; "clone"; "-o"; "canmount=noauto"; "--"; Dataset.full_name t src ~snapshot; Dataset.full_name t dst] >>= fun () ->
+    Os.sudo ["zfs"; "mount"; Dataset.full_name t dst] >>= fun () ->
+    let vol = Dataset.full_name t src in
+    let len = String.length vol in
+    Lwt_process.pread ("", [| "zfs"; "list"; "-H"; "-r"; "-o"; "name"; vol |]) >>= fun output ->
+    String.split_on_char '\n' output |> List.map (fun s -> (s, String.length s)) |>
+      List.filter (fun (_, l) -> l > len) |> List.map (fun (s, l) -> String.sub s (len + 1) (l - len - 1)) |>
+      Lwt_list.iter_s (fun subvolume -> Os.sudo ["zfs"; "clone"; "-o"; "mountpoint=none"; "--";
+        Dataset.full_name t src ~subvolume ~snapshot; Dataset.full_name t dst ~subvolume])
+
   let snapshot t ds ~snapshot =
-    Os.sudo ["zfs"; "snapshot"; "--"; Dataset.full_name t ds ~snapshot]
+    Os.sudo ["zfs"; "snapshot"; "-r"; "--"; Dataset.full_name t ds ~snapshot]
 
   let promote t ds =
     Os.sudo ["zfs"; "promote"; Dataset.full_name t ds]
@@ -136,8 +172,9 @@ module Zfs = struct
 end
 
 let delete_if_exists t ds mode =
-  if Dataset.exists t ds then Zfs.destroy t ds mode
-  else Lwt.return_unit
+  Dataset.exists t ds >>= function
+  | true -> Zfs.destroy t ds mode
+  | false -> Lwt.return_unit
 
 let state_dir t = Dataset.path t Dataset.state
 
@@ -193,7 +230,7 @@ let build t ?base ~id fn =
       Zfs.chown ~user t ds
     | Some base ->
       let src = Dataset.result base in
-      Zfs.clone t ~src ~snapshot:default_snapshot ds
+      Zfs.clone_with_children t ~src ~snapshot:default_snapshot ds
   end
   >>= fun () ->
   Lwt.try_bind
@@ -204,22 +241,27 @@ let build t ?base ~id fn =
         Zfs.snapshot t ds ~snapshot:default_snapshot >>= fun () ->
         (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
            keep it around? *)
+        Zfs.unmount t ~ds >>= fun () ->
         Lwt_result.return ()
       | Error _ as e ->
         Log.debug (fun f -> f "zfs: build %S failed" id);
-        Zfs.destroy t ds `Only >>= fun () ->
+        Zfs.destroy t ds `And_snapshots >>= fun () ->
         Lwt.return e
     )
     (fun ex ->
         Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
-        Zfs.destroy t ds `Only >>= fun () ->
+        Zfs.destroy t ds `And_snapshots >>= fun () ->
         Lwt.fail ex
     )
 
 let result t id =
   let ds = Dataset.result id in
-  let path = Dataset.path t ds ~snapshot:default_snapshot in
-  if Sys.file_exists path then Lwt.return_some path
+  Dataset.exists t ds ~snapshot:default_snapshot >>= fun e ->
+  if e then
+    Zfs.mount t ~ds >>= fun () ->
+    Zfs.mount t ~ds ~snapshot:default_snapshot >>= fun () ->
+    let path = Dataset.path t ds ~snapshot:default_snapshot in
+    Lwt.return_some path
   else Lwt.return_none
 
 let log_file t id =
@@ -335,13 +377,12 @@ let delete_cache t name =
   Lwt_mutex.with_lock cache.lock @@ fun () ->
   Log.debug (fun f -> f "zfs: delete_cache %S" (name :> string));
   if cache.n_clones > 0 then Lwt_result.fail `Busy
-  else (
+  else
     let main_ds = Dataset.cache name in
-    if Dataset.exists t main_ds then (
-      Zfs.destroy t main_ds `And_snapshots >>= fun () ->
+    Dataset.exists t main_ds >>= function
+    | true -> Zfs.destroy t main_ds `And_snapshots >>= fun () ->
       Lwt_result.return ()
-    ) else Lwt_result.return ()
-  )
+    | false -> Lwt_result.return ()
 
 let complete_deletes _t =
   (* The man-page says "Pending changes are generally accounted for within a few seconds" *)

@@ -451,6 +451,9 @@ let create (c : config) =
   let+ () = if Result.is_error volume_exists then create_tar_volume t else Lwt.return_unit in
   t
 
+let finished () =
+  Lwt.return ()
+
 open Cmdliner
 
 let docs = "DOCKER BACKEND"

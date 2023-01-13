@@ -9,3 +9,4 @@ val expect :
         string ->
         (unit, [`Msg of string | `Cancelled]) Lwt_result.t) ->
   unit
+val finished : unit -> unit Lwt.t
