@@ -70,6 +70,16 @@ let delete () store conf id =
     Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
   end
 
+let clean () store conf =
+  Lwt_main.run begin
+    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+    Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ begin fun () ->
+      let now = Unix.(gmtime (gettimeofday ())) in
+      Builder.prune builder ~before:now max_int ~log:(fun id -> Fmt.pr "Removing %s@." id)
+    end >|= fun n ->
+    Fmt.pr "Removed %d items@." n
+  end
+
 let dockerfile () buildkit escape spec =
   Sexplib.Sexp.load_sexp spec
   |> Obuilder_spec.t_of_sexp
@@ -135,6 +145,12 @@ let delete =
   Cmd.v info
     Term.(const delete $ setup_log $ store $ Obuilder.Sandbox.cmdliner $ id)
 
+let clean =
+  let doc = "Clean all cached build results." in
+  let info = Cmd.info "clean" ~doc in
+  Cmd.v info
+    Term.(const clean $ setup_log $ store $ Obuilder.Sandbox.cmdliner)
+
 let buildkit =
   Arg.value @@
   Arg.flag @@
@@ -163,7 +179,7 @@ let healthcheck =
   Cmd.v info
     Term.(const healthcheck $ setup_log $ store $ Obuilder.Sandbox.cmdliner)
 
-let cmds = [build; delete; dockerfile; healthcheck]
+let cmds = [build; delete; clean; dockerfile; healthcheck]
 
 let () =
   let doc = "a command-line interface for OBuilder" in
