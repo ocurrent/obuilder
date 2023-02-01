@@ -55,8 +55,8 @@ jobs:
         run: |
           sudo wget https://github.com/opencontainers/runc/releases/download/$RUNC_VERSION/runc.amd64 -O /usr/local/bin/runc
 
-      - run: ./.run-gha-tests.sh btrfs
-      - run: ./.run-gha-tests.sh zfs
+      - run: $GITHUB_WORKSPACE/.github/workflows/main.sh btrfs
+      - run: $GITHUB_WORKSPACE/.github/workflows/main.sh zfs
 
   build_rsync:
     strategy:
@@ -100,7 +100,7 @@ jobs:
         run: |
           sudo wget https://github.com/opencontainers/runc/releases/download/$RUNC_VERSION/runc.amd64 -O /usr/local/bin/runc
 
-      - run: ./.run-gha-tests.sh ${{matrix.rsync_mode}}
+      - run: $GITHUB_WORKSPACE/.github/workflows/main.sh ${{matrix.rsync_mode}}
 
   windows:
     strategy:
