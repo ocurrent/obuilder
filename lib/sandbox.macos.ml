@@ -33,9 +33,9 @@ type config = {
 let run_as ~env ~user ~cmd =
   let command =
     let env = String.concat " " (List.map (fun (k, v) -> Filename.quote (k^"="^v)) env) in
-    "sudo" :: "su" :: "-l" :: user :: "-c" :: "--" ::
-    Printf.sprintf {|source ~/.obuilder_profile.sh && env %s "$0" "$@"|} env ::
-    cmd
+    "sudo" :: "su" :: "-l" :: user :: "-c" :: "--"
+    :: Printf.sprintf {|source ~/.obuilder_profile.sh && env %s "$0" "$@"|} env
+    :: cmd
   in
   Log.debug (fun f -> f "Running: %s" (String.concat " " command));
   command
@@ -57,9 +57,11 @@ let copy_to_log ~src ~dst =
    and copy back out the result. It's not super efficienct, but is necessary.*)
 
 let unmount_fuse t =
-  if not t.fuse_mounted || t.no_fuse then Lwt.return () else
-  let f = ["umount"; "-f"; t.fuse_path] in
-  Os.sudo f >>= fun _ -> t.fuse_mounted <- false; Lwt.return ()
+  if not t.fuse_mounted || t.no_fuse then Lwt.return_unit
+  else
+    let f = ["umount"; "-f"; t.fuse_path] in
+    Os.sudo f >>= fun _ -> t.fuse_mounted <- false;
+    Lwt.return_unit
 
 let post_build ~result_dir ~home_dir t =
   Os.sudo ["rsync"; "-aHq"; "--delete"; home_dir ^ "/"; result_dir ] >>= fun () ->
@@ -74,14 +76,18 @@ let pre_build ~result_dir ~home_dir t =
   Os.sudo [ "mkdir"; "-p"; "/tmp/obuilder-empty" ] >>= fun () ->
   Os.sudo [ "rsync"; "-aHq"; "--delete"; "/tmp/obuilder-empty/"; home_dir ^ "/" ] >>= fun () ->
   Os.sudo [ "rsync"; "-aHq"; result_dir ^ "/"; home_dir ] >>= fun () ->
-  (if t.chowned then Lwt.return () else begin
-    Os.sudo [ "chown"; "-R"; ":" ^ (string_of_int t.gid); home_dir ] >>= fun () ->
-    Os.sudo [ "chmod"; "-R"; "g+w"; home_dir ] >>= fun () ->
-    Lwt.return (t.chowned <- true)
-  end) >>= fun () ->
-  if t.fuse_mounted || t.no_fuse then Lwt.return () else
-  let f = [ "obuilderfs"; t.scoreboard ; t.fuse_path; "-o"; "allow_other" ] in
-  Os.sudo f >>= fun _ -> t.fuse_mounted <- true; Lwt.return ()
+  (if t.chowned then Lwt.return_unit
+   else begin
+     Os.sudo [ "chown"; "-R"; ":" ^ (string_of_int t.gid); home_dir ] >>= fun () ->
+     Os.sudo [ "chmod"; "-R"; "g+w"; home_dir ] >>= fun () ->
+     t.chowned <- true;
+     Lwt.return_unit
+   end) >>= fun () ->
+  if t.fuse_mounted || t.no_fuse then Lwt.return_unit
+  else
+    let f = [ "obuilderfs"; t.scoreboard ; t.fuse_path; "-o"; "allow_other" ] in
+    Os.sudo f >>= fun _ -> t.fuse_mounted <- true;
+    Lwt.return_unit
 
 let user_name ~prefix ~uid =
   Fmt.str "%s%i" prefix uid
@@ -134,12 +140,12 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
        else Lwt.return_unit) (* Process has already finished *)
       >>= fun () -> post_cancellation ~result_tmp t
     in
-      Lwt.async aux
+    Lwt.async aux
   );
   proc >>= fun r ->
   copy_log >>= fun () ->
-    if Lwt.is_sleeping cancelled then Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
-    else Lwt_result.fail `Cancelled)
+  if Lwt.is_sleeping cancelled then Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
+  else Lwt_result.fail `Cancelled)
 
 let create ~state_dir:_ c =
   Lwt.return {
@@ -159,7 +165,7 @@ let uid =
   Arg.opt Arg.(some int) None @@
   Arg.info
     ~doc:"The uid of the user that will be used as the builder. This should be unique and not in use. \
-    You can run `dscl . -list /Users uid` to see all of the currently active users and their uids."
+          You can run `dscl . -list /Users uid` to see all of the currently active users and their uids."
     ~docv:"UID"
     ["uid"]
 
@@ -168,7 +174,7 @@ let fallback_library_path =
   Arg.opt Arg.(some file) None @@
   Arg.info
     ~doc:"The fallback path of the dynamic libraries. This is used whenever the FUSE filesystem \
-    is in place preventing anything is /usr/local from being accessed."
+          is in place preventing anything is /usr/local from being accessed."
     ~docv:"FALLBACK"
     ["fallback"]
 
@@ -185,7 +191,7 @@ let scoreboard =
   Arg.opt Arg.(some file) None @@
   Arg.info
     ~doc:"The scoreboard directory which is used by the FUSE filesystem to record \
-    the association between user id and home directory."
+          the association between user id and home directory."
     ~docv:"SCOREBOARD"
     ["scoreboard"]
 
@@ -194,7 +200,7 @@ let no_fuse =
   Arg.flag @@
   Arg.info
     ~doc:"Whether the macOS sandbox should mount and unmount the FUSE filesystem. \
-    This is useful for testing."
+          This is useful for testing."
     ~docv:"NO-FUSE"
     ["no-fuse"]
 
