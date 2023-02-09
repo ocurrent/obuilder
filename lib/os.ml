@@ -188,3 +188,12 @@ let copy ?(superuser=false) ~src dst =
     sudo ["cp"; "-a"; "--"; src; dst ]
   else
     exec ["cp"; "-a"; "--"; src; dst ]
+
+let rm ~directory =
+  let pp _ ppf = Fmt.pf ppf "[ RM ]" in
+  sudo_result ~pp:(pp "RM") ["rm"; "-r"; directory ] >>= fun t ->
+  match t with
+  | Ok () -> Lwt.return_unit
+  | Error (`Msg m) ->
+    Log.warn (fun f -> f "Failed to remove %s because %s" directory m);
+    Lwt.return_unit
