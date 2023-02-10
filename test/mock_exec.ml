@@ -29,7 +29,7 @@ let with_fd x f =
     Os.close fd;
     Lwt.finalize
       (fun () -> f copy)
-      (fun () -> Unix.close copy; Lwt.return ())
+      (fun () -> Unix.close copy; Lwt.return_unit)
   | _ -> failwith "Unsupported mock FD redirection"
 
 let docker_create ?stdout base =

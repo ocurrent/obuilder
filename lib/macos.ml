@@ -42,17 +42,17 @@ let descendants ~pid =
       let pids = Astring.String.cuts ~sep:"\n" s in
       List.filter_map int_of_string_opt pids)
     (* Errors if there are none, probably errors for other reasons too… *)
-    (fun _ -> Lwt.return [])
+    (fun _ -> Lwt.return_nil)
 
 let kill ~pid =
   let pp _ ppf = Fmt.pf ppf "[ KILL ]" in
   let delete = ["kill"; "-9";  string_of_int pid ] in
   let* t = sudo_result ~pp:(pp "KILL") delete in
     match t with
-    | Ok () -> Lwt.return ()
+    | Ok () -> Lwt.return_unit
     | Error (`Msg m) ->
       Log.warn (fun f -> f "Failed to kill process %i because %s" pid m);
-      Lwt.return ()
+      Lwt.return_unit
 
 let kill_all_descendants ~pid =
   let rec kill_all pid : unit Lwt.t =

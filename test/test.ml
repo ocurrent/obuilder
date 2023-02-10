@@ -165,7 +165,7 @@ let test_concurrent _switch () =
       ;---> saved as .*
      |} root root)
     log2;
-  Lwt.return ()
+  Lwt.return_unit
 
 (* Two builds, [A;B] and [A;C] are started together. The [A] command fails. *)
 let test_concurrent_failure _switch () =
@@ -201,7 +201,7 @@ let test_concurrent_failure _switch () =
        A
      |} root)
     log2;
-  Lwt.return ()
+  Lwt.return_unit
 
 (* Two builds, [A;B] and [A;C] are started together. The [A] command fails
    just as the second build is trying to open the log file. *)
@@ -238,7 +238,7 @@ let test_concurrent_failure_2 _switch () =
        A
      |} root)
     log2;
-  Lwt.return ()
+  Lwt.return_unit
 
 let test_cancel _switch () =
   with_config @@ fun ~src_dir ~store:_ ~sandbox ~builder ->
