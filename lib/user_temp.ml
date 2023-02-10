@@ -5,4 +5,4 @@ let fetch ~log:_ ~rootfs base =
   Macos.copy_template ~base ~local:rootfs >>= fun _ ->
   Os.sudo [ "chown"; "-R"; ":1000"; rootfs ] >>= fun () ->
   Os.sudo [ "chmod"; "-R"; "g+w"; rootfs ] >>= fun () ->
-  Lwt.return []
+  Lwt.return_nil

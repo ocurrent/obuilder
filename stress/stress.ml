@@ -164,7 +164,7 @@ module Test(Store : S.STORE) = struct
     let cond = Lwt_condition.create () in
     let failures = ref 0 in
     let rec aux () =
-      if !running = 0 && !pending = 0 then Lwt.return ()
+      if !running = 0 && !pending = 0 then Lwt.return_unit
       else if !running < max_running && !pending > 0 then (
         if !pending mod 10 = 0 then Fmt.pr "%d pending: starting new build@." !pending;
         incr running;
