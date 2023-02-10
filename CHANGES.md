@@ -1,5 +1,12 @@
 ### unreleased
 
+- Updates to address rsync and sandbox issues.
+  (@mtelvers #139, reviewed by @tmcgilchrist and @MisterDA)
+- Add an obuilder clean command to clean all build results.
+  (@MisterDA #140, reviewed by @tmcgilchrist)
+- Make rsync-mode mandatory when using rsync store.
+  (@tmcgilchrist #132, reviewed by @kit-ty-kate and @MisterDA)
+
 ### v0.5
 
 - Add --fuse-path to allow selection of the path redirected by FUSE (@mtelvers #128, reviewed by @MisterDA )
