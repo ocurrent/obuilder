@@ -7,7 +7,7 @@
 
 OBuilder takes a build script (similar to a Dockerfile) and performs the steps in it in a sandboxed environment.
 
-After each step, OBuild uses the snapshot feature of the filesystem (ZFS or Btrfs) to store the state of the build. There is also an Rsync backend that copies the build state.
+After each step, OBuilder uses the snapshot feature of the filesystem (ZFS or Btrfs) to store the state of the build. There is also an Rsync backend that copies the build state.
 Repeating a build will reuse the cached results where possible.
 
 OBuilder aims to be portable, although currently only Linux support is present.
@@ -75,7 +75,7 @@ runc then sync operations will instead fail with `EPERM`.
 
 ## The build specification language
 
-The spec files are loosly based on the [Dockerfile][] format.
+The spec files are loosely based on the [Dockerfile][] format.
 The main difference is that the format uses S-expressions rather than a custom format,
 which should make it easier to generate and consume it automatically.
 

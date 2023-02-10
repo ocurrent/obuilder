@@ -54,7 +54,7 @@ let copy_to_log ~src ~dst =
 
    For macOS we also need to create the illusion of building in a static
    home directory, and to achieve this we copy in the pre-build environment
-   and copy back out the result. It's not super efficienct, but is necessary.*)
+   and copy back out the result. It's not super efficient, but is necessary.*)
 
 let unmount_fuse t =
   if not t.fuse_mounted || t.no_fuse then Lwt.return_unit
