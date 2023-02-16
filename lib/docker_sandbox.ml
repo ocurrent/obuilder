@@ -127,6 +127,15 @@ let run ~cancelled ?stdin ~log t config (id:S.id) =
     Lwt_result.bind
       (secrets_layer ~log config.Config.mount_secrets base_image container docker_argv)
       (fun () ->
+         let* r = Docker.Cmd.exists container in
+         let* () =
+           if Result.is_ok r then begin
+             let `Docker_container name = container in
+             Log.warn (fun f -> f "Removing left over container %s." name);
+             Docker.Cmd.rm [ container ]
+           end else
+             Lwt.return_unit
+         in
          let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
          Docker.Cmd_log.run_result ~log ?stdin ~name:container docker_argv base_image argv)
   in
