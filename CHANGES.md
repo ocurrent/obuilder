@@ -1,4 +1,4 @@
-### unreleased
+### v0.5.1
 
 - Updates to address rsync and sandbox issues.
   (@mtelvers #139, reviewed by @tmcgilchrist and @MisterDA)
