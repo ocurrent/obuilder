@@ -109,7 +109,7 @@ jobs:
         os:
           - windows-latest
         ocaml-compiler:
-          - 4.14.x
+          - 4.14.0
 
     runs-on: ${{ matrix.os }}
 
@@ -120,7 +120,10 @@ jobs:
       - name: Use OCaml ${{ matrix.ocaml-compiler }}
         uses: ocaml/setup-ocaml@v2
         with:
-          ocaml-compiler: ${{ matrix.ocaml-compiler }}
+          ocaml-compiler: ocaml-variants.${{ matrix.ocaml-compiler }}+mingw64c,ocaml-config.2
+          opam-repositories: |
+            default: https://github.com/fdopen/opam-repository-mingw.git#opam2
+            opam: https://github.com/ocaml/opam-repository.git
 
       - run: opam install . --deps-only --with-test
 
