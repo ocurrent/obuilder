@@ -169,7 +169,7 @@ module Cmd = struct
   let volume_containers ?stderr (`Docker_volume name) =
     let+ names = pread ?stderr (["ps"; "-a"; "--filter"; "volume=" ^ name; "--format={{ .Names }}"]) in
     names |> String.trim |> String.split_on_char '\n'
-    |> List.map (fun vol -> `Docker_volume vol)
+    |> List.map (fun id -> `Docker_container id)
 
   let mount_point ?stderr name =
     let* s = volume ?stderr (`Inspect ([name], `Mountpoint)) in

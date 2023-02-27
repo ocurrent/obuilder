@@ -60,7 +60,7 @@ val cp_between_volumes :
   src:[< `Docker_volume of string] -> dst:[`Docker_volume of string] ->
   (unit, [> `Msg of string]) Lwt_result.t
 
-(** Wrappers for various Docker client commands, exposing file descritors. *)
+(** Wrappers for various Docker client commands, exposing file descriptors. *)
 module Cmd : S.DOCKER_CMD
        with
          type 'a log = ?stdout:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
