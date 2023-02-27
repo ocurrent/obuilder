@@ -156,4 +156,4 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - run: ./.run-gha-tests.sh docker
+      - run: $GITHUB_WORKSPACE/.github/workflows/main.sh docker
