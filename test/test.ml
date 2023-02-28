@@ -856,5 +856,6 @@ let () =
         test_case "Execute a process" `Quick test_exec_nul;
         test_case "Read stdout of a process" `Quick test_pread_nul;
       ];
+      "variant", Test_variant.tests;
     ] @ needs_docker)
   end

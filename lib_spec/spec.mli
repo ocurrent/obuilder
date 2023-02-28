@@ -42,7 +42,16 @@ type t = private {
   ops : op list;
 } [@@deriving sexp]
 
+val empty : t
+
+val ( @@ ) : op list -> op list -> op list
+(** [a @@ b] concatenates [a] and [b] *)
+
+val ( @@@ ) : op list -> op list list -> op list
+(** [a @@@ b] concatenates [a] at the head of [b], which has been flattened *)
+
 val stage : ?child_builds:(string * t) list -> from:string -> op list -> t
+(** [stage ~from ops] creates a spec file starting from base image [from] with subsequent operations [ops] *)
 
 val comment : ('a, unit, string, op) format4 -> 'a
 val workdir : string -> op
@@ -63,4 +72,4 @@ val pp : t Fmt.t
     own line. *)
 
 val pp_op : op Fmt.t
-(** [pp_op] formats [op] as an S-expression. *)
+(** [pp_op op] formats [op] as an S-expression. *)

@@ -48,7 +48,7 @@
 	  (shell "ocaml-env exec --64 -- opam update -u"))
 	 (shell cmd /S /C)
 	 ; Copy just the opam file first (helps caching)
-	 (copy (src obuilder-spec.opam obuilder.opam) (dst ./))
+	 (copy (src obuilder-spec-opam.opam obuilder-spec.opam obuilder.opam) (dst ./))
 	 (run
 	  (network "nat")
 	  (cache (opam-archives (target /opam/.opam/download-cache)))
@@ -57,16 +57,12 @@
 	 (run
 	  (network "nat")
 	  (cache (opam-archives (target /opam/.opam/download-cache)))
-	  (shell "ocaml-env exec --64 -- opam depext -yu obuilder"))
+	  (shell "ocaml-env exec --64 -- opam depext -yu obuilder obuilder-spec obuilder-spec-opam"))
 	 ; Install OCaml dependencies
 	 (run
 	  (network "nat")
 	  (cache (opam-archives (target /opam/.opam/download-cache)))
-	  (shell "ocaml-env exec --64 -- opam install --deps-only -t obuilder-spec"))
-	 (run
-	  (network "nat")
-	  (cache (opam-archives (target /opam/.opam/download-cache)))
-	  (shell "ocaml-env exec --64 -- opam install --deps-only -t obuilder"))
+	  (shell "ocaml-env exec --64 -- opam install --deps-only -t ."))
 	 (copy                                                  ; Copy the rest of the source code
 	  (src .)
 	  (dst /src/)

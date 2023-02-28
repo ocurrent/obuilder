@@ -1,4 +1,4 @@
-(* Distribution selections for various OPAM combinations, for Linux, Windows, and MacOS distributions *)
+(** Distribution selections for various OPAM combinations, for Linux, Windows, and MacOS distributions *)
 
 open Dockerfile_opam
 

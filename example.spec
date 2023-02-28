@@ -24,18 +24,18 @@
 	    && git --no-pager log --no-decorate -n1 --oneline \
 	    && opam update -u"))
 	 ; Copy just the opam file first (helps caching)
-	 (copy (src obuilder-spec.opam obuilder.opam) (dst ./))
+	 (copy (src obuilder-spec-opam.opam obuilder-spec.opam obuilder.opam) (dst ./))
 	 (run (shell "opam pin add -yn ."))
 	 ; Install OS package dependencies
 	 (run
 	  (network host)
 	  (cache (opam-archives (target /home/opam/.opam/download-cache)))
-	  (shell "opam depext -yu obuilder"))
+	  (shell "opam depext -yu obuilder obuilder-spec obuilder-spec-opam"))
 	 ; Install OCaml dependencies
 	 (run
 	  (network host)
 	  (cache (opam-archives (target /home/opam/.opam/download-cache)))
-	  (shell "opam install --deps-only -t obuilder"))
+	  (shell "opam install --deps-only -t ."))
 	 (copy                                                  ; Copy the rest of the source code
 	  (src .)
 	  (dst /src/)

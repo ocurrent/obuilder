@@ -146,6 +146,11 @@ type t = {
   ops : op list;
 }
 
+let empty = { child_builds = []; from = ""; ops = [] }
+
+let ( @@ ) = ( @ )
+let ( @@@ ) = List.fold_left (fun a b -> a @@ b)
+
 let rec sexp_of_t { child_builds; from; ops } =
   let child_builds =
     child_builds |> List.map (fun (name, spec) ->
