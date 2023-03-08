@@ -15,6 +15,7 @@ module Store_spec = Store_spec
 
 (** {2 Fetchers} *)
 module Docker = Docker
+module Standalone = Standalone
 module User_temp = User_temp
 
 (** {2 Sandboxes} *)
