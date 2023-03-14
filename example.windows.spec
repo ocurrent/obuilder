@@ -53,11 +53,6 @@
 	  (network "nat")
 	  (cache (opam-archives (target /opam/.opam/download-cache)))
 	  (shell "ocaml-env exec --64 -- opam pin add -yn ."))
-	 ; Pin dependencies outdated in fdopen/opam-repository-mingw
-	 (run
-	  (network "nat")
-	  (cache (opam-archives (target /opam/.opam/download-cache)))
-	  (shell "ocaml-env exec --64 -- opam pin add -yn sha.1.15.4 https://github.com/djs55/ocaml-sha/releases/download/v1.15.4/sha-1.15.4.tbz"))
 	 ; Install OS package dependencies
 	 (run
 	  (network "nat")
