@@ -320,19 +320,6 @@ let mount_args (mount:Config.Mount.t) =
                  (match mount.ty with `Bind -> "bind" | `Volume -> "volume")
                  mount.src dst (if mount.readonly then ",readonly" else "") ]
 
-let relativize dst =
-  match Fpath.(relativize ~root (v dst)) with Some dst -> Fpath.to_string dst | None -> dst
-
-let cp_to_volume ~base ~volume ~src ~dst =
-  let `Docker_image base = base in
-  assert (not (volume.Config.Mount.readonly));
-  let open Lwt_result.Syntax in
-  let* id = pread_result ("container" :: "create" :: (mount_args volume) @ [base]) in
-  let id = String.trim id in
-  Lwt.finalize (fun () ->
-      exec_result' ["cp"; src; Printf.sprintf "%s:%s" id (relativize dst)])
-    (fun () -> Cmd.rm [`Docker_container id])
-
 let cp_between_volumes ~base ~src ~dst =
   let (`Docker_volume src) = src and (`Docker_volume dst) = dst in
   let root = Fpath.to_string root in

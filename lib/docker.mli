@@ -47,14 +47,6 @@ val setup_command : entp:string list -> cmd:string list -> string * string list
     of [head] and [cmd] to be given to Docker command, as Docker
     [--entrypoint] takes only one argument. *)
 
-(** Copy the file [src] to [dst] inside the Docker volume [volume],
-    using the [base] Docker image for a temporary container. *)
-val cp_to_volume :
-  base:[< `Docker_image of string ] ->
-  volume:Config.Mount.t ->
-  src:string -> dst:string ->
-  (unit, [> `Msg of string]) Lwt_result.t
-
 val cp_between_volumes :
   base:[< `Docker_image of string ] ->
   src:[< `Docker_volume of string] -> dst:[`Docker_volume of string] ->
