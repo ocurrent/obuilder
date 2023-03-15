@@ -703,6 +703,8 @@ let test_copy generate =
 
 (* Test the Manifest module. *)
 let test_copy_ocaml _switch () =
+  if Sys.win32 then
+    Alcotest.skip ();
   test_copy (fun ~exclude ~src_dir src -> Lwt_result.lift (Manifest.generate ~exclude ~src_dir src))
 
 (* Test the manifest.bash script. *)
@@ -807,7 +809,16 @@ let () =
     in
     test_case name speed wrap
   in
-  let needs_docker = [
+  let is_win32_gha =
+    match Sys.getenv "CI", Sys.getenv "GITHUB_ACTIONS", Sys.win32 with
+    | "true", "true", true -> true
+    | _ | exception _ -> false in
+  let needs_docker =
+    let test_case name speed f =
+      if is_win32_gha then test_case name speed (fun _ -> Alcotest.skip)
+      else test_case name speed f
+    in
+    [
       "build", [
         test_case "Simple"     `Quick test_simple;
         test_case "Prune"      `Quick test_prune;
@@ -826,15 +837,6 @@ let () =
         test_case "No secret provided" `Quick test_secrets_not_provided;
       ];
     ] in
-  let is_win32_gha =
-    match Sys.getenv "CI", Sys.getenv "GITHUB_ACTIONS", Sys.win32 with
-    | "true", "true", true -> true
-    | _ | exception _ -> false in
-  let manifest =
-    test_case "Copy using manifest.bash" `Quick test_copy_bash
-    :: if not Sys.win32 then [test_case "Copy using Manifest" `Quick test_copy_ocaml]
-       else []
-  in
   Lwt_main.run begin
     run "OBuilder" ([
       "spec", [
@@ -846,10 +848,13 @@ let () =
       "tar_transfer", [
         test_case "Long filename"  `Quick test_tar_long_filename;
       ];
-      "manifest", manifest;
+      "manifest", [
+        test_case "Copy using manifest.bash" `Quick test_copy_bash;
+        test_case "Copy using Manifest" `Quick test_copy_ocaml
+      ];
       "process", [
         test_case "Execute a process" `Quick test_exec_nul;
         test_case "Read stdout of a process" `Quick test_pread_nul;
       ];
-    ] @ (if not is_win32_gha then needs_docker else []))
+    ] @ needs_docker)
   end
