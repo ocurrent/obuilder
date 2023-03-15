@@ -76,11 +76,6 @@ pass the `--fast-sync` option, which installs a seccomp filter that skips all
 sync syscalls. However, if you attempt to use this with an earlier version of
 runc then sync operations will instead fail with `EPERM`.
 
-### Windows
-
-The user running OBuilder must have access to `%PROGRAMDATA%\Docker\volumes`,
-because copying caches and maintaining internal tools is done directly on the host.
-
 ## The build specification language
 
 The spec files are loosely based on the [Dockerfile][] format.
