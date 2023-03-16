@@ -30,7 +30,7 @@ let fetch ~log ~rootfs base =
   with_container ~log base (fun cid ->
     Os.with_pipe_between_children @@ fun ~r ~w ->
     let exporter = Os.exec ~stdout:(`FD_move_safely w) ["docker"; "export"; "--"; cid] in
-    let tar = Os.sudo ~stdin:(`FD_move_safely r) ["tar"; "-C"; rootfs; "-xf"; "-"] in
+    let tar = Os.sudo ~stdin:(`FD_move_safely r) ["tar"; "-C"; rootfs; "-xpf"; "-"] in
     exporter >>= fun () ->
     tar
   ) >>= fun () ->
