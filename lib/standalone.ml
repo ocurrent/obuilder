@@ -59,6 +59,31 @@ let extract_layer destdir srcdir layer =
   let srcpath = srcdir / layer in
   Os.sudo [ "tar" ; "-C"; destdir ; "-xpf"; srcpath ]
 
+(* Normalize a docker image name to work around download script shortcomings.
+
+   The download scripts supposedly accepts image names with the following
+   pattern:
+     image[:tag][@digest]
+   but due to incorrect string parsing, if the tag is missing and the digest
+   contains a colon (which is likely to occur if there is an explicit
+   digest algorithm name provided, as in `@sha256:...', then the digest
+   will be used as the tag, and download is very likely to fail as no such
+   tag will exist.
+
+   This routine attemps to detect this, and forces a `:latest' tag if none
+   is provided. *)
+let normalize s =
+  let colon = String.index_opt s ':' in
+  let atsign = String.index_opt s '@' in
+  match colon, atsign with
+  | _, None -> s (* no digest *)
+  | Some pos1, Some pos2 when pos1 < pos2 -> s (* tag present *)
+  | _, Some pos2 ->
+    let len = String.length s in
+    let image = String.sub s 0 pos2 in
+    let digest = String.sub s pos2 (len - pos2) in
+    image ^ ":latest" ^ digest
+
 let invoke_fetcher log tmpdir base =
   Os.with_pipe_from_child (fun ~r ~w ->
     let pp f = Fmt.string f "download frozen image" in
@@ -72,6 +97,7 @@ let invoke_fetcher log tmpdir base =
     | Error (`Msg m) -> Lwt.fail (failwith m)
 
 let fetch ~log ~rootfs base =
+  let base = normalize base in
   Lwt.catch
     (fun () ->
       Lwt_io.with_temp_dir
