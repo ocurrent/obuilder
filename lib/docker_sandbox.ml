@@ -248,11 +248,11 @@ let untar t ~cancelled ~stdin ~log ?dst_dir id =
           directory, making it un-writable by ContainerAdministrator, even if
           the permissions should be set correctly in the tar header. Backup
           and restore these permissions. *)
-       Printf.sprintf {|$path = "%s"; if (Test-Path -Path $path -PathType Container) { $acl = Get-Acl -Path $path }; & %s/tar.exe -xf - --verbose; if ($acl -ne $null) { Set-Acl -Path $path $acl }|}
+       Printf.sprintf {|$path = "%s"; if (Test-Path -Path $path -PathType Container) { $acl = Get-Acl -Path $path }; & %s/tar.exe -xpf - --verbose; if ($acl -ne $null) { Set-Acl -Path $path $acl }|}
          (Option.get dst_dir) (Docker.mount_point_inside_native // Docker.obuilder_libexec ()) ]
     else begin
       assert (dst_dir = None);
-      "tar", ["-xf"; "-"; "--verbose"]
+      "tar", ["-xpf"; "-"; "--verbose"]
     end in
   let config = Config.v
       ~cwd:(if Sys.unix then "/" else "C:/")

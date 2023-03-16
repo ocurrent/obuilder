@@ -332,8 +332,8 @@ let cp_between_volumes ~base ~src ~dst =
             else "tar" in
   let root = if Sys.win32 then {|/cygdrive/c/|} else "/" in
   Os.with_pipe_between_children @@ fun ~r ~w ->
-  let proc = Cmd.run_result' ~stdin:(`FD_move_safely r) ~rm:true mounts_proc base [tar; "x"; "-C"; root ^ "dst"; "-f"; "-"]
-  and send = Cmd.run_result' ~stdout:(`FD_move_safely w) ~rm:true mounts_send base [tar; "c"; "-C"; root ^ "src"; "-f"; "-"; "."] in
+  let proc = Cmd.run_result' ~stdin:(`FD_move_safely r) ~rm:true mounts_proc base [tar; "-xp"; "-C"; root ^ "dst"; "-f"; "-"]
+  and send = Cmd.run_result' ~stdout:(`FD_move_safely w) ~rm:true mounts_send base [tar; "-c"; "-C"; root ^ "src"; "-f"; "-"; "."] in
   let open Lwt_result.Syntax in
   let* () = proc in
   let+ () = send in
