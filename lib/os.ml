@@ -180,15 +180,6 @@ let ensure_dir path =
   | `Present -> ()
   | `Missing -> Unix.mkdir path 0o777
 
-let copy ?(superuser=false) ~src dst =
-  if Sys.win32 then
-    exec ["robocopy"; src; dst; "/MIR"; "/NFL"; "/NDL"; "/NJH"; "/NJS"; "/NC"; "/NS"; "/NP"]
-      ~is_success:(fun n -> n = 0 || n = 1)
-  else if superuser then
-    sudo ["cp"; "-a"; "--"; src; dst ]
-  else
-    exec ["cp"; "-a"; "--"; src; dst ]
-
 let rm ~directory =
   let pp _ ppf = Fmt.pf ppf "[ RM ]" in
   sudo_result ~pp:(pp "RM") ["rm"; "-r"; directory ] >>= fun t ->
