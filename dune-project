@@ -1,5 +1,6 @@
-(lang dune 3.3)
+(lang dune 3.7)
 (name obuilder)
+
 (formatting disabled)
 (generate_opam_files true)
 (source (github ocurrent/obuilder))
@@ -7,6 +8,7 @@
 (maintainers "talex5@gmail.com")
 (license "Apache-2.0")
 (documentation "https://ocurrent.github.io/obuilder/")
+
 (package
  (name obuilder)
  (synopsis "Run build scripts for CI")
@@ -17,8 +19,8 @@
   astring
   (fmt (>= 0.8.9))
   logs
-  (cmdliner (>= 1.1.0))
-  (tar-unix (>= 2.0.0))
+  (cmdliner (>= 1.1.1))
+  (tar-unix (>= 2.4.0))
   (yojson (>= "1.6.0"))
   sexplib
   ppx_deriving
@@ -26,8 +28,9 @@
   (sha (>= 1.15.4))
   sqlite3
   (obuilder-spec (= :version))
-  (ocaml (>= 4.14.0))
-  (alcotest-lwt :with-test)))
+  (ocaml (>= 4.14.1))
+  (alcotest-lwt (and (>= 1.7.0) :with-test))))
+
 (package
  (name obuilder-spec)
  (synopsis "Build specification format")
@@ -39,4 +42,4 @@
   astring
   ppx_deriving
   ppx_sexp_conv
-  (ocaml (>= 4.10.0))))
+  (ocaml (>= 4.10.2))))

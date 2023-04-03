@@ -12,9 +12,9 @@
 ; ROOTID is computed as follows: $(realpath "$(root)" | sha256sum | cut -b -7)
 
 ((build dev
-	((from ocaml/opam@sha256:1494ed5d4445e10f68cbcaf40aee60d507fbe1726a2d7fd5ba394003b7031b20)
+	((from ocaml/opam@sha256:487f82160de4275a7219e3e1d676c5a9afddd110d1b146909397be62e8e11bc7)
 	 (workdir /src)
-	 (env OPAM_HASH "696c4b27488b4b0d3ec3929dbe65565cb91764a1") ; Fix the version of opam-repository-mingw we want
+	 (env OPAM_HASH "921b0eceb594f96c0c7f40bb2676783be4362aeb") ; Fix the version of opam-repository-mingw we want
 	 (shell /cygwin64/bin/bash.exe --login -c)
 	 (run
 	  (network "nat")
