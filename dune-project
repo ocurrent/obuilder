@@ -4,7 +4,17 @@
 (formatting disabled)
 (generate_opam_files true)
 (source (github ocurrent/obuilder))
-(authors "talex5@gmail.com")
+(authors
+ "Antonin Décimo <antonin@tarides.com>"
+ "Arthur Wendling <art.wendling@gmail.com>"
+ "David Allsopp <david.allsopp@metastack.com>"
+ "Kate <kit.ty.kate@disroot.org>"
+ "Lucas Pluvinage <lucas@tarides.com>"
+ "Mark Elvers <mark.elvers@tunbury.org>"
+ "Patrick Ferris <pf341@patricoferris.com>"
+ "Thomas Gazagnaire <thomas@gazagnaire.org>"
+ "Thomas Leonard <talex5@gmail.com>"
+ "Tim McGilchrist <timmcgil@gmail.com>")
 (maintainers "talex5@gmail.com")
 (license "Apache-2.0")
 (documentation "https://ocurrent.github.io/obuilder/")

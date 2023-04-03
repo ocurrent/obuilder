@@ -4,7 +4,18 @@ synopsis: "Build specification format"
 description:
   "A library for constructing, reading and writing OBuilder build specification files."
 maintainer: ["talex5@gmail.com"]
-authors: ["talex5@gmail.com"]
+authors: [
+  "Antonin Décimo <antonin@tarides.com>"
+  "Arthur Wendling <art.wendling@gmail.com>"
+  "David Allsopp <david.allsopp@metastack.com>"
+  "Kate <kit.ty.kate@disroot.org>"
+  "Lucas Pluvinage <lucas@tarides.com>"
+  "Mark Elvers <mark.elvers@tunbury.org>"
+  "Patrick Ferris <pf341@patricoferris.com>"
+  "Thomas Gazagnaire <thomas@gazagnaire.org>"
+  "Thomas Leonard <talex5@gmail.com>"
+  "Tim McGilchrist <timmcgil@gmail.com>"
+]
 license: "Apache-2.0"
 homepage: "https://github.com/ocurrent/obuilder"
 doc: "https://ocurrent.github.io/obuilder/"
