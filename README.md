@@ -319,10 +319,10 @@ The dockerfile should work the same way as the spec file, except for these limit
 - All `(network …)` fields are ignored, as Docker does not allow per-step control of
   networking.
 
-## Experimental macOS Support
+## Experimental macOS and Windows Support
 
 OBuilder abstracts over a fetching mechanism for the Docker base image, the sandboxing for the execution of build steps and the store for the cache.
-This makes OBuilder extremely portable and there exists a (very) experimental [macOS][] backend.
+This makes OBuilder extremely portable and there exists experimental [macOS][] and [Windows][] backends. The Windows backend currently requires Docker for Windows installed.
 
 ## Licensing
 
@@ -333,6 +333,7 @@ See [LICENSE][] for the full license text.
 [OCluster]: https://github.com/ocurrent/ocluster
 [LICENSE]: ./LICENSE
 [macOS]: ./macOS.md
+[Windows]: ./windows.md
 
 [github-shield]: https://github.com/ocurrent/obuilder/actions/workflows/main.yml/badge.svg
 [github-ci]: https://github.com/ocurrent/obuilder/actions/workflows/main.yml
