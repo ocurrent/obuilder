@@ -63,7 +63,7 @@ let exec_docker ?stdout = function
   | ["create"; "--"; base] -> docker_create ?stdout base
   | ["export"; "--"; id] -> docker_export ?stdout id
   | ["image"; "inspect"; "--format"; {|{{range .Config.Env}}{{print . "\x00"}}{{end}}|}; "--"; base] -> docker_inspect ?stdout base
-  | ["rm"; "--"; id] -> Fmt.pr "docker rm %S@." id; Lwt_result.return 0
+  | ["rm"; "--force"; "--"; id] -> Fmt.pr "docker rm --force %S@." id; Lwt_result.return 0
   | x -> Fmt.failwith "Unknown mock docker command %a" Fmt.(Dump.list string) x
 
 let mkdir = function
@@ -80,7 +80,8 @@ let closing redir fn =
        Lwt.return_unit
     )
 
-let exec ?cwd ?stdin ?stdout ?stderr ~pp cmd =
+let exec ?timeout ?cwd ?stdin ?stdout ?stderr ~pp cmd =
+  ignore timeout;
   closing stdin @@ fun () ->
   closing stdout @@ fun () ->
   closing stderr @@ fun () ->

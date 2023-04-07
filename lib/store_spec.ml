@@ -6,6 +6,7 @@ type t = [
   | `Btrfs of string  (* Path *)
   | `Zfs of string    (* Path with pool at end *)
   | `Rsync of (string * Rsync_store.mode)  (* Path for the root of the store *)
+  | `Docker of string (* Path *)
 ]
 
 let is_absolute path = not (Filename.is_relative path)
@@ -15,25 +16,30 @@ let of_string s =
   | Some ("zfs", pool) -> Ok (`Zfs pool)
   | Some ("btrfs", path) when is_absolute path -> Ok (`Btrfs path)
   | Some ("rsync", path) when is_absolute path -> Ok (`Rsync path)
+  | Some ("docker", path) -> Ok (`Docker path)
   | _ -> Error (`Msg "Store must start with zfs: or btrfs:/ or rsync:/")
 
 let pp f = function
   | `Zfs path -> Fmt.pf f "zfs:%s" path
   | `Btrfs path -> Fmt.pf f "btrfs:%s" path
   | `Rsync path -> Fmt.pf f "rsync:%s" path
+  | `Docker path -> Fmt.pf f "docker:%s" path
 
 type store = Store : (module S.STORE with type t = 'a) * 'a -> store
 
 let to_store = function
   | `Btrfs path ->
-    Btrfs_store.create path >|= fun store ->
+    `Native, Btrfs_store.create path >|= fun store ->
     Store ((module Btrfs_store), store)
   | `Zfs path ->
-    Zfs_store.create ~path >|= fun store ->
+    `Native, Zfs_store.create ~path >|= fun store ->
     Store ((module Zfs_store), store)
   | `Rsync (path, rsync_mode) ->
-    Rsync_store.create ~path ~mode:rsync_mode () >|= fun store ->
+    `Native, Rsync_store.create ~path ~mode:rsync_mode () >|= fun store ->
     Store ((module Rsync_store), store)
+  | `Docker path ->
+    `Docker, Docker_store.create path >|= fun store ->
+    Store ((module Docker_store), store)
 
 open Cmdliner
 
@@ -42,7 +48,7 @@ let store_t = Arg.conv (of_string, pp)
 let store ?docs names =
   Arg.opt Arg.(some store_t) None @@
   Arg.info
-    ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path) or $(b,zfs:pool) for the OBuilder cache."
+    ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path), $(b,zfs:pool) or $(b,docker:path) for the OBuilder cache."
     ~docv:"STORE"
     ?docs
     names
@@ -74,7 +80,8 @@ let of_t store rsync_mode =
   | Some (`Rsync _path), None -> failwith "Store rsync:/ must supply an rsync-mode"
   | Some (`Btrfs path), None -> (`Btrfs path)
   | Some (`Zfs path), None -> (`Zfs path)
-  | _, _ -> failwith "Store type required must be one of $(b,btrfs:/path), $(b,rsync:/path) or $(b,zfs:pool) for the OBuilder cache."
+  | Some (`Docker path), None -> (`Docker path)
+  | _, _ -> failwith "Store type required must be one of btrfs:/path, rsync:/path, zfs:pool or docker:path for the OBuilder cache."
 
 (** Parse cli arguments for t *)
 let v =

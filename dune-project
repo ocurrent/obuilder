@@ -37,7 +37,9 @@
   ppx_sexp_conv
   (sha (>= 1.15.4))
   sqlite3
+  (crunch (and (>= 3.3.1) :build))
   (obuilder-spec (= :version))
+  fpath
   (ocaml (>= 4.14.1))
   (alcotest-lwt (and (>= 1.7.0) :with-test))))
 

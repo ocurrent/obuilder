@@ -80,7 +80,7 @@ module type SANDBOX = sig
     string ->
     (unit, [`Cancelled | `Msg of string]) Lwt_result.t
   (** [run ~cancelled t config dir] runs the operation [config] in a sandbox with root
-      filesystem [rootfs].
+      filesystem [dir].
       @param cancelled Resolving this kills the process (and returns [`Cancelled]).
       @param stdin Passed to child as its standard input.
       @param log Used for child's stdout and stderr.
@@ -127,4 +127,134 @@ module type FETCHER = sig
       Returns the image's environment.
       @param log Used for outputting the progress of the fetch
       @param rootfs The directory in which to extract the base image *)
+end
+
+(** Wrappers for various Docker client commands.  *)
+module type DOCKER_CMD = sig
+  type 'a log
+  (** Log standard output and standard error of the sub-process. *)
+
+  type 'a logerr
+  (** Log only standard error of the sub-process. *)
+
+  val version : (unit -> (string, [> `Msg of string ]) result Lwt.t) logerr
+
+  val pull :
+    ([< `Docker_image of string ] -> unit Lwt.t) log
+  (** Pulls a Docker image. *)
+  val export :
+    ([< `Docker_container of string ] -> unit Lwt.t) log
+  (** Exports a Docker container. *)
+  val image :
+    ([< `Remove of [< `Docker_image of string ] ] -> unit Lwt.t) log
+  (** Operates on a Docker image. *)
+  val rm :
+    ([ `Docker_container of string ] list -> unit Lwt.t) log
+  (** Removes a Docker container.  *)
+  val rmi :
+    ([ `Docker_image of string ] list -> unit Lwt.t) log
+  (** Removes a list of Docker images. *)
+  val tag :
+    ([< `Docker_image of string ] ->
+     [< `Docker_image of string ] -> unit Lwt.t) log
+  (** [tag source_image target_image] creates a new tag for a Docker iamge. *)
+  val commit :
+    ([< `Docker_image of string ] ->
+     [< `Docker_container of string ] ->
+     [< `Docker_image of string ] -> unit Lwt.t) log
+  (** [commit base_image container target_image] commits the
+      [container] to the [target_image] using [base_image] (typically
+      the container's base image) entrypoint and cmd. *)
+  val volume :
+    (?timeout:float ->
+    [< `Create of [< `Docker_volume of string ]
+     | `Inspect of [< `Docker_volume of string ] list * [< `Mountpoint ]
+     | `List of string option
+     | `Remove of [< `Docker_volume of string ] list ] ->
+     string Lwt.t) logerr
+  (** Operates on Docker volumes. *)
+  val volume_containers :
+    ([< `Docker_volume of string ] -> [> `Docker_container of string ] list Lwt.t) logerr
+  (** [volume_containers vol] returns the list of containers using [vol].  *)
+  val mount_point :
+    ([< `Docker_volume of string ] -> string Lwt.t) logerr
+  (** [mount_point vol] returns the mount point in the host filesystem of [vol]. *)
+  val build :
+    (string list -> [< `Docker_image of string ] -> string -> unit Lwt.t) log
+  (** [build docker_args image context_path] builds the Docker [image]
+      using the context located in [context_path]. *)
+
+  val run :
+    ?stdin:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+    (?is_success:(int -> bool) ->
+     ?name:[< `Docker_container of string ] ->
+     ?rm:bool ->
+     string list -> [< `Docker_image of string ] -> string list -> unit Lwt.t) log
+  (** [run ?stdin ?stdout ?stderr ?is_success ?name ?rm docker_argv image argv] *)
+  val run' :
+    ?stdin:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+    ?stdout:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+    (?is_success:(int -> bool) ->
+     ?name:[< `Docker_container of string ] ->
+     ?rm:bool ->
+     string list -> [< `Docker_image of string ] -> string list -> unit Lwt.t) logerr
+  (** [run' ?stdin ?stdout ?stderr ?is_success ?name ?rm docker_argv image argv] *)
+  val run_result :
+    ?stdin:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+    (?name:[< `Docker_container of string ] ->
+     ?rm:bool ->
+     string list ->
+     [< `Docker_image of string ] ->
+     string list -> (unit, [> `Msg of string ]) result Lwt.t) log
+  (** [run_result ?stdin ?stdout ?stderr ?is_success ?name ?rm docker_argv image argv] *)
+  val run_result' :
+    ?stdin:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+    ?stdout:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+    (?name:[< `Docker_container of string ] ->
+     ?rm:bool ->
+     string list ->
+     [< `Docker_image of string ] ->
+     string list -> (unit, [> `Msg of string ]) result Lwt.t) logerr
+  (** [run_result ?stdin ?stdout ?stderr ?is_success ?name ?rm docker_argv image argv] *)
+  val run_pread_result :
+    ?stdin:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
+    (?name:[< `Docker_container of string ] ->
+     ?rm:bool ->
+     string list ->
+     [< `Docker_image of string ] ->
+     string list -> (string, [> `Msg of string ]) result Lwt.t) logerr
+  (** [run_pread_result ?stdin ?stdout ?stderr ?is_success ?name ?rm docker_argv image argv] *)
+
+  val stop :
+    ([< `Docker_container of string ] ->
+     (unit, [> `Msg of string ]) result Lwt.t) log
+  (** Stop a Docker container. *)
+
+  val manifest :
+    ([< `Create of
+          [< `Docker_image of string ] * [< `Docker_image of string ] list
+     | `Inspect of [< `Docker_image of string ]
+     | `Remove of [< `Docker_image of string ] list ] ->
+     (unit, [> `Msg of string ]) result Lwt.t) log
+  (** Operates on a Docker manifest. *)
+
+  val exists :
+    ([< `Docker_container of string
+     | `Docker_image of string
+     | `Docker_volume of string ] ->
+     (unit, [> `Msg of string ]) result Lwt.t) log
+  (** Tests if an object exists. *)
+
+  val obuilder_images :
+    (?tmp:bool -> unit -> [ `Docker_image of string ] list Lwt.t) logerr
+  (** Returns the list of this OBuilder instance images. *)
+  val obuilder_containers :
+    (unit -> [ `Docker_container of string ] list Lwt.t) logerr
+  (** Returns the list of this OBuilder instance containers. *)
+  val obuilder_volumes :
+    (?prefix:string -> unit -> [ `Docker_volume of string ] list Lwt.t) logerr
+  (** Returns the list of this OBuilder instance volumes. *)
+  val obuilder_caches_tmp :
+    (unit -> [ `Docker_volume of string ] list Lwt.t) logerr
+  (** Returns the list of this OBuilder instance temporary caches. *)
 end

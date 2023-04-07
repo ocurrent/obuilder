@@ -2,8 +2,6 @@
 set -eux
 export OPAMYES=true
 
-sudo chmod a+x /usr/local/bin/runc
-
 sudo sh -c "cat > /usr/local/bin/uname" << EOF
 #!/bin/sh
 
@@ -19,6 +17,8 @@ opam exec -- make
 
 case "$1" in
     btrfs)
+        sudo chmod a+x /usr/local/bin/runc
+
         dd if=/dev/zero of=/tmp/btrfs.img bs=100M count=50
         BTRFS_LOOP=$(sudo losetup -f)
         sudo losetup -P "$BTRFS_LOOP" /tmp/btrfs.img
@@ -43,6 +43,8 @@ case "$1" in
         ;;
 
     zfs)
+        sudo chmod a+x /usr/local/bin/runc
+
         dd if=/dev/zero of=/tmp/zfs.img bs=100M count=50
         ZFS_LOOP=$(sudo losetup -f)
         sudo losetup -P "$ZFS_LOOP" /tmp/zfs.img
@@ -83,6 +85,8 @@ case "$1" in
     #     ;;
 
     rsync_hardlink)
+        sudo chmod a+x /usr/local/bin/runc
+
         sudo mkdir /rsync
         sudo chown "$(whoami)" /rsync
 
@@ -99,7 +103,9 @@ case "$1" in
         sudo rm -rf /rsync
         ;;
 
-   rsync_copy)
+    rsync_copy)
+        sudo chmod a+x /usr/local/bin/runc
+
         sudo mkdir /rsync
         sudo chown "$(whoami)" /rsync
 
@@ -115,6 +121,23 @@ case "$1" in
 
         sudo rm -rf /rsync
         ;;
+
+    docker)
+       sudo mkdir /var/lib/obuilder
+       sudo chown "$(whoami)" /var/lib/obuilder
+
+       opam exec -- dune exec -- obuilder healthcheck --store=docker:/var/lib/obuilder
+
+       # Populate the caches from our own GitHub Actions cache
+       sudo mkdir -p /var/lib/obuilder/cache/c-opam-archives
+       sudo cp -r ~/.opam/download-cache/* /var/lib/obuilder/cache/c-opam-archives/
+       sudo chown -R 1000:1000 /var/lib/obuilder/cache/c-opam-archives
+
+       opam exec -- dune exec -- obuilder build -f example.spec . --store=docker:/var/lib/obuilder --color=always
+
+       sudo rm -rf /var/lib/obuilder
+       ;;
+
     *)
         printf "Usage: .run-gha-tests.sh [btrfs|rsync_hardlink|rsync_copy|zfs]" >&2
         exit 1

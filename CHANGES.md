@@ -1,5 +1,7 @@
 ### v0.5.1
 
+- Add a Docker backend for Windows and Linux jobs.
+  (@MisterDA #127 #75, reviewed by @talex5, @tmcgilchrist)
 - Updates to address rsync and sandbox issues.
   (@mtelvers #139, reviewed by @tmcgilchrist and @MisterDA)
 - Add an obuilder clean command to clean all build results.
