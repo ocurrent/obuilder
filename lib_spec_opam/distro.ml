@@ -57,12 +57,9 @@ let resolve_alias (d : t) : distro =
   | `Macos (`Latest | `V13) -> `Macos `V13
   | `Macos `V12 -> `Macos `V12
 
-let distro_status (d : t) : status =
-  match d with
-  | #D.t -> failwith "Using extended [distro_status] with non-MacOS distro. Use [D.distro_status] instead."
-  | `Macos _ ->
-      let resolved = resolve_alias d in
-      if (resolved : distro :> t) <> d then `Alias else `Active `Tier2
+let distro_status_extended (d : t) : status =
+  let resolved = resolve_alias d in
+  if (resolved : distro :> t) <> d then `Alias else `Active `Tier2
 
 let latest_distros = (D.latest_distros :> t list) @ [ `Macos `Latest ]
 
@@ -84,31 +81,52 @@ let distro_active_for arch (d : t) =
   | _ -> distro_supported_on arch OV.Releases.latest d
 
 let active_distros arch =
-  List.filter
-    (fun d -> match distro_status d with `Active _ -> true | _ -> false)
-    distros
-  |> List.filter (distro_active_for arch)
+  let extended_distros =
+    List.filter
+      (fun d ->
+        match distro_status_extended d with
+        | `Active _ -> true
+        | _ -> false)
+    macos_distros
+    |> List.filter (distro_active_for arch)
+  in
+  (D.active_distros arch :> t list) @ extended_distros
 
 let active_tier1_distros arch =
-  List.filter
-    (fun d ->
-      match distro_status d with `Active `Tier1 -> true | _ -> false)
-    distros
-  |> List.filter (distro_active_for arch)
+  let extended_distros =
+    List.filter
+      (fun d ->
+        match distro_status_extended d with
+        | `Active `Tier1 -> true
+        | _ -> false)
+      macos_distros
+    |> List.filter (distro_active_for arch)
+  in
+  (D.active_tier1_distros arch :> t list) @ extended_distros
 
 let active_tier2_distros arch =
-  List.filter
-    (fun d ->
-      match distro_status d with `Active `Tier2 -> true | _ -> false)
-    distros
-  |> List.filter (distro_active_for arch)
+  let extended_distros =
+    List.filter
+      (fun d ->
+        match distro_status_extended d with
+        | `Active `Tier2 -> true
+        | _ -> false)
+      macos_distros
+    |> List.filter (distro_active_for arch)
+  in
+  (D.active_tier2_distros arch :> t list) @ extended_distros
 
 let active_tier3_distros arch =
-  List.filter
-    (fun d ->
-      match distro_status d with `Active `Tier3 -> true | _ -> false)
-    distros
-  |> List.filter (distro_active_for arch)
+  let extended_distros =
+    List.filter
+      (fun d ->
+        match distro_status_extended d with
+        | `Active `Tier3 -> true
+        | _ -> false)
+      macos_distros
+    |> List.filter (distro_active_for arch)
+  in
+  (D.active_tier3_distros arch :> t list) @ extended_distros
 
 let builtin_ocaml_of_distro (d : t) =
   match d with #D.t as d -> D.builtin_ocaml_of_distro d | `Macos _ -> None
