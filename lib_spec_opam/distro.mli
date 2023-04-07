@@ -2,6 +2,18 @@
 
 open Dockerfile_opam
 
+type win10_release = Distro.win10_release [@@deriving sexp]
+
+type win10_ltsc = Distro.win10_ltsc [@@deriving sexp]
+
+type win_all = Distro.win_all [@@deriving sexp]
+
+type win10_lcu = Distro.win10_lcu [@@deriving sexp]
+
+val win10_current_lcu : win10_lcu
+
+type win10_revision = Distro.win10_revision [@@deriving sexp]
+
 type distro = [ Distro.distro | `Macos of [ `V12 | `V13 ] ] [@@deriving sexp]
 (** Supported Docker container distributions without aliases. *)
 
@@ -22,6 +34,10 @@ val opam_repository : os_family -> string
 (** [opam_repository os_family] returns the git URL to the default
     Opam repository. *)
 
+val personality : os_family -> Ocaml_version.arch -> string option
+(** [personality os_family arch] returns the personality associated to
+   the architecture, if [os_family] is [`Linux]. *)
+
 val is_same_distro : t -> t -> bool
 (** [is_same_distro d1 d2] returns whether [d1] is the same distro as
     [d2], regardless of their respective versions. *)
@@ -38,6 +54,14 @@ val distros : t list
 
 val latest_distros : t list
 (** Enumeration of the latest stable (ideally LTS) supported distributions. *)
+
+val win10_latest_release : win10_release
+(** Latest Windows 10 release. *)
+
+val win10_latest_image : win10_release
+(** Latest Windows 10 Docker image available. May differ from
+   {!win10_latest_release} if the Docker repository hasn't been
+   updated. *)
 
 val master_distro : t
 (** The distribution that is the top-level alias for the [latest] tag
@@ -84,6 +108,22 @@ val latest_tag_of_distro : t -> string
     regularly rewritten to point to any new releases of the
     distribution. *)
 
+type win10_docker_base_image = Distro.win10_docker_base_image
+(** Windows containers base images.
+    @see <https://docs.microsoft.com/en-us/virtualization/windowscontainers/manage-containers/container-base-images> *)
+
+val win10_base_tag :
+  ?win10_revision:win10_lcu ->
+  win10_docker_base_image ->
+  win_all ->
+  string * string
+(** [win10_base_tag base_image release] will return a tuple of Windows
+    container base image and tag for which the base image of a Windows
+    base image can be found (e.g.
+    [mcr.microsoft.com/windows/servercore],[ltsc2022] which maps to
+    [mcr.microsoft.com/windows/servercore:ltsc2022] on the Microsoft
+    Container Registry). *)
+
 val base_distro_tag :
   ?win10_revision:Distro.win10_lcu ->
   ?arch:Ocaml_version.arch ->
@@ -96,6 +136,17 @@ val base_distro_tag :
     and other OCaml tool Dockerfiles. [arch] defaults to [x86_64] and can vary
     the base user/repository since some architecture are built elsewhere. *)
 
+val win10_release_to_string : win10_release -> string
+(** [win10_release_to_string update] converts a Windows 10 version name to
+   string. *)
+
+val win10_release_of_string : string -> win_all option
+(** [win10_release_of_string] converts a Windows 10 version name as
+   string to its internal representation. Ignores any KB number. *)
+
+val win10_revision_to_string : win10_revision -> string
+val win10_revision_of_string : string -> win10_revision option
+
 val distro_arches : Ocaml_version.t -> t -> Ocaml_version.arch list
 (** [distro_arches ov t] returns the list of architectures that
     distribution [t] is supported on for OCaml compiler version [ov] *)
@@ -104,6 +155,14 @@ val distro_supported_on : Ocaml_version.arch -> Ocaml_version.t -> t -> bool
 (** [distro_supported_on arch ov distro] returns [true] if the
     combination of CPU [arch], compiler version [ov] is available
     on the distribution [distro]. *)
+
+type win10_release_status = Distro.win10_release_status
+(** Windows 10 release status. *)
+
+val win10_release_status : win_all -> win10_release_status
+(** [win10_release_status v channel] returns the Microsoft support
+   status of the specified Windows 10 release.
+   @see <https://en.wikipedia.org/wiki/Windows_10_version_history#Channels> *)
 
 val active_distros : Ocaml_version.arch -> t list
 (** [active_distros arch] returns the list of currently supported

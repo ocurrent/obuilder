@@ -1,6 +1,14 @@
 module OV = Ocaml_version
 module D = Dockerfile_opam.Distro
 
+type win10_release = D.win10_release [@@deriving sexp]
+type win10_ltsc = D.win10_ltsc [@@deriving sexp]
+type win_all = D.win_all [@@deriving sexp]
+type win10_lcu = D.win10_lcu [@@deriving sexp]
+
+let win10_current_lcu = D.win10_current_lcu
+
+type win10_revision = D.win10_revision [@@deriving sexp]
 type distro = [ D.distro | `Macos of [ `V12 | `V13 ] ] [@@deriving sexp]
 type t = [ D.t | `Macos of [ `Latest | `V12 | `V13 ] ] [@@deriving sexp]
 type os_family = [ D.os_family | `Macos ] [@@deriving sexp]
@@ -20,6 +28,11 @@ let opam_repository (os : os_family) =
   | #D.os_family as os -> D.opam_repository os
   | `Macos -> "https://github.com/ocaml/opam-repository.git"
 
+let personality os_family arch =
+  match os_family with
+  | #D.os_family as os_family -> D.personality os_family arch
+  | `Macos -> None
+
 type status =
   [ `Deprecated
   | `Active of [ `Tier1 | `Tier2 | `Tier3 ]
@@ -29,6 +42,14 @@ type status =
 
 let macos_distros = [ `Macos `V12; `Macos `V13 ]
 let distros = (D.distros :> t list) @ macos_distros
+
+type win10_release_status = D.win10_release_status
+
+let win10_release_status = D.win10_release_status
+
+type win10_docker_base_image = D.win10_docker_base_image
+
+let win10_latest_image = D.win10_latest_image
 
 let resolve_alias (d : t) : distro =
   match d with
@@ -44,6 +65,8 @@ let distro_status (d : t) : status =
       if (resolved : distro :> t) <> d then `Alias else `Active `Tier2
 
 let latest_distros = (D.latest_distros :> t list) @ [ `Macos `Latest ]
+
+let win10_latest_release = D.win10_latest_release
 let master_distro = (D.master_distro :> t)
 
 let distro_arches ov (d : t) =
@@ -89,6 +112,14 @@ let active_tier3_distros arch =
 
 let builtin_ocaml_of_distro (d : t) =
   match d with #D.t as d -> D.builtin_ocaml_of_distro d | `Macos _ -> None
+
+let win10_release_to_string = D.win10_release_to_string
+
+let win10_release_of_string = D.win10_release_of_string
+
+let win10_revision_to_string = D.win10_revision_to_string
+
+let win10_revision_of_string = D.win10_revision_of_string
 
 let tag_of_distro (d : t) =
   match d with
@@ -137,6 +168,8 @@ let package_manager (d : t) : package_manager =
 
 let bubblewrap_version (d : t) =
   match d with #D.t as d -> D.bubblewrap_version d | `Macos _ -> None
+
+let win10_base_tag = D.win10_base_tag
 
 let base_distro_tag ?win10_revision ?(arch = `X86_64) (d : t) =
   match d with
