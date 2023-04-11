@@ -1,5 +1,7 @@
 (** Distribution selections for various OPAM combinations, for Linux, Windows, and MacOS distributions *)
 
+module Basic = Dockerfile_opam.Distro
+
 open Dockerfile_opam
 
 type win10_release = Distro.win10_release [@@deriving sexp]

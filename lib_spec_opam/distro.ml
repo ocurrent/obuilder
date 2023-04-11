@@ -1,5 +1,6 @@
 module OV = Ocaml_version
-module D = Dockerfile_opam.Distro
+module Basic = Dockerfile_opam.Distro
+module D = Basic
 
 type win10_release = D.win10_release [@@deriving sexp]
 type win10_ltsc = D.win10_ltsc [@@deriving sexp]

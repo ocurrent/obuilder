@@ -47,16 +47,6 @@ let caches ?(extra_caches = []) distro =
   in
   main_caches @ (List.map (fun (name, target) -> Obuilder_spec.Cache.v name ~target) extra_caches)
 
-let opam_depext ~network ~cache ~opam_version pkgs =
-  let pkgs = String.concat " " pkgs in
-  match opam_version with
-  | `V2_0 ->
-      [ run ~network ~cache "opam depext --update -y %s $DEPS" pkgs ]
-  | `V2_1 | `Dev ->
-      [ run ~network ~cache
-          "opam update --depexts && opam install --cli=2.1 \
-          --depext-only -y %s $DEPS" pkgs ]
-
 let set_personality arch =
   if Ocaml_version.arch_is_32bit arch then
     [ shell [ "/usr/bin/linux32"; "/bin/sh"; "-c" ] ]
