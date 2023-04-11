@@ -1,7 +1,10 @@
-### v0.5.1
+### unreleased
 
 - Add a Docker backend for Windows and Linux jobs.
   (@MisterDA #127 #75, reviewed by @talex5, @tmcgilchrist)
+
+### v0.5.1 2023-02-17
+
 - Updates to address rsync and sandbox issues.
   (@mtelvers #139, reviewed by @tmcgilchrist and @MisterDA)
 - Add an obuilder clean command to clean all build results.
@@ -9,7 +12,7 @@
 - Make rsync-mode mandatory when using rsync store.
   (@tmcgilchrist #132, reviewed by @kit-ty-kate and @MisterDA)
 
-### v0.5
+### v0.5 2022-11-08
 
 - Add --fuse-path to allow selection of the path redirected by FUSE (@mtelvers #128, reviewed by @MisterDA )
 - Pre-requisites for Windows support using docker for Windows (@MisterDA #116, reviewed by @tmcgilchrist)
@@ -26,7 +29,7 @@
 - Expose Rsync_store module (@MisterDA #114, reviewed by @talex5)
 - Rsync hard-links to save space (@art-w #102, reviewed by @patricoferris)
 
-### v0.4
+### v0.4 2022-06-17
 
 - Use GNU tar format instead of UStar for `copy` operations (@TheLortex #82, reviewed @dra27).
   This enables copying from sources containing long file names (>100 characters).
@@ -64,7 +67,7 @@
 
 - Fixes for ZFS tests in CI (@patricoferris #91)
 
-### v0.3
+### v0.3 2021-03-16
 
 Security fix:
 
@@ -78,7 +81,7 @@ Other changes:
 
 - Require obuilder-spec package to be same version.
 
-### v0.2
+### v0.2 2020-12-30
 
 - Add support for nested / multi-stage builds (@talex5 #48 #49).
   This allows you to use a large build environment to create a binary and then
@@ -120,6 +123,6 @@ Internal changes:
 
 - Travis tests: ensure apt cache is up-to-date (@talex5 #50).
 
-### v0.1
+### v0.1 2020-10-30
 
 Initial release.
