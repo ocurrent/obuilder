@@ -30,7 +30,7 @@ let opam_init ?(opamrc="") version distro =
 
 let download_cache = "opam-archives"
 
-let caches ?(opam_download_cache = download_cache) distro =
+let cache ?(opam_download_cache = download_cache) distro =
   let open Cache in
   match Distro.os_family_of_distro distro with
   | `Linux -> [ v opam_download_cache ~target:"/home/opam/.opam/download-cache" ]
