@@ -55,3 +55,22 @@
   ppx_deriving
   ppx_sexp_conv
   (ocaml (>= 4.10.2))))
+
+(package
+ (name obuilder-spec-opam)
+ (synopsis "Build specification format -- opam support")
+ (description
+  "A library for constructing, reading and writing OBuilder build specification files.")
+ (depends
+  (fmt (>= 0.8.9))
+  sexplib
+  astring
+  dockerfile-opam
+  ppx_deriving
+  ppx_deriving_yojson
+  ppx_sexp_conv
+  (ocaml (>= 4.10.0))
+  (ocaml-version (>= 3.6.0))
+  (opam-format (>= 2.1.0))
+  (obuilder-spec (= :version))
+  (alcotest-lwt :with-test)))

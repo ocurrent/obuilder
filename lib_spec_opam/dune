@@ -1,0 +1,10 @@
+(library
+ (name obuilder_spec_opam)
+ (public_name obuilder-spec-opam)
+ (preprocess (pps ppx_deriving.std ppx_deriving_yojson ppx_sexp_conv))
+ (libraries
+  dockerfile-opam
+  ocaml-version
+  obuilder-spec
+  sexplib
+  ppx_deriving_yojson.runtime))
