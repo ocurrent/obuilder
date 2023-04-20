@@ -739,6 +739,15 @@ let test_copy_bash _switch () =
   in
   with_default_exec (fun () -> test_copy generate)
 
+(* Test the manifest.bash module. *)
+let test_copy_bash switch () =
+  let ch = Unix.open_process_in "uname -s" in
+  let os = input_line ch in
+  close_in ch;
+  if os = "Darwin" then
+    Alcotest.skip ();
+  test_copy_bash switch ()
+
 let test_cache_id () =
   let check expected id =
     Alcotest.(check string) ("ID-" ^ id) expected (Escape.cache id)
