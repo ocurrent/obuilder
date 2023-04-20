@@ -4,3 +4,18 @@
   (package obuilder)
   (preprocess (pps ppx_deriving.show))
   (libraries lwt lwt.unix fmt fmt.cli fmt.tty tar-unix obuilder cmdliner logs.fmt logs.cli))
+
+(rule
+ (targets README.mld macOS.mld windows.mld)
+ (deps README.md doc/macOS.md doc/windows.md)
+ (action
+  (progn
+   (with-stdout-to README.mld (run md2mld README.md))
+   (with-stdout-to macOS.mld (run md2mld doc/macOS.md))
+   (with-stdout-to windows.mld (run md2mld doc/windows.md)))))
+
+(copy_files doc/index.mld)
+
+(documentation
+ (package obuilder)
+ (mld_files :standard))

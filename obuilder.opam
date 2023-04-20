@@ -42,6 +42,7 @@ depends: [
   "fpath"
   "extunix" {>= "0.4.0"}
   "ocaml" {>= "4.14.1"}
+  "md2mld"
   "alcotest-lwt" {>= "1.7.0" & with-test}
   "odoc" {with-doc}
 ]

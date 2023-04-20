@@ -1,0 +1,9 @@
+{0 obuilder index}
+{1 Library obuilder}
+The entry point of this library is the module:
+{!module-Obuilder}.
+
+{1 Design and implementation of OBuilder}
+- {{!page-README}OBuilder's manual};
+- {{!page-macOS}macOS implementation documentation};
+- {{!page-windows}Windows implementation documentation}.
