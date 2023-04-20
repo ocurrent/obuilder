@@ -27,7 +27,7 @@ depends: [
   "astring"
   "ppx_deriving"
   "ppx_sexp_conv"
-  "ocaml" {>= "4.10.2"}
+  "ocaml" {>= "4.14.1"}
   "odoc" {with-doc}
 ]
 build: [
