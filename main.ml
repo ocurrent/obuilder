@@ -6,6 +6,7 @@ module Native_sandbox = Obuilder.Native_sandbox
 module Docker_sandbox = Obuilder.Docker_sandbox
 module Docker_store = Obuilder.Docker_store
 module Docker_extract = Obuilder.Docker_extract
+module Archive_extract = Obuilder.Archive_extract
 module Store_spec = Obuilder.Store_spec
 
 type builder = Builder : (module Obuilder.BUILDER with type t = 'a) * 'a -> builder
