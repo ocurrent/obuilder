@@ -20,6 +20,8 @@ module Make (Raw : S.STORE) : sig
 
   val result : t -> S.id -> string option Lwt.t
 
+  val count : t -> int64
+
   val cache :
     user : Obuilder_spec.user ->
     t ->

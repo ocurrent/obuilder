@@ -114,6 +114,9 @@ module type BUILDER = sig
       Returns the number of items removed.
       @param log Called just before deleting each item, so it can be displayed. *)
 
+  val count : t -> int64
+  (** [count t] return number of items in the store. *)
+
   val healthcheck : ?timeout:float -> t -> (unit, [> `Msg of string]) Lwt_result.t
   (** [healthcheck t] performs a check that [t] is working correctly.
       @param timeout Cancel and report failure after this many seconds.

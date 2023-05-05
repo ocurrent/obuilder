@@ -125,6 +125,7 @@ module Make (Raw : S.STORE) = struct
       Lwt_result.return r
 
   let result t id = Raw.result t.raw id
+  let count t = Dao.count t.dao
   let cache ~user t = Raw.cache ~user t.raw
 
   let delete ?(log=ignore) t id =
