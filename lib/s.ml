@@ -16,7 +16,7 @@ module type STORE = sig
   val build :
     t -> ?base:id ->
     id:id ->
-    (string -> (unit, 'e) result) ->
+    (Eio.Fs.dir Eio.Path.t -> (unit, 'e) result) ->
     (unit, 'e) result
   (** [build t ~id fn] runs [fn tmpdir] to add a new item to the store under
       key [id]. On success, [tmpdir] is saved as [id], which can be used
@@ -31,10 +31,10 @@ module type STORE = sig
   val delete : t -> id -> unit
   (** [delete t id] removes [id] from the store, if present. *)
 
-  val result : t -> id -> string option
+  val result : t -> id -> Eio.Fs.dir Eio.Path.t option
   (** [result t id] is the path of the build result for [id], if present. *)
 
-  val state_dir : t -> string
+  val state_dir : t -> Eio.Fs.dir Eio.Path.t
   (** [state_dir] is the path of a directory which can be used to store mutable
       state related to this store (e.g. an sqlite3 database). *)
 
@@ -42,7 +42,7 @@ module type STORE = sig
     user:Obuilder_spec.user ->
     t ->
     string ->
-    (string * (unit -> unit))
+    (Eio.Fs.dir Eio.Path.t * (unit -> unit))
   (** [cache ~user t name] creates a writeable copy of the latest snapshot of the
       cache [name]. It returns the path of this fresh copy and a function which
       must be called to free it when done.
@@ -65,15 +65,14 @@ module type SANDBOX = sig
   type t
 
   val run :
-  sw:Eio__core.Switch.t ->
-    dir:#Eio.Dir.t ->
-    process:Eio.Process.t ->
+    dir:Eio.Fs.dir Eio.Path.t ->
+    process:Eio.Process.mgr ->
     cancelled:unit Eio.Promise.t ->
-    ?stdin:<Eio.Flow.source; Eio_unix.unix_fd> ->
+    ?stdin:Eio_unix.source ->
     log:Build_log.t ->
     t ->
     Config.t ->
-    string ->
+    Eio.Fs.dir Eio.Path.t ->
     (unit, [`Cancelled | `Msg of string]) result
   (** [run ~cancelled t config dir] runs the operation [config] in a sandbox with root
       filesystem [rootfs].
@@ -113,7 +112,7 @@ module type BUILDER = sig
 end
 
 module type FETCHER = sig
-val fetch : sw:Eio.Switch.t -> process:Eio.Process.t -> log:Build_log.t -> rootfs:string -> string -> Config.env
+val fetch : process:Eio.Process.mgr -> log:Build_log.t -> rootfs:Eio.Fs.dir Eio.Path.t -> string -> Config.env
   (** [fetch ~log ~rootfs base] initialises the [rootfs] directory by
       fetching and extracting the [base] image.
       Returns the image's environment.

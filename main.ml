@@ -1,4 +1,4 @@
-let ( / ) = Filename.concat
+let ( / ) = Eio.Path.( / )
 
 module Sandbox = Obuilder.Runc_sandbox
 module Fetcher = Obuilder.Docker
@@ -34,6 +34,7 @@ let build () ~dir ~process store spec conf src_dir secrets =
         print_endline msg;
         exit 1
     in
+    let src_dir = dir / src_dir in
     let secrets = List.map (fun (id, path) -> id, read_whole_file path) secrets in
     let context = Obuilder.Context.v ~log ~src_dir ~secrets () in
     match Builder.build builder context spec with
@@ -118,14 +119,14 @@ let secrets =
 let build dir process =
   let doc = "Build a spec file." in
   let info = Cmd.info ~doc "build" in
-  let store = Store_spec.cmdliner process in
+  let store = Store_spec.cmdliner dir process in
   Cmd.v info
     Term.(const (build ~dir ~process) $ setup_log $ store $ spec_file $ Sandbox.cmdliner $ src_dir $ secrets)
 
 let delete dir process =
   let doc = "Recursively delete a cached build result." in
   let info = Cmd.info ~doc "delete" in
-  let store = Store_spec.cmdliner process in
+  let store = Store_spec.cmdliner dir process in
   Cmd.v info
     Term.(const (delete ~dir ~process) $ setup_log $ store $ Sandbox.cmdliner $ id)
 
@@ -145,7 +146,7 @@ let dockerfile =
 let healthcheck dir process =
   let doc = "Perform a self-test." in
   let info = Cmd.info ~doc "healthcheck" in
-  let store = Store_spec.cmdliner process in
+  let store = Store_spec.cmdliner dir process in
   Cmd.v info
     Term.(const (healthcheck ~dir ~process) $ setup_log $ store $ Sandbox.cmdliner)
 
@@ -154,7 +155,7 @@ let cmds dir process = [build dir process; delete dir process; dockerfile; healt
 let () =
   Eio_main.run @@ fun env ->
   let dir = Eio.Stdenv.fs env in
-  let process = Eio.Stdenv.process env in
+  let process = (Eio.Stdenv.process_mgr env :> Eio.Process.mgr) in
   let doc = "a command-line interface for OBuilder" in
   let info = Cmd.info ~doc "obuilder" in
   exit (Cmd.eval @@ Cmd.group info (cmds dir process))

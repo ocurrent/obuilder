@@ -21,6 +21,7 @@
 *)
 
 let strf = Printf.sprintf
+let ( / ) = Eio.Path.( / )
 
 type cache = {
   lock : Eio.Mutex.t;
@@ -29,8 +30,9 @@ type cache = {
 }
 
 type t = {
+  fs : Eio.Fs.dir Eio.Path.t;
   pool : string;
-  process : Eio.Process.t;
+  process : Eio.Process.mgr;
   caches : (string, cache) Hashtbl.t;
   mutable next : int;
 }
@@ -78,7 +80,7 @@ end = struct
     | Some snapshot -> strf "/%s/%s/.zfs/snapshot/%s" t.pool ds snapshot
 
   let exists ?snapshot t ds =
-    match Os.check_dir (path ?snapshot t ds) with
+    match Os.check_dir (t.fs / path ?snapshot t ds) with
     | `Missing -> false
     | `Present -> true
 
@@ -92,12 +94,10 @@ let user = { Obuilder_spec.uid = Unix.getuid (); gid = Unix.getgid () }
 module Zfs = struct
   let chown ~user t ds =
     let { Obuilder_spec.uid; gid } = user in
-    Eio.Switch.run @@ fun sw ->
-    Os.sudo ~sw ~process:t.process ["chown"; strf "%d:%d" uid gid; Dataset.path t ds]
+    Os.sudo ~process:t.process ["chown"; strf "%d:%d" uid gid; Dataset.path t ds]
 
   let create t ds =
-    Eio.Switch.run @@ fun sw ->
-    Os.sudo ~sw ~process:t.process ["zfs"; "create"; "--"; Dataset.full_name t ds]
+    Os.sudo ~process:t.process ["zfs"; "create"; "--"; Dataset.full_name t ds]
 
   let destroy t ds mode =
     let opts =
@@ -106,8 +106,7 @@ module Zfs = struct
       | `And_snapshots -> ["-r"]
       | `And_snapshots_and_clones -> ["-R"]
     in
-    Eio.Switch.run @@ fun sw ->
-    Os.sudo ~sw ~process:t.process (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds])
+    Os.sudo ~process:t.process (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds])
 
   let destroy_snapshot t ds snapshot mode =
     let opts =
@@ -116,28 +115,22 @@ module Zfs = struct
       | `Recurse -> ["-R"]
       | `Immediate -> []
     in
-    Eio.Switch.run @@ fun sw ->
-    Os.sudo ~sw ~process:t.process (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds ^ "@" ^ snapshot])
+    Os.sudo ~process:t.process (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds ^ "@" ^ snapshot])
 
   let clone t ~src ~snapshot dst =
-    Eio.Switch.run @@ fun sw ->
-    Os.sudo ~sw ~process:t.process ["zfs"; "clone"; "--"; Dataset.full_name t src ~snapshot; Dataset.full_name t dst]
+    Os.sudo ~process:t.process ["zfs"; "clone"; "--"; Dataset.full_name t src ~snapshot; Dataset.full_name t dst]
 
   let snapshot t ds ~snapshot =
-    Eio.Switch.run @@ fun sw ->
-    Os.sudo ~sw ~process:t.process ["zfs"; "snapshot"; "--"; Dataset.full_name t ds ~snapshot]
+    Os.sudo ~process:t.process ["zfs"; "snapshot"; "--"; Dataset.full_name t ds ~snapshot]
 
   let promote t ds =
-    Eio.Switch.run @@ fun sw ->
-    Os.sudo ~sw ~process:t.process ["zfs"; "promote"; Dataset.full_name t ds]
+    Os.sudo ~process:t.process ["zfs"; "promote"; Dataset.full_name t ds]
 
   let rename t ~old ds =
-    Eio.Switch.run @@ fun sw ->
-    Os.sudo ~sw ~process:t.process ["zfs"; "rename"; "--"; Dataset.full_name t old; Dataset.full_name t ds]
+    Os.sudo ~process:t.process ["zfs"; "rename"; "--"; Dataset.full_name t old; Dataset.full_name t ds]
 
   let rename_snapshot t ds ~old snapshot =
-    Eio.Switch.run @@ fun sw ->
-    Os.sudo ~sw ~process:t.process ["zfs"; "rename"; "--";
+    Os.sudo ~process:t.process ["zfs"; "rename"; "--";
           Dataset.full_name t ds ~snapshot:old;
           Dataset.full_name t ds ~snapshot]
 end
@@ -146,13 +139,13 @@ let delete_if_exists t ds mode =
   if Dataset.exists t ds then Zfs.destroy t ds mode
   else ()
 
-let state_dir t = Dataset.path t Dataset.state
+let state_dir t = t.fs / Dataset.path t Dataset.state
 
-let create ~process ~pool =
-  let t = { pool; process; caches = Hashtbl.create 10; next = 0 } in
+let create ~fs ~process ~pool =
+  let t = { fs; pool; process; caches = Hashtbl.create 10; next = 0 } in
   (* Ensure any left-over temporary datasets are removed before we start. *)
   delete_if_exists t (Dataset.cache_tmp_group) `And_snapshots_and_clones;
-  Dataset.groups |> Eio.Fiber.iter (fun group ->
+  Dataset.groups |> List.iter (fun group ->
       Dataset.if_missing t group (fun () -> Zfs.create t group);
       Zfs.chown ~user t group
     );
@@ -177,7 +170,7 @@ let build t ?base ~id fn =
      with a partially written directory, `result` will see there is no
      snapshot and we'll end up here and delete it. *)
   delete_if_exists t ds `Only;
-  let clone = Dataset.path t ds in
+  let clone = t.fs / Dataset.path t ds in
   begin match base with
     | None ->
       Zfs.create t ds;
@@ -205,8 +198,8 @@ let build t ?base ~id fn =
 
 let result t id =
   let ds = Dataset.result id in
-  let path = Dataset.path t ds ~snapshot:default_snapshot in
-  if Sys.file_exists path then Some path
+  let path = Eio.Path.(t.fs / Dataset.path t ds ~snapshot:default_snapshot) in
+  if Os.exists path then Some path
   else None
 
 let get_cache t name =
@@ -248,7 +241,7 @@ let get_tmp_ds t name =
    - We might crash before making the main@snap tag. If main is missing this tag,
      it is safe to create it, since we must have been just about to do that.
 *)
-let cache ~user t name : (string * (unit -> unit)) =
+let cache ~user t name : (Eio.Fs.dir Eio.Path.t * (unit -> unit)) =
   let cache = get_cache t name in
   Eio.Mutex.use_ro cache.lock @@ fun () ->
   Log.debug (fun f -> f "zfs: get cache %S" (name :> string));
@@ -306,7 +299,7 @@ let cache ~user t name : (string * (unit -> unit)) =
            Zfs.destroy t tmp_ds `Only
     )
   in
-  Dataset.path t tmp_ds, release
+  (t.fs / Dataset.path t tmp_ds), release
 
 let delete_cache t name =
   let cache = get_cache t name in

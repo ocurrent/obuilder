@@ -4,19 +4,22 @@ let max_chunk_size = 4096
 
 type t = {
   mutable state : [
-    | `Open of <Flow.source; Flow.sink; Flow.close> * Condition.t  (* Fires after writing more data. *)
-    | `Readonly of string
+    | `Open of <Eio.Flow.sink; Eio.Flow.source; Eio.Flow.close> * Condition.t  (* Fires after writing more data. *)
+    | `Readonly of Eio.Fs.dir Eio.Path.t
     | `Empty
     | `Finished
   ];
-  dir : Dir.t;
   mutable len : int;
 }
 
-let with_dup ~sw (fd : 'a) fn =
-  let copy = Eio_unix.dup ~sw fd in 
-  fn copy
-  (* ~finally:(fun () -> Flow.close copy) : Closed by switch? *)
+let with_dup ~sw fd fn =
+  match Eio_unix.Resource.fd_opt fd with
+  | None -> failwith "Expected backing file descriptor"
+  | Some fd ->
+    Eio_unix.Fd.use_exn "with-dup" fd @@ fun fd ->
+    let copy = Unix.dup fd in 
+    let sock = Eio_unix.import_socket_stream ~sw ~close_unix:true copy in
+    fn sock
 
 let catch_cancel fn =
   try fn () with
@@ -30,7 +33,7 @@ let tail ?switch t dst =
   | `Finished -> invalid_arg "tail: log is finished!"
   | `Readonly path ->
     (* let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in *)
-    Dir.with_open_in t.dir path @@ fun ch ->
+    Path.(with_open_in path) @@ fun ch ->
     (* Lwt_io.(with_file ~mode:input ~flags) path @@ fun ch -> *)
     let buf = Cstruct.create max_chunk_size in
     catch_cancel @@ fun () ->
@@ -39,7 +42,7 @@ let tail ?switch t dst =
       Switch.run @@ fun sw ->
       let rec aux () =
         try 
-          match Flow.read ch (Cstruct.sub buf 0 max_chunk_size) with
+          match Flow.single_read ch (Cstruct.sub buf 0 max_chunk_size) with
           | 0 -> Promise.resolve set_th (Ok ())
           | n -> dst (Cstruct.to_string buf ~off:0 ~len:n); aux ()
         with End_of_file -> Promise.resolve set_th (Ok ())
@@ -74,13 +77,13 @@ let tail ?switch t dst =
         | _ ->
         let avail = min (t.len - i) max_chunk_size in
         if avail > 0 then (
-          let n = Flow.read fd buf in
+          let n = Flow.single_read fd buf in
           dst (Cstruct.to_string buf ~off:0 ~len:n);
           aux (i + avail)
         ) else (
           match t.state with
           | `Open _ ->
-            Condition.await cond; 
+            Condition.await_no_mutex cond; 
             aux i
           | _ -> Ok ()
         )
@@ -101,12 +104,11 @@ let tail ?switch t dst =
     Logs.info (fun f -> f "Exiting %s" (match r with Ok () -> "OK" | _ -> "CAncelled"));
     r
 
-let create ~sw ~dir path =
-  let fd = Dir.open_out ~sw dir path ~create:(`Or_truncate 0o666) in
+let create ~sw path =
+  let fd = Path.(open_out ~sw path ~create:(`Or_truncate 0o666)) in
   let cond = Condition.create () in
   {
-    state = `Open ((fd :> <Flow.source; Flow.sink; Flow.close>), cond);
-    dir;
+    state = `Open ((fd :> <Eio.Flow.sink; Eio.Flow.source; Eio.Flow.close>), cond);
     len = 0;
   }
 
@@ -131,27 +133,26 @@ let write t data =
     t.len <- t.len + len;
     Condition.broadcast cond
 
-let of_saved dir path =
-  let stat = Eio_unix.run_in_systhread @@ fun () -> Unix.lstat path in 
+let of_saved path =
+  Path.(with_open_in path) @@ fun f ->
+  let stat = File.stat f in
   {
     state = `Readonly path;
-    dir;
-    len = stat.st_size;
+    len = Optint.Int63.to_int stat.size;
   }
 
 let printf t fmt =
   Fmt.kstr (write t) fmt
 
-let empty dir = {
+let empty = {
   state = `Empty;
-  dir;
   len = 0;
 }
 
 let copy ~src ~dst =
   let buf = Cstruct.create 4096 in
   let rec aux () =
-    match Eio.Flow.read src buf with
+    match Eio.Flow.single_read src buf with
     | 0 -> ()
     | n -> 
       write dst (Cstruct.to_string buf ~off:0 ~len:n);

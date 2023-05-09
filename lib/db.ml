@@ -52,7 +52,8 @@ let query_some stmt values =
   | _ -> failwith "Multiple results from SQL query!"
 
 let of_dir path =
-  let db = Sqlite3.db_open path in
+  (* TODO: db_open for eio paths *)
+  let db = Sqlite3.db_open (snd path) in
   Sqlite3.busy_timeout db 1000;
   exec_literal db "PRAGMA journal_mode=WAL";
   exec_literal db "PRAGMA synchronous=NORMAL";

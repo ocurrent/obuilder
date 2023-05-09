@@ -9,7 +9,7 @@ module Context : sig
     ?shell:string list ->
     ?secrets:(string * string) list ->
     log:S.logger ->
-    src_dir:string ->
+    src_dir:Eio.Fs.dir Eio.Path.t ->
     unit -> t
   (** [context ~log ~src_dir] is a build context where copy operations read from the (host) directory [src_dir].
       @param switch Turn this off to cancel the build.
@@ -25,5 +25,5 @@ end
 module Make (Store : S.STORE) (Sandbox : S.SANDBOX) (_ : S.FETCHER) : sig
   include S.BUILDER with type context := Context.t
 
-  val v : store:Store.t -> sandbox:Sandbox.t -> process:Eio.Process.t -> dir:Eio.Dir.t -> t
+  val v : store:Store.t -> sandbox:Sandbox.t -> process:Eio.Process.mgr -> dir:Eio.Fs.dir Eio.Path.t -> t
 end

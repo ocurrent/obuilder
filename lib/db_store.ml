@@ -1,6 +1,6 @@
 open Eio
 
-let ( / ) = Filename.concat
+let ( / ) = Path.( / )
 let ( >>!= ) v f = Result.bind v f
 
 module Make (Raw : S.STORE) = struct
@@ -15,7 +15,6 @@ module Make (Raw : S.STORE) = struct
 
   type t = {
     raw : Raw.t;
-    dir : Eio.Dir.t;
     dao : Dao.t;
     (* Invariants for builds in [in_progress]:
        - [result] is still pending and [log] isn't finished.
@@ -51,18 +50,16 @@ module Make (Raw : S.STORE) = struct
       Dao.set_used t.dao ~id ~now;
       let log_file = dir / "log" in
       let log =
-        if Sys.file_exists log_file then Build_log.of_saved t.dir log_file
-        else Build_log.empty t.dir
+        if Os.exists log_file then Build_log.of_saved log_file
+        else Build_log.empty
       in
       Promise.resolve set_log (Ok log);
-      Logs.info (fun f -> f "Loaded babyyyy");
       Ok (`Loaded, id)
     | None ->
-      Logs.info (fun f -> f "NONONOENOENOENE");
       match Raw.build t.raw ?base ~id (fun dir ->
           let log_file = dir / "log" in
-          if Sys.file_exists log_file then Unix.unlink log_file;
-          let log = Build_log.create ~sw ~dir:t.dir log_file in
+          if Os.exists log_file then Path.unlink log_file;
+          let log = Build_log.create ~sw log_file in
           Promise.resolve set_log (Ok log);
           Logs.info (fun f -> f "About to call fn!");
           fn ~cancelled ~log dir
@@ -98,24 +95,16 @@ module Make (Raw : S.STORE) = struct
       (* Option.iter (fun sw -> Switch.on_release sw (fun () -> dec_ref existing)) switch; *)
       Lwt_eio.Promise.await_lwt @@
       Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref existing; Lwt.return_unit);
-      let res () =
-        Logs.info (fun f -> f "RESSSS");
-        Build_log.tail ?switch log (client_log `Output) >>!= fun () ->
-        Logs.info (fun f -> f "LOGING");
-        Promise.await existing.result >>!= fun (ty, r) ->
-        log_ty client_log ~id ty;
-        Ok r
-      in
-      let r = res () in
-      Logs.info (fun f -> f "completed");
-      r
+      Build_log.tail ?switch log (client_log `Output) >>!= fun () ->
+      Promise.await existing.result >>!= fun (ty, r) ->
+      log_ty client_log ~id ty;
+      Ok r
     | None ->
       let result, set_result = Promise.create () in
       let log, set_log = Promise.create () in
       let tail_log () =
         match Promise.await log with
         | Ok log -> 
-          Logs.info (fun f -> f "Got log!");
           Build_log.tail ?switch log (client_log `Output)
         | _ -> assert false
       in
@@ -167,7 +156,7 @@ module Make (Raw : S.STORE) = struct
         Log.warn (fun f -> f "ID %S not in database!" id);
         Raw.delete t.raw id     (* Try removing it anyway *)
       | Ok deps ->
-        Fiber.iter aux deps;
+        List.iter aux deps;
         log id;
         Raw.delete t.raw id;
         Dao.delete t.dao id
@@ -178,7 +167,7 @@ module Make (Raw : S.STORE) = struct
     let items = Dao.lru t.dao ~before limit in
     let n = List.length items in
     Log.info (fun f -> f "Pruning %d items (of %d requested)" n limit);
-    items |> Fiber.iter (fun id ->
+    items |> List.iter (fun id ->
         log id;
         Raw.delete t.raw id;
         Dao.delete t.dao id
@@ -198,10 +187,10 @@ module Make (Raw : S.STORE) = struct
     Raw.complete_deletes t.raw;
     n
 
-  let wrap dir raw =
+  let wrap raw =
     let db_dir = Raw.state_dir raw / "db" in
     Os.ensure_dir db_dir;
     let db = Db.of_dir (db_dir / "db.sqlite") in
     let dao = Dao.create db in
-    { raw; dao; dir; in_progress = Builds.empty }
+    { raw; dao; in_progress = Builds.empty }
 end

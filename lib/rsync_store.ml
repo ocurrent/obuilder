@@ -3,6 +3,8 @@
    efficient. *)
 open Eio
 
+let ( / ) = Eio.Path.(/)
+
 (* The caching approach (and much of the code) is copied from the btrfs 
    implementation *)
 type cache = {
@@ -16,48 +18,45 @@ type mode =
   | Hardlink_unsafe
 
 type t = {
-    path : string;
+    path : Eio.Fs.dir Eio.Path.t;
     mode : mode;
-    process : Eio.Process.t;
+    process : Eio.Process.mgr;
     caches : (string, cache) Hashtbl.t;
     mutable next : int;
 }
-
-let ( / ) = Filename.concat
 
 module Rsync = struct
   let create dir = Os.ensure_dir dir
 
   let delete dir =
-    Os.sudo [ "rm"; "-r"; dir ]
+    Os.sudo [ "rm"; "-r"; snd dir ]
 
   let rsync = [ "rsync"; "-aHq" ]
 
   let rename ~src ~dst =
-    let cmd = [ "mv"; src; dst ] in
+    let cmd = [ "mv"; snd src; snd dst ] in
     Os.sudo cmd
 
   let rename_with_sharing ~process ~mode ~base ~src ~dst = 
-    Switch.run @@ fun sw ->
     match mode, base with
-    | Copy, _ | _, None -> rename ~sw ~process ~src ~dst
+    | Copy, _ | _, None -> rename ~process ~src ~dst
     | _, Some base ->
         (* Attempt to hard-link existing files shared with [base] *)
         let safe = match mode with
           | Hardlink -> ["--checksum"]
           | _ -> []
         in
-        let cmd = rsync @ safe @ ["--link-dest=" ^ base; src ^ "/"; dst ] in
+        let cmd = rsync @ safe @ ["--link-dest=" ^ snd base; snd src ^ "/"; snd dst ] in
         Os.ensure_dir dst;
-        Os.sudo ~sw ~process cmd;
-        delete ~sw ~process src
+        Os.sudo ~process cmd;
+        delete ~process src
 
   let copy_children ?chown ~src ~dst () =
     let chown = match chown with
       | Some uid_gid -> [ "--chown"; uid_gid ]
       | None -> []
     in
-    let cmd = rsync @ chown @ [ src ^ "/"; dst ] in
+    let cmd = rsync @ chown @ [ snd src ^ "/"; snd dst ] in
     Os.ensure_dir dst;
     Os.sudo cmd
 end
@@ -84,18 +83,17 @@ end
 
 let create ~process ~path ?(mode = Copy) () =
   Rsync.create path;
-  Fiber.iter Rsync.create (Path.dirs path);
+  List.iter Rsync.create (Path.dirs path);
   { path; process; mode; caches = Hashtbl.create 10; next = 0 }
 
 let build t ?base ~id fn =
   Log.debug (fun f -> f "rsync: build %S" id);
-  Switch.run @@ fun sw ->
   let result = Path.result t id in
   let result_tmp = Path.result_tmp t id in
   let base = Option.map (Path.result t) base in
   begin match base with
   | None -> Rsync.create result_tmp
-  | Some src -> Rsync.copy_children ~sw ~process:t.process ~src ~dst:result_tmp ()
+  | Some src -> Rsync.copy_children ~process:t.process ~src ~dst:result_tmp ()
   end;
   try
     let r = fn result_tmp in
@@ -107,14 +105,13 @@ let build t ?base ~id fn =
     r
   with ex ->
       Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
-      Rsync.delete ~sw ~process:t.process result_tmp;
+      Rsync.delete ~process:t.process result_tmp;
       raise ex
 
 let delete t id =
-  Switch.run @@ fun sw ->
   let path = Path.result t id in
   match Os.check_dir path with
-    | `Present -> Rsync.delete ~sw ~process:t.process path
+    | `Present -> Rsync.delete ~process:t.process path
     | `Missing -> ()
 
 let result t id =
@@ -134,7 +131,6 @@ let get_cache t name =
     c
 
 let cache ~user t name =
-  Switch.run @@ fun sw ->
   let cache = get_cache t name in
   Mutex.use_ro cache.lock @@ fun () ->
   let tmp = Path.cache_tmp t t.next name in
@@ -148,7 +144,7 @@ let cache ~user t name =
   (* Create writeable clone. *)
   let gen = cache.gen in
   let { Obuilder_spec.uid; gid } = user in
-  Rsync.copy_children ~sw ~process:t.process ~chown:(Printf.sprintf "%d:%d" uid gid) ~src:snapshot ~dst:tmp ();
+  Rsync.copy_children ~process:t.process ~chown:(Printf.sprintf "%d:%d" uid gid) ~src:snapshot ~dst:tmp ();
   let release () =
       Mutex.use_ro cache.lock @@ fun () ->
       begin
@@ -156,8 +152,8 @@ let cache ~user t name =
           (* The cache hasn't changed since we cloned it. Update it. *)
           (* todo: check if it has actually changed. *)
           cache.gen <- cache.gen + 1;
-          Rsync.delete ~sw ~process:t.process snapshot;
-          Rsync.rename ~sw ~process:t.process ~src:tmp ~dst:snapshot
+          Rsync.delete ~process:t.process snapshot;
+          Rsync.rename ~process:t.process ~src:tmp ~dst:snapshot
       ) else ()
       end
   in
@@ -165,13 +161,12 @@ let cache ~user t name =
 
 
 let delete_cache t name =
-  Switch.run @@ fun sw ->
   let cache = get_cache t name in
   Mutex.use_ro cache.lock @@ fun () ->
   cache.gen <- cache.gen + 1;   (* Ensures in-progress writes will be discarded *)
   let snapshot = Path.cache t name in
-  if Sys.file_exists snapshot then (
-      Rsync.delete ~sw ~process:t.process snapshot
+  if Os.exists snapshot then (
+      Rsync.delete ~process:t.process snapshot
   );
   Ok ()
 

@@ -9,6 +9,6 @@ val cmdliner : config Cmdliner.Term.t
 (** [cmdliner] is used for command-line interfaces to generate the necessary flags
     and parameters to setup a specific sandbox's configuration. *)
 
-val create : process:Eio.Process.t -> state_dir:string -> config -> t
+val create : process:Eio.Process.mgr -> state_dir:Eio.Fs.dir Eio.Path.t -> config -> t
 (** [create ~state_dir config] is a runc sandboxing system that keeps state in [state_dir]
     and is configured using [config]. *)

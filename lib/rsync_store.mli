@@ -9,7 +9,7 @@ type mode =
                         checksum verification. Only for testing during
                         development, do not use in production. *)
 
-val create : process:Eio.Process.t -> path:string -> ?mode:mode -> unit -> t
+val create : process:Eio.Process.mgr -> path:Eio.Fs.dir Eio.Path.t -> ?mode:mode -> unit -> t
 (** [create ~process ~path ?mode ()] creates a new rsync store where everything will
     be stored under [path]. The [mode] defaults to [Copy] and defines how
     the caches are reused: [Copy] copies all the files, while [Hardlink] tries

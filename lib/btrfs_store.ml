@@ -16,39 +16,38 @@ type cache = {
 }
 
 type t = {
-  root : string;        (* The top-level directory (containing `result`, etc). *)
-  process : Process.t;
+  root : Eio.Fs.dir Eio.Path.t;        (* The top-level directory (containing `result`, etc). *)
+  process : Process.mgr;
   caches : (string, cache) Hashtbl.t;
   mutable next : int;   (* Used to generate unique temporary IDs. *)
 }
 
-let ( / ) = Filename.concat
+let ( / ) = Eio.Path.( / )
 
 module Btrfs = struct
   let btrfs ?(sudo=false) t args =
     let args = "btrfs" :: args in
     let args = if sudo && not running_as_root then "sudo" :: args else args in
-    Switch.run @@ fun sw ->
-    Os.exec ~sw ~process:t.process args
+    Os.exec ~process:t.process args
 
   let subvolume_create t path =
-    assert (not (Sys.file_exists path));
-    btrfs t ["subvolume"; "create"; "--"; path]
+    assert (not (Os.exists path));
+    btrfs t ["subvolume"; "create"; "--"; snd path]
 
   let subvolume_delete t path =
-    btrfs t ~sudo:true ["subvolume"; "delete"; "--"; path]
+    btrfs t ~sudo:true ["subvolume"; "delete"; "--"; snd path]
 
   let subvolume_sync t path =
-    btrfs ~sudo:true t ["subvolume"; "sync"; "--"; path]
+    btrfs ~sudo:true t ["subvolume"; "sync"; "--"; snd path]
 
   let subvolume_snapshot mode t ~src dst =
-    assert (not (Sys.file_exists dst));
+    assert (not (Os.exists dst));
     let readonly =
       match mode with
       | `RO -> ["-r"]
       | `RW -> []
     in
-    btrfs ~sudo:true t (["subvolume"; "snapshot"] @ readonly @ ["--"; src; dst])
+    btrfs ~sudo:true t (["subvolume"; "snapshot"] @ readonly @ ["--"; snd src; snd dst])
 end
 
 let delete_snapshot_if_exists t path =
@@ -78,14 +77,14 @@ let delete t id =
   delete_snapshot_if_exists t (Path.result t id)
 
 let purge t path =
-  Sys.readdir path |> Array.to_list |> Fiber.iter (fun item ->
+  Eio.Path.read_dir path |> List.iter (fun item ->
       let item = path / item in
-      Log.warn (fun f -> f "Removing left-over temporary item %S" item);
+      Log.warn (fun f -> f "Removing left-over temporary item %a" Eio.Path.pp item);
       Btrfs.subvolume_delete t item
     )
 
 let check_kernel_version process =
-  let kver = Switch.run @@ fun sw -> Os.pread ~sw ~process ["uname"; "-r"] in
+  let kver = Os.pread ~process ["uname"; "-r"] in
   match String.split_on_char '.' kver with
   | maj :: min :: _ ->
       begin match int_of_string_opt maj, int_of_string_opt min with
@@ -118,7 +117,7 @@ let create process root =
 let build t ?base ~id fn =
   let result = Path.result t id in
   let result_tmp = Path.result_tmp t id in
-  assert (not (Sys.file_exists result));        (* Builder should have checked first *)
+  assert (not (Os.exists result));        (* Builder should have checked first *)
   begin match base with
     | None -> Btrfs.subvolume_create t result_tmp
     | Some base -> Btrfs.subvolume_snapshot `RW t ~src:(Path.result t base) result_tmp
@@ -150,7 +149,7 @@ let get_cache t name =
     Hashtbl.add t.caches name c;
     c
 
-let cache ~user t name : (string * (unit -> unit)) =
+let cache ~user t name : (Eio.Fs.dir Eio.Path.t * (unit -> unit)) =
   let cache = get_cache t name in
   Mutex.use_ro cache.lock @@ fun () ->
   let tmp = Path.cache_tmp t t.next name in
@@ -165,8 +164,7 @@ let cache ~user t name : (string * (unit -> unit)) =
   let gen = cache.gen in
   Btrfs.subvolume_snapshot `RW t ~src:snapshot tmp;
   let { Obuilder_spec.uid; gid } = user in
-  Switch.run @@ fun sw ->
-  Os.sudo ~sw ~process:t.process ["chown"; Printf.sprintf "%d:%d" uid gid; tmp];
+  Os.sudo ~process:t.process ["chown"; Printf.sprintf "%d:%d" uid gid; snd tmp];
   let release () =
     Mutex.use_ro cache.lock @@ fun () ->
     begin
@@ -187,7 +185,7 @@ let delete_cache t name =
   Mutex.use_ro cache.lock @@ fun () ->
   cache.gen <- cache.gen + 1;   (* Ensures in-progress writes will be discarded *)
   let snapshot = Path.cache t name in
-  if Sys.file_exists snapshot then (
+  if Os.exists snapshot then (
     Btrfs.subvolume_delete t snapshot;
     Ok ()
   ) else Ok ()

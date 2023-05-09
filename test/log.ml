@@ -42,7 +42,7 @@ let rec await t expect =
   ) else (
     let common = min (String.length expect) (String.length got) in
     if String.sub got 0 common = String.sub expect 0 common then (
-      Condition.await t.cond;
+      Condition.await_no_mutex t.cond;
       await t expect
     ) else (
       Fmt.failwith "Log expected %S but got %S" expect got

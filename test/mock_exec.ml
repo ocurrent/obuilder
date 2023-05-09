@@ -12,11 +12,14 @@ let base_tar =
   |> Cstruct.of_string
 
 let with_fd ~sw (fd : Eio.Flow.sink) f =
-  let copy = Eio_unix.dup ~sw (fd :> Eio.Generic.t) in
-  Option.iter Unix.close (Eio_unix.FD.peek_opt fd);
-  Fun.protect
-    (fun () -> f copy)
-    ~finally:(fun () -> Eio.Flow.close copy)
+  match Eio_unix.Resource.fd_opt fd with
+  | None -> failwith "No backing file descriptor!"
+  | Some fd ->
+    Eio_unix.Fd.use_exn "with-fd" fd @@ fun fd ->
+    let copy = Unix.dup fd in
+    Unix.close fd;
+    let fd_copy = Eio_unix.Fd.of_unix ~sw ~close_unix:true copy in
+    f fd_copy
 
 let docker_create ?stdout base =
   with_fd (Option.get stdout) @@ fun stdout ->
@@ -26,7 +29,8 @@ let docker_create ?stdout base =
     let len = String.length id - i in
     if len = 0 then Ok 0
     else (
-      let sent = Unix.single_write_substring (stdout#unix_fd `Peek) id i len in
+      Eio_unix.Fd.use_exn "docker-create" stdout @@ fun fd ->
+      let sent = Unix.single_write_substring fd id i len in
       aux (i + sent)
     )
   in
@@ -34,11 +38,17 @@ let docker_create ?stdout base =
 
 let docker_export ?stdout _id =
   with_fd (Option.get stdout) @@ fun stdout ->
+  Eio.Switch.run @@ fun sw ->
+  Eio_unix.Fd.use_exn "docker-export" stdout @@ fun fd ->
+  let stdout = Eio_unix.import_socket_stream ~sw ~close_unix:true fd in
   Os.write_all stdout base_tar 0 (Cstruct.length base_tar);
   Ok 0
 
 let docker_inspect ?stdout _id =
   with_fd (Option.get stdout) @@ fun stdout ->
+  Eio.Switch.run @@ fun sw ->
+  Eio_unix.Fd.use_exn "docker-export" stdout @@ fun fd ->
+  let stdout = Eio_unix.import_socket_stream ~sw ~close_unix:true fd in
   let msg = Cstruct.of_string "PATH=/usr/bin:/usr/local/bin" in
   Os.write_all stdout msg 0 (Cstruct.length msg);
   Ok 0
@@ -58,7 +68,7 @@ let closing redir fn =
   Fun.protect fn
     ~finally:(fun () -> match redir with Some fd -> Os.ensure_closed_unix fd | _ -> ())
 
-let exec ?cwd ?stdin ?stdout ?stderr ~sw ~process ~pp cmd =
+let exec ?cwd ?stdin ?(stdout : Eio.Flow.sink option) ?stderr ~sw ~process ~pp cmd =
   closing stdin @@ fun () ->
   closing stdout @@ fun () ->
   closing stderr @@ fun () ->

@@ -1,8 +1,6 @@
 open Lwt.Infix
 open Eio
 
-let ( / ) = Filename.concat
-
 let level = Tar.Header.GNU
 
 module Tar_lwt_unix = struct
@@ -50,67 +48,74 @@ let copy_to ~dst src =
   let len = 4096 in
   let buf = Cstruct.create len in
   let rec aux () =
-    match Flow.read src (Cstruct.sub buf 0 len) with
+    match Flow.single_read src (Cstruct.sub buf 0 len) with
     | 0 -> Lwt.return_unit
-    | n -> Os.write_all dst buf 0 n |> aux
+    | n ->
+      (* TODO: Remove once we port Tar to Eio *)
+      Eio.Switch.run @@ fun sw ->
+      let sock = Eio_unix.import_socket_stream ~sw ~close_unix:false dst in 
+      Os.write_all sock buf 0 n |> aux
   in
   aux ()
 
 let copy_file ~src ~dst ~to_untar ~user =
-  Lwt_unix.LargeFile.lstat src >>= fun stat ->
+  let stat = Eio.File.stat src in
   let hdr = Tar.Header.make
-      ~file_mode:(if stat.Lwt_unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
-      ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
+      ~file_mode:(if stat.File.Stat.perm land 0o111 <> 0 then 0o755 else 0o644)
+      ~mod_time:(Int64.of_float stat.File.Stat.mtime)
       ~user_id:user.Obuilder_spec.uid
       ~group_id:user.Obuilder_spec.gid
-      dst stat.Lwt_unix.LargeFile.st_size
+      dst (Optint.Int63.to_int64 stat.File.Stat.size)
   in
+  Lwt_eio.Promise.await_lwt @@
   Tar_lwt_unix.write_block ~level hdr (fun ofd ->
-      let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
-      Lwt_io.(with_file ~mode:input ~flags) src (fun _ -> Lwt.return ())
-      
-      (* (copy_to ~dst:ofd) *)
+      let dst = Lwt_unix.unix_file_descr ofd in 
+      (copy_to ~dst src)
     ) to_untar
 
 let copy_symlink ~src ~target ~dst ~to_untar ~user =
-  Lwt_unix.LargeFile.lstat src >>= fun stat ->
+  let stat = Eio.File.stat src in
   let hdr = Tar.Header.make
       ~file_mode:0o777
-      ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
+      ~mod_time:(Int64.of_float stat.File.Stat.mtime)
       ~link_indicator:Tar.Header.Link.Symbolic
       ~link_name:target
       ~user_id:user.Obuilder_spec.uid
       ~group_id:user.Obuilder_spec.gid
       dst 0L
   in
+  Lwt_eio.Promise.await_lwt @@
   Tar_lwt_unix.write_block ~level hdr (fun _ -> Lwt.return_unit) to_untar
 
 let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
   Log.debug(fun f -> f "Copy dir %S -> %S@." src dst);
-  Lwt_unix.LargeFile.lstat (src_dir / src) >>= fun stat ->
+  Path.(with_open_in (src_dir / src)) @@ fun src ->
+  let stat = File.stat src in
   begin
     let hdr = Tar.Header.make
         ~file_mode:0o755
-        ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
+        ~mod_time:(Int64.of_float stat.File.Stat.mtime)
         ~user_id:user.Obuilder_spec.uid
         ~group_id:user.Obuilder_spec.gid
         (dst ^ "/") 0L
     in
+    Lwt_eio.Promise.await_lwt @@
     Tar_lwt_unix.write_block ~level hdr (fun _ -> Lwt.return_unit) to_untar
-  end >>= fun () -> send_dir ~src_dir ~dst ~to_untar ~user items
+  end;
+  send_dir ~src_dir ~dst ~to_untar ~user items
 
 and send_dir ~src_dir ~dst ~to_untar ~user items =
-  items |> Lwt_list.iter_s (function
+  items |> List.iter (function
       | `File (src, _) ->
-        let src = src_dir / src in
-        let dst = dst / Filename.basename src in
-        copy_file ~src ~dst ~to_untar ~user
+        Path.(with_open_in (src_dir / src)) @@ fun src_in ->
+        let dst = Filename.(concat dst (basename src)) in
+        copy_file ~src:src_in ~dst ~to_untar ~user
       | `Symlink (src, target) ->
-        let src = src_dir / src in
-        let dst = dst / Filename.basename src in
-        copy_symlink ~src ~target ~dst ~to_untar ~user
+        Path.(with_open_in (src_dir / src)) @@ fun src_in ->
+        let dst = Filename.(concat dst (Filename.basename src)) in
+        copy_symlink ~src:src_in ~target ~dst ~to_untar ~user
       | `Dir (src, items) ->
-        let dst = dst / Filename.basename src in
+        let dst = Filename.(concat dst (Filename.basename src)) in
         copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
     )
 
@@ -118,20 +123,21 @@ let remove_leading_slashes = Astring.String.drop ~sat:((=) '/')
 
 let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
   let dst = remove_leading_slashes dst_dir in
-  send_dir ~src_dir ~dst ~to_untar ~user src_manifest >>= fun () ->
-  Tar_lwt_unix.write_end to_untar
+  send_dir ~src_dir ~dst ~to_untar ~user src_manifest;
+  Lwt_eio.Promise.await_lwt @@ Tar_lwt_unix.write_end to_untar
 
 let send_file ~src_dir ~src_manifest ~dst ~user ~to_untar =
   let dst = remove_leading_slashes dst in
   begin
     match src_manifest with
     | `File (path, _) ->
-      let src = src_dir / path in
+      Path.(with_open_in (src_dir / path)) @@ fun src ->
       copy_file ~src ~dst ~to_untar ~user
     | `Symlink (src, target) ->
-      let src = src_dir / src in
+      Path.(with_open_in (src_dir / src)) @@ fun src ->
       copy_symlink ~src ~target ~dst ~to_untar ~user
     | `Dir (src, items) ->
       copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
-  end >>= fun () ->
+  end;
+  Lwt_eio.Promise.await_lwt @@
   Tar_lwt_unix.write_end to_untar

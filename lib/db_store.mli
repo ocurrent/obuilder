@@ -8,7 +8,7 @@ module Make (Raw : S.STORE) : sig
     t -> ?base:S.id ->
     id:S.id ->
     log:S.logger ->
-    (cancelled:unit Promise.t -> log:Build_log.t -> string -> (unit, [`Cancelled | `Msg of string]) result) ->
+    (cancelled:unit Promise.t -> log:Build_log.t -> Eio.Fs.dir Eio.Path.t -> (unit, [`Cancelled | `Msg of string]) result) ->
     (S.id, [`Cancelled | `Msg of string]) result
   (** [build t ~id ~log fn] ensures that [id] is cached, using [fn ~cancelled ~log dir] to build it if not.
       If [cancelled] resolves, the build should be cancelled.
@@ -20,13 +20,13 @@ module Make (Raw : S.STORE) : sig
 
   val prune : ?log:(S.id -> unit) -> t -> before:Unix.tm -> int -> int
 
-  val result : t -> S.id -> string option
+  val result : t -> S.id -> Eio.Fs.dir Eio.Path.t option
 
   val cache :
     user : Obuilder_spec.user ->
     t ->
     string ->
-    (string * (unit -> unit))
+    (Eio.Fs.dir Eio.Path.t * (unit -> unit))
 
-  val wrap : Eio.Dir.t -> Raw.t -> t
+  val wrap : Raw.t -> t
 end

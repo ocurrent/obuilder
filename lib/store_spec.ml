@@ -21,18 +21,18 @@ let pp f = function
 
 type store = Store : (module S.STORE with type t = 'a) * 'a -> store
 
-let to_store ~process mode = function
+let to_store ~process ~fs mode = function
   | `Btrfs path ->
-    let store = Btrfs_store.create process path in
+    let store = Btrfs_store.create process Eio.Path.(fs / path) in
     Store ((module Btrfs_store), store)
   | `Zfs pool ->
-    let store = Zfs_store.create ~process ~pool in
+    let store = Zfs_store.create ~fs ~process ~pool in
     Store ((module Zfs_store), store)
   | `Rsync path ->
-    let store = Rsync_store.create ~process ~path ~mode () in
+    let store = Rsync_store.create ~process ~path:Eio.Path.(fs / path) ~mode () in
     Store ((module Rsync_store), store)
 
-let cmdliner process =
+let cmdliner fs process =
   let open Cmdliner in
   let store_t = Arg.conv (of_string, pp) in
   let store =
@@ -56,4 +56,4 @@ let cmdliner process =
       ~docv:"RSYNC_MODE"
       ["rsync-mode"]
   in
-  Term.(const (to_store ~process) $ rsync_mode $ store)
+  Term.(const (to_store ~fs ~process) $ rsync_mode $ store)

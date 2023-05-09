@@ -3,7 +3,7 @@ type t
 
 (** {2 Creating logs} *)
 
-val create : sw:Eio.Switch.t -> dir:Eio.Dir.t -> string -> t
+val create : sw:Eio.Switch.t -> Eio.Fs.dir Eio.Path.t -> t
 (** [create path] creates a new log file at temporary location [path].
     Call [finish] when done to release the file descriptor. *)
 
@@ -21,11 +21,11 @@ val printf : t -> ('a, Format.formatter, unit, unit) format4 -> 'a
 
 (** {2 Reading logs} *)
 
-val empty : Eio.Dir.t -> t
+val empty : t
 (** [empty] is a read-only log with no content. *)
 
-val of_saved : Eio.Dir.t -> string -> t
-(** [of_saved path] is a read-only log which reads from [path]. *)
+val of_saved : Eio.Fs.dir Eio.Path.t -> t
+(** [of_saved ~fs path] is a read-only log which reads from [path]. *)
 
 val tail : ?switch:Lwt_switch.t -> t -> (string -> unit) -> (unit, [> `Cancelled]) result
 (** [tail t dst] streams data from the log to [dst].
@@ -34,6 +34,6 @@ val tail : ?switch:Lwt_switch.t -> t -> (string -> unit) -> (unit, [> `Cancelled
 
 (* {2 Copying to logs} *)
 
-val copy : src:<Eio.Flow.source; Eio_unix.unix_fd> -> dst:t -> unit
+val copy : src:Eio_unix.source -> dst:t -> unit
 (** [copy ~src ~dst] reads bytes from the [src] file descriptor and
     writes them to the build log [dst]. *)

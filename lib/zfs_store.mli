@@ -2,5 +2,5 @@
 
 include S.STORE
 
-val create : process:Eio.Process.t -> pool:string -> t
+val create : fs:Eio.Fs.dir Eio.Path.t -> process:Eio.Process.mgr -> pool:string -> t
 (** [create ~pool] is a new store in zfs pool [pool]. *)

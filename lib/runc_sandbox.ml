@@ -4,7 +4,8 @@ open Sexplib.Conv
 let ( / ) = Filename.concat
 
 type t = {
-  runc_state_dir : string;
+  runc_state_dir : Eio.Fs.dir Eio.Path.t;
+  (** Must be an absolute path ! *)
   fast_sync : bool;
   arches : string list;
 }
@@ -145,7 +146,7 @@ module Json_config = struct
         "noNewPrivileges", `Bool false;
       ];
       "root", `Assoc [
-        "path", `String (results_dir / "rootfs");
+        "path", `String (snd results_dir / "rootfs");
         "readonly", `Bool false;
       ];
       "hostname", `String hostname;
@@ -281,33 +282,35 @@ let temp_file_name temp_dir prefix suffix =
 
 let next_id = ref 0
 
-let run ~sw ~dir ~process ~cancelled ?stdin ~log t config results_dir =
+let ( / ) = Eio.Path.( / )
+
+let run ~dir ~process ~cancelled ?stdin ~log t config results_dir =
   let tmpdir =
     temp_file_name (Filename.get_temp_dir_name ()) "obuilder-runc-" ""
   in
-  Dir.mkdir ~perm:0o700 dir tmpdir;
-  Dir.with_open_dir dir tmpdir @@ fun tmp ->
+  Path.(mkdir ~perm:0o700 (dir / tmpdir));
+  Path.(with_open_dir (dir / tmpdir)) @@ fun tmp ->
   let json_config = Json_config.make config ~config_dir:tmpdir ~results_dir t in
-  Os.write_file ~path:"config.json" ~dir:tmp (Yojson.Safe.pretty_to_string json_config ^ "\n");
-  Os.write_file ~path:"hosts" ~dir:tmp "127.0.0.1 localhost builder";
+  Os.write_file (tmp / "config.json") (Yojson.Safe.pretty_to_string json_config ^ "\n");
+  Os.write_file (tmp / "hosts") "127.0.0.1 localhost builder";
   let _ = List.fold_left
     (fun id Config.Secret.{value; _} ->
-      Os.write_file ~path:(secret_file id) ~dir:tmp value;
+      Os.write_file (tmp / secret_file id) value;
       id + 1
     ) 0 config.mount_secrets
   in
   let id = string_of_int !next_id in
   incr next_id;
-  Os.with_pipe_from_child ~sw @@ fun ~r:out_r ~w:out_w ->
-  let cmd = ["runc"; "--root"; t.runc_state_dir; "run"; id] in
+  Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->  
+  let cmd = ["runc"; "--root"; snd t.runc_state_dir; "run"; id] in
   let stdout = (out_w :> Flow.sink) in
   let stdin = Option.map (fun v -> (v :> Flow.source)) stdin in 
   let stderr = stdout in
-  let copy_log () = Build_log.copy ~src:(out_r :> <Flow.source; Eio_unix.unix_fd>) ~dst:log in
+  let copy_log () = Build_log.copy ~src:(out_r :> Eio_unix.source) ~dst:log in
   let r =
     (* let stdin = Option.map (fun x -> `FD_move_safely x) stdin in *)
     let pp f = Os.pp_cmd f config.argv in
-    Os.sudo_result ~sw ~process ~cwd:tmpdir ?stdin ~stdout ~stderr ~pp cmd
+    Os.sudo_result ~process ~cwd:(dir / tmpdir) ?stdin ~stdout ~stderr ~pp cmd
   in
   (* Lwt.on_termination cancelled (fun () ->
       let rec aux () =
@@ -329,12 +332,11 @@ let run ~sw ~dir ~process ~cancelled ?stdin ~log t config results_dir =
   else Error `Cancelled
 
 let clean_runc ~process dir =
-  Switch.run @@ fun sw ->
-  Sys.readdir dir
-  |> Array.to_list
-  |> Fiber.iter (fun item ->
+  Path.read_dir dir
+  |> List.iter (fun item ->
       Log.warn (fun f -> f "Removing left-over runc container %S" item);
-      Os.sudo ~sw ~process ["runc"; "--root"; dir; "delete"; "--force"; item]
+      (* TODO: This is probably not right with the [snd dir]! *)
+      Os.sudo ~process ["runc"; "--root"; snd dir; "delete"; "--force"; item]
     )
 
 let create ~process ~state_dir (c : config) =

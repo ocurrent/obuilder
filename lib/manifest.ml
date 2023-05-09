@@ -58,6 +58,8 @@ let rec check_path ~acc base = function
     | _ -> Fmt.error_msg "Not a regular file: %a" pp_rev_path acc
 
 let generate ~exclude ~src_dir src =
+  (* TODO: Probably not right! *)
+  let src_dir = snd src_dir in
   match check_path ~acc:[] src_dir (String.split_on_char '/' src) with
   | Error (`Msg m) -> Fmt.error_msg "%s (in %S)" m src
   | Error `Not_found -> Fmt.error_msg "Source path %S not found" src

@@ -1,7 +1,7 @@
 open Eio
 open Sexplib.Std
 
-let ( / ) = Filename.concat
+let ( / ) = Path.(/)
 let ( >>!= ) = Result.bind
 
 let hostname = "builder"
@@ -20,7 +20,7 @@ module Context = struct
   type t = {
     switch : Lwt_switch.t option;
     env : Config.env;                   (* Environment in which to run commands. *)
-    src_dir : string;                   (* Directory with files for copying. *)
+    src_dir : Eio.Fs.dir Eio.Path.t;                   (* Directory with files for copying. *)
     user : Obuilder_spec.user;          (* Container user to run as. *)
     workdir : string;                   (* Directory in the container namespace for cwd. *)
     shell : string list;
@@ -48,8 +48,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
   type t = {
     store : Store.t;
     sandbox : Sandbox.t;
-    process : Process.t;
-    dir : Dir.t;
+    process : Process.mgr;
+    dir : Eio.Fs.dir Eio.Path.t;
   }
 
   (* Inputs to run that should affect the hash. i.e. if anything in here changes
@@ -73,28 +73,28 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       |> Sha256.to_hex
     in
     let { base; workdir; user; env; cmd; shell; network; mount_secrets } = run_input in
-    Switch.run @@ fun sw ->
     let r = 
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
         let to_release = ref [] in
         Fun.protect
           (fun () ->
             let mounts =  
-              Fiber.map (fun { Obuilder_spec.Cache.id; target; buildkit_options = _ } ->
+              List.map (fun { Obuilder_spec.Cache.id; target; buildkit_options = _ } ->
                   let src, release = Store.cache ~user t.store id in
                   to_release := release :: !to_release;
-                  { Config.Mount.src; dst = target }
+                  (* TODO: I think we need an Eio.Path.resolve : Eio.Fs.dir Eio.Path.t -> string *)
+                  { Config.Mount.src = snd src; dst = target }
                 ) cache
              in
              let argv = shell @ [cmd] in
              let config = Config.v ~cwd:workdir ~argv ~hostname ~user ~env ~mounts ~mount_secrets ~network in
-             Os.with_pipe_to_child ~sw @@ fun ~r:stdin ~w:close_me ->
+             Os.with_pipe_to_child @@ fun ~r:stdin ~w:_close_me ->
              (* Flow.close close_me; *)
-             let stdin = (stdin :> <Flow.source; Eio_unix.unix_fd>) in
-             Sandbox.run ~sw ~dir:t.dir ~process:t.process ~cancelled ~stdin ~log t.sandbox config result_tmp
+             let stdin = (stdin :> Eio_unix.source) in
+             Sandbox.run ~dir:t.dir ~process:t.process ~cancelled ~stdin ~log t.sandbox config result_tmp
           )
           ~finally:(fun () ->
-             !to_release |> Fiber.iter (fun f -> f ())
+             !to_release |> List.iter (fun f -> f ())
           )
       )
           in Logs.info (fun f -> f "BUILD"); r
@@ -121,7 +121,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
 
   let copy t ~context ~base { Obuilder_spec.from; src; dst; exclude } =
     let { Context.switch; src_dir; workdir; user; log; shell = _; env = _; scope; secrets = _ } = context in
-    let dst = if Filename.is_relative dst then workdir / dst else dst in
+    let dst = if Filename.is_relative dst then Filename.concat workdir dst else dst in
     begin
       match from with
       | `Context -> Ok src_dir
@@ -146,7 +146,6 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       } in
       (* Fmt.pr "COPY: %a@." Sexplib.Sexp.pp_hum (sexp_of_copy_details details); *)
       let id = Sha256.to_hex (Sha256.string (Sexplib.Sexp.to_string (sexp_of_copy_details details))) in
-      Switch.run @@ fun sw ->
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
           let argv = ["tar"; "-xf"; "-"] in
           let config = Config.v
@@ -159,21 +158,20 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
               ~mounts:[]
               ~network:[]
           in
-          Os.with_pipe_to_child ~sw @@ fun ~r:from_us ~w:to_untar ->
-          let to_untar = Lwt_unix.of_unix_file_descr (Eio_unix.FD.peek to_untar) in
-          let result = Sandbox.run ~sw ~dir:t.dir ~process:t.process ~cancelled ~stdin:(from_us :> <Flow.source; Eio_unix.unix_fd>) ~log t.sandbox config result_tmp in
+          Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
+          let result = Sandbox.run ~dir:t.dir ~process:t.process ~cancelled ~stdin:(from_us :> Eio_unix.source) ~log t.sandbox config result_tmp in
           let () =
             (* If the sending thread finishes (or fails), close the writing socket
                immediately so that the tar process finishes too. *)
+            Eio_unix.Fd.use_exn "runc-copy" (Eio_unix.Resource.fd to_untar) @@ fun fd ->
+            let to_untar = Lwt_unix.of_unix_file_descr fd in
             Fun.protect
               (fun () ->
                  match op with
                  | `Copy_items (src_manifest, dst_dir) ->
-                   Lwt_eio.Promise.await_lwt 
-                   (Tar_transfer.send_files ~src_dir ~src_manifest ~dst_dir ~to_untar ~user)
+                   Tar_transfer.send_files ~src_dir ~src_manifest ~dst_dir ~to_untar ~user
                  | `Copy_item (src_manifest, dst) ->
-                  Lwt_eio.Promise.await_lwt @@
-                   Tar_transfer.send_file ~src_dir ~src_manifest ~dst ~to_untar ~user
+                  Tar_transfer.send_file ~src_dir ~src_manifest ~dst ~to_untar ~user
               )
               ~finally:(fun () -> Lwt_eio.Promise.await_lwt @@ Lwt_unix.close to_untar)
           in
@@ -230,21 +228,23 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       | `Shell shell ->
         k ~base ~context:{context with shell}
 
-  let get_base t ~sw ~log base =
+  let get_base t ~log base =
     log `Heading (Fmt.str "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
     let id = Sha256.to_hex (Sha256.string base) in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
-        Log.info (fun f -> f "Base image not present; importing %S...%S" base tmp);
+        Log.info (fun f -> f "Base image not present; importing %S...%a" base Eio.Path.pp tmp);
         let rootfs = tmp / "rootfs" in
-        Os.sudo ~sw ~process:t.process ["mkdir"; "--mode=755"; "--"; rootfs];
-        let env = Fetch.fetch ~sw ~log ~rootfs ~process:t.process base in
-        Os.write_file ~dir:t.dir ~path:(tmp / "env")
+        Os.sudo ~process:t.process ["mkdir"; "--mode=755"; "--"; snd rootfs];
+        let env = Fetch.fetch ~log ~rootfs ~process:t.process base in
+        Os.write_file (tmp / "env")
           (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env}));
         Ok ()
       )
     >>!= fun id ->
     let path = Option.get (Store.result t.store id) in
-    let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
+    let { Saved_context.env } = 
+      let content = Path.load (path / "env") in
+      Saved_context.t_of_sexp (Sexplib.Sexp.of_string content) in
     Ok (id, env)
 
   let rec build ~scope ~dir t context { Obuilder_spec.child_builds; from = base; ops } = 
@@ -259,8 +259,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
         aux context child_builds
     in
     aux context child_builds >>!= fun context ->
-    Switch.run @@ fun sw ->
-    get_base t ~sw ~log:context.Context.log base >>!= fun (id, env) ->
+    get_base t ~log:context.Context.log base >>!= fun (id, env) ->
     let context = { context with env = context.env @ env } in
     run_steps t ~context ~base:id ops
 
@@ -280,28 +279,26 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     | `Output -> Buffer.add_string buffer x
 
   let healthcheck ?(timeout=30.0) t =
-    Switch.run @@ fun sw ->
-    Os.with_pipe_from_child ~sw (fun ~r:_ ~w ->
+    Os.with_pipe_from_child (fun ~r:_ ~w ->
         let pp f = Fmt.string f "docker version" in
-        let result = Os.exec_result ~sw ~process:t.process ~pp ~stderr:(w :> Flow.sink) ["docker"; "version"] in
+        let result = Os.exec_result ~process:t.process ~pp ~stderr:(w :> Flow.sink) ["docker"; "version"] in
         result (* TODO: error message *)
       ) >>!= fun () ->
     let buffer = Buffer.create 1024 in
     let log = log_to buffer in
     (* Get the base image first, before starting the timer. *)
-    let context = Context.v ~log ~src_dir:"/tmp" () in
-    Switch.run @@ fun sw ->
-    get_base t ~sw ~log healthcheck_base |> function
+    let context = Context.v ~log ~src_dir:Eio.Path.(t.dir / "tmp") () in
+    get_base t ~log healthcheck_base |> function
     | Error (`Msg _) as x -> x
     | Error `Cancelled -> failwith "Cancelled getting base image (shouldn't happen!)"
     | Ok (id, env) ->
       let context = { context with env } in
-      (* Start the timer *)
-      Fiber.fork ~sw (fun () ->
-          Eio_unix.sleep timeout;
-          Switch.fail sw (Failure "Timeout!")
-        );
-      run_steps t ~context ~base:id healthcheck_ops |> function
+      let res = 
+        Fiber.first 
+         (fun () -> Eio_unix.sleep timeout; Error `Cancelled)
+         (fun () -> run_steps t ~context ~base:id healthcheck_ops)
+      in
+      match res with
       | Ok id -> Store.delete t.store id |> Result.ok
       | Error (`Msg msg) as x ->
         let log = String.trim (Buffer.contents buffer) in
@@ -310,6 +307,6 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       | Error `Cancelled -> (Fmt.error_msg "Timeout running healthcheck")
 
   let v ~store ~sandbox ~process ~dir =
-    let store = Store.wrap dir store in
+    let store = Store.wrap store in
     { store; sandbox; process; dir }
 end
