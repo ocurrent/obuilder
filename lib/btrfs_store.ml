@@ -103,6 +103,12 @@ let check_kernel_version () =
 
 let root t = t.root
 
+let df t =
+  Lwt_process.pread ("", [| "btrfs"; "filesystem"; "df"; "-b"; t.root |]) >>= fun s ->
+  match ( Scanf.sscanf s "%s %s total = %Ld , used = %Ld" (fun _ _ t u -> (Int64.to_float u) /. (Int64.to_float t)) ) with
+  | used -> Lwt.return (100. -. (100. *. used))
+  | exception Scanf.Scan_failure _ -> Lwt.return 0.
+
 let create root =
   check_kernel_version () >>= fun () ->
   Os.ensure_dir (root / "result");

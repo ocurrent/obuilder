@@ -79,6 +79,8 @@ end
 
 let root t = t.root
 
+let df t = Lwt.return (Os.free_space_percent t.root)
+
 let purge () =
   let* containers = Docker.Cmd.obuilder_containers () in
   let* () = if containers <> [] then Docker.Cmd.rm containers else Lwt.return_unit in

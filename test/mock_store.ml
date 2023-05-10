@@ -117,3 +117,5 @@ let delete_cache _t _ = assert false
 let complete_deletes _t = Lwt.return_unit
 
 let root t = t.dir
+
+let df _ = Lwt.return 100.

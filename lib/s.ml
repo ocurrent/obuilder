@@ -16,6 +16,9 @@ module type STORE = sig
   val root : t -> string
   (** [root t] returns the root of the store. *)
 
+  val df : t -> float Lwt.t
+  (** [df t] returns the percentage of free space in the store. *)
+
   val build :
     t -> ?base:id ->
     id:id ->
@@ -116,6 +119,9 @@ module type BUILDER = sig
 
   val count : t -> int64
   (** [count t] return number of items in the store. *)
+
+  val df : t -> float Lwt.t
+  (** [df t] returns the percentage of free space in the store. *)
 
   val healthcheck : ?timeout:float -> t -> (unit, [> `Msg of string]) Lwt_result.t
   (** [healthcheck t] performs a check that [t] is working correctly.

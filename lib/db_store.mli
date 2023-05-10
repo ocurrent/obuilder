@@ -22,6 +22,8 @@ module Make (Raw : S.STORE) : sig
 
   val count : t -> int64
 
+  val df : t -> float Lwt.t
+
   val cache :
     user : Obuilder_spec.user ->
     t ->

@@ -81,6 +81,8 @@ end
 
 let root t = t.path
 
+let df t = Lwt.return (Os.free_space_percent t.path)
+
 let create ~path ?(mode = Copy) () =
   Rsync.create path >>= fun () ->
   Lwt_list.iter_s Rsync.create (Path.dirs path) >|= fun () ->

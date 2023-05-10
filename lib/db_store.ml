@@ -126,6 +126,7 @@ module Make (Raw : S.STORE) = struct
 
   let result t id = Raw.result t.raw id
   let count t = Dao.count t.dao
+  let df t = Raw.df t.raw
   let cache ~user t = Raw.cache ~user t.raw
 
   let delete ?(log=ignore) t id =
