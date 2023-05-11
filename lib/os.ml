@@ -291,5 +291,5 @@ let normalise_path root_dir =
 let free_space_percent root_dir =
   let vfs = ExtUnix.All.statvfs (normalise_path root_dir) in
   let used = Int64.sub vfs.f_blocks vfs.f_bfree in
-  100. -. 100. *. (Int64.to_float used) /. (Int64.to_float (Int64.add used vfs.f_bavail))
+  100. -. 100. *. (Int64.to_float used) /. Int64.(to_float (add used vfs.f_bavail))
 
