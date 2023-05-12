@@ -40,6 +40,7 @@
   (crunch (and (>= 3.3.1) :build))
   (obuilder-spec (= :version))
   fpath
+  (extunix (>= 0.4.0))
   (ocaml (>= 4.14.1))
   (alcotest-lwt (and (>= 1.7.0) :with-test))))
 
