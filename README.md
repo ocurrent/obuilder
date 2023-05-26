@@ -109,7 +109,7 @@ By default:
 - The environment is taken from the Docker configuration of `BASE`.
 - The user is `(uid 0) (gid 0)` on Linux, `(name ContainerAdministrator)` on Windows.
 - The workdir is `/`, `C:/` on Windows.
-- The shell is `/bin/bash -c`, `C:\Windows\System32\cmd.exe /S /C` on Windows.
+- The shell is `bash -c`, `C:\Windows\System32\cmd.exe /S /C` on Windows.
 
 ### Multi-stage builds
 
