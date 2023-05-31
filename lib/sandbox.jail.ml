@@ -5,6 +5,7 @@ let ( / ) = Filename.concat
 
 type t = {
   lock : Lwt_mutex.t;
+  jail_name : string;
 }
 
 type config = {
@@ -62,11 +63,10 @@ let jail_options config rootdir =
     (* Ask for a login shell in order to properly source opam settings. *)
     [ "command=/usr/bin/su" ; "-l" ; username ; "-c" ; commandline ]
   in
-  let jailname = "name=obuilder" in
   let path = "path=" ^ rootdir in
   let devfs_setup = "mount.devfs" in
   let options =
-    let options = [ jailname ; path ; devfs_setup ] in
+    let options = [ path ; devfs_setup ] in
     match config.network with
     | [ "host" ] ->
       "ip4=inherit" :: "ip6=inherit" :: "host=inherit" :: options
@@ -101,7 +101,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
   let proc =
     let cmd =
       let options = jail_options config rootdir in
-      "jail" :: "-c" :: options
+      "jail" :: "-c" :: t.jail_name :: options
     in
     let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
     let pp f = Os.pp_cmd f ("", cmd) in
@@ -145,6 +145,11 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
 let create ~state_dir:_ _c =
   Lwt.return {
     lock = Lwt_mutex.create ();
+    (* Compute a unique (accross obuilder instances) name for the jail.
+       Due to the above mutex, only one jail may be started by a given
+       obuilder process, so appending the obuilder pid is enough to
+       guarantee uniqueness. *)
+    jail_name = "name=obuilder_" ^ (Int.to_string (Unix.getpid ()));
   }
 
 open Cmdliner
