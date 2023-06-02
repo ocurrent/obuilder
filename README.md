@@ -214,7 +214,7 @@ If a requested secret isn't provided with a value, the runtime fails.
 Use the `--secret ID:PATH` option to provide the path of the file containing the
 secret for `ID`.
 When used with Docker, make sure to use the **BuildKit** syntax, as only BuildKit supports a `--secret` option.
-(See https://docs.docker.com/develop/develop-images/build_enhancements/#new-docker-build-secret-information)
+(See <https://docs.docker.com/develop/develop-images/build_enhancements/#new-docker-build-secret-information>)
 
 ### copy
 
