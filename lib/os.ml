@@ -30,12 +30,6 @@ let ensure_closed_lwt fd =
   if Lwt_unix.state fd = Lwt_unix.Closed then Lwt.return_unit
   else Lwt_unix.close fd
 
-let pp_signal f x =
-  let open Sys in
-  if x = sigkill then Fmt.string f "kill"
-  else if x = sigterm then Fmt.string f "term"
-  else Fmt.int f x
-
 let pp_cmd f (cmd, argv) =
   let argv = if cmd = "" then argv else cmd :: argv in
   Fmt.hbox Fmt.(list ~sep:sp (quote string)) f argv
@@ -65,8 +59,8 @@ let default_exec ?timeout ?cwd ?stdin ?stdout ?stderr ~pp argv =
   proc >|= fun proc ->
   Result.fold ~ok:(function
       | Unix.WEXITED n -> Ok n
-      | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %d" pp x
-      | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp pp_signal x)
+      | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %a" pp Fmt.Dump.signal x
+      | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp Fmt.Dump.signal x)
     ~error:(fun e ->
         Fmt.error_msg "%t raised %s\n%s" pp (Printexc.to_string e) (Printexc.get_backtrace ())) proc
 
@@ -89,8 +83,8 @@ let open_process ?cwd ?stdin ?stdout ?stderr ?pp:_ argv =
 let process_result ~pp proc =
   proc >|= (function
   | Unix.WEXITED n -> Ok n
-  | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %d" pp x
-  | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp pp_signal x)
+  | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %a" pp Fmt.Dump.signal x
+  | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp Fmt.Dump.signal x)
   >>= function
   | Ok 0 -> Lwt_result.return ()
   | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
