@@ -11,6 +11,7 @@ type t = {
   delete : Sqlite3.stmt;
   lru : Sqlite3.stmt;
   parent : Sqlite3.stmt;
+  count : Sqlite3.stmt;
 }
 
 let format_timestamp time =
@@ -41,7 +42,8 @@ let create db =
   let delete = Sqlite3.prepare db {| DELETE FROM builds WHERE id = ? |} in
   let lru = Sqlite3.prepare db {| SELECT id FROM builds WHERE rc = 0 AND used < ? ORDER BY used ASC LIMIT ? |} in
   let parent = Sqlite3.prepare db {| SELECT parent FROM builds WHERE id = ? |} in
-  { db; begin_transaction; commit; rollback; add; set_used; update_rc; exists; children; delete; lru; parent }
+  let count = Sqlite3.prepare db {| SELECT COUNT(*) FROM builds |} in
+  { db; begin_transaction; commit; rollback; add; set_used; update_rc; exists; children; delete; lru; parent; count }
 
 let with_transaction t fn =
   Db.exec t.db t.begin_transaction [];
@@ -89,6 +91,11 @@ let lru t ~before n =
   Db.query t.db t.lru Sqlite3.Data.[ TEXT (format_timestamp before); INT (Int64.of_int n) ]
   |> List.map @@ function
   | Sqlite3.Data.[ TEXT id ] -> id
+  | x -> Fmt.failwith "Invalid row: %a" Db.dump_row x
+
+let count t =
+  match Db.query_one t.db t.count [] with
+  | [ INT n ] -> n
   | x -> Fmt.failwith "Invalid row: %a" Db.dump_row x
 
 let close t =

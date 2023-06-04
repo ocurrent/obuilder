@@ -143,6 +143,12 @@ let state_dir t = Dataset.path t Dataset.state
 
 let root t = t.pool
 
+let df t =
+  Lwt_process.pread ("", [| "zpool"; "list"; "-Hp"; "-o"; "capacity"; t.pool |]) >>= fun s ->
+  match (String.trim s) with
+  | "" -> Lwt.return 0.
+  | s -> Lwt.return (100. -. float_of_string s)
+
 let prefix_and_pool path =
   let pool = Filename.basename path in
   match Filename.chop_suffix_opt ~suffix:pool path with
