@@ -103,11 +103,23 @@ let check_kernel_version () =
 
 let root t = t.root
 
+module Stats = Map.Make (String)
+
 let df t =
-  Lwt_process.pread ("", [| "btrfs"; "filesystem"; "df"; "-b"; t.root |]) >>= fun s ->
-  match ( Scanf.sscanf s "%s %s total = %Ld , used = %Ld" (fun _ _ t u -> (Int64.to_float u) /. (Int64.to_float t)) ) with
-  | used -> Lwt.return (100. -. (100. *. used))
-  | exception Scanf.Scan_failure _ -> Lwt.return 0.
+  Lwt_process.pread ("", [| "btrfs"; "filesystem"; "usage"; "-b"; t.root |]) >>= fun output ->
+  let stats =
+    String.split_on_char '\n' output
+    |> List.filter_map (fun s ->
+           match String.split_on_char ':' s with
+           | a :: b :: _ -> (
+               match Scanf.sscanf b " %Ld " (fun x -> x) with
+               | x -> Some (String.trim a, Int64.to_float x)
+               | (exception Scanf.Scan_failure _) | (exception End_of_file) ->
+                   None)
+           | _ -> None)
+    |> List.fold_left (fun acc (k, v) -> Stats.add k v acc) Stats.empty
+  in
+  Lwt.return (100. -. (100. *. (Stats.find "Used" stats /. Stats.find "Device size" stats)))
 
 let create root =
   check_kernel_version () >>= fun () ->
