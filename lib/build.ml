@@ -247,12 +247,12 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     let { Saved_context.env } = Saved_context.t_of_sexp (Sexplib.Sexp.load_sexp (path / "env")) in
     Lwt_result.return (id, env)
 
-  let rec build ~scope t context { Obuilder_spec.child_builds; from = base; ops } =
+  let rec build t context { Obuilder_spec.child_builds; from = base; ops } =
     let rec aux context = function
       | [] -> Lwt_result.return context
       | (name, child_spec) :: child_builds ->
         context.Context.log `Heading Fmt.(str "(build %S …)" name);
-        build ~scope t context child_spec >>!= fun child_result ->
+        build t context child_spec >>!= fun child_result ->
         context.Context.log `Note Fmt.(str "--> finished %S" name);
         let context = Context.with_binding name child_result context in
         aux context child_builds
@@ -263,7 +263,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     run_steps t ~context ~base:id ops
 
   let build t context spec =
-    let r = build ~scope:[] t context spec in
+    let r = build t context spec in
     (r : (string, [ `Cancelled | `Msg of string ]) Lwt_result.t :> (string, [> `Cancelled | `Msg of string ]) Lwt_result.t)
 
   let delete ?log t id =
