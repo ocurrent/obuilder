@@ -144,10 +144,9 @@ module Make (Raw : S.STORE) = struct
     in
     aux id
 
-  let prune_batch ?(log=ignore) t ~before limit =
-    let items = Dao.lru t.dao ~before limit in
+  let prune_lru ?(log=ignore) t ~before =
+    let items = Dao.lru t.dao ~before 1 in
     let n = List.length items in
-    Log.info (fun f -> f "Pruning %d items (of %d requested)" n limit);
     items |> Lwt_list.iter_s (fun id ->
         log id;
         Raw.delete t.raw id >|= fun () ->
@@ -157,16 +156,18 @@ module Make (Raw : S.STORE) = struct
     Lwt.return n
 
   let prune ?log t ~before limit =
+    Log.info (fun f -> f "Pruning %d items" limit);
     let rec aux acc limit =
       if limit = 0 then Lwt.return acc  (* Pruned everything we wanted to *)
       else (
-        prune_batch ?log t ~before limit >>= function
+        prune_lru ?log t ~before >>= function
         | 0 -> Lwt.return acc           (* Nothing left to prune *)
         | n -> aux (acc + n) (limit - n)
       )
     in
     aux 0 limit >>= fun n ->
     Raw.complete_deletes t.raw >>= fun () ->
+    Log.info (fun f -> f "Pruned %d items" n);
     Lwt.return n
 
   let wrap raw =
