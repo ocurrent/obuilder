@@ -14,3 +14,5 @@ val create : state_dir:string -> config -> t Lwt.t
     and is configured using [config]. *)
 
 val finished : unit -> unit Lwt.t
+(** [finished] is a call back to the sandbox which is triggered when the current job
+    is finished. The sandbox may choose do nothing. *)

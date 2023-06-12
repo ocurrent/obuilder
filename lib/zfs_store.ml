@@ -142,9 +142,6 @@ module Zfs = struct
           Lwt.return ()
     else Lwt.return ()
 
-  let unmount ?snapshot t ~ds =
-    Os.sudo ["zfs"; "unmount"; "-f"; Dataset.full_name t ds ?snapshot]
-
   let clone_with_children t ~src ~snapshot dst =
     Os.sudo ["zfs"; "clone"; "-o"; "canmount=noauto"; "--"; Dataset.full_name t src ~snapshot; Dataset.full_name t dst] >>= fun () ->
     Os.sudo ["zfs"; "mount"; Dataset.full_name t dst] >>= fun () ->
@@ -241,7 +238,6 @@ let build t ?base ~id fn =
         Zfs.snapshot t ds ~snapshot:default_snapshot >>= fun () ->
         (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
            keep it around? *)
-        Zfs.unmount t ~ds >>= fun () ->
         Lwt_result.return ()
       | Error _ as e ->
         Log.debug (fun f -> f "zfs: build %S failed" id);
