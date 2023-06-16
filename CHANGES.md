@@ -2,6 +2,7 @@
 
 - Add a Docker backend for Windows and Linux jobs.
   (@MisterDA #127 #75, reviewed by @talex5, @tmcgilchrist)
+- Adopt the OCaml Code of Conduct (@rikusilvola)
 
 ### v0.5.1 2023-02-17
 
