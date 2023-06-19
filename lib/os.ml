@@ -114,9 +114,9 @@ let sudo ?stdin args =
   let args = if running_as_root then args else "sudo" :: "--" :: args in
   exec ?stdin args
 
-let sudo_result ?cwd ?stdin ?stdout ?stderr ~pp args =
+let sudo_result ?cwd ?stdin ?stdout ?stderr ?is_success ~pp args =
   let args = if running_as_root then args else "sudo" :: "--" :: args in
-  exec_result ?cwd ?stdin ?stdout ?stderr ~pp args
+  exec_result ?cwd ?stdin ?stdout ?stderr ?is_success ~pp args
 
 let rec write_all fd buf ofs len =
   assert (len >= 0);

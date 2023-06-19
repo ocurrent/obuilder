@@ -12,3 +12,7 @@ val cmdliner : config Cmdliner.Term.t
 val create : state_dir:string -> config -> t Lwt.t
 (** [create ~state_dir config] is a sandboxing system that keeps state in [state_dir]
     and is configured using [config]. *)
+
+val finished : unit -> unit Lwt.t
+(** [finished] is a call back to the sandbox which is triggered when the current job
+    is finished. The sandbox may choose do nothing. *)

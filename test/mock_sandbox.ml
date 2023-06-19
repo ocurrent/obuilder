@@ -22,3 +22,5 @@ let run ~cancelled ?stdin ~log t (config:Obuilder.Config.t) dir =
       )
 
 let create () = { expect = Queue.create () }
+
+let finished () = Lwt.return ()
