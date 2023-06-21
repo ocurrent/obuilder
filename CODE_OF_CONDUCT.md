@@ -9,4 +9,4 @@ This project follows the OCaml Code of Conduct [enforcement policy](https://gith
 To report any violations, please contact:
 
 * Riku Silvola <riku [at] tarides [dot] com>
-* Tim McGilchrist <tim [at] tarides [dot] com>
+* Tim McGilchrist <timmcgil@gmail.com>
