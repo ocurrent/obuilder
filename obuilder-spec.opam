@@ -3,7 +3,10 @@ opam-version: "2.0"
 synopsis: "Build specification format"
 description:
   "A library for constructing, reading and writing OBuilder build specification files."
-maintainer: ["talex5@gmail.com"]
+maintainer: [
+  "Tim McGilchrist <timmcgil@gmail.com>"
+  "Antonin Décimo <antonin@tarides.com>"
+]
 authors: [
   "Antonin Décimo <antonin@tarides.com>"
   "Arthur Wendling <art.wendling@gmail.com>"
