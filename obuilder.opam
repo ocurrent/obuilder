@@ -3,7 +3,10 @@ opam-version: "2.0"
 synopsis: "Run build scripts for CI"
 description:
   "OBuilder takes a build script (similar to a Dockerfile) and performs the steps in it in a sandboxed environment."
-maintainer: ["talex5@gmail.com"]
+maintainer: [
+  "Tim McGilchrist <timmcgil@gmail.com>"
+  "Antonin Décimo <antonin@tarides.com>"
+]
 authors: [
   "Antonin Décimo <antonin@tarides.com>"
   "Arthur Wendling <art.wendling@gmail.com>"

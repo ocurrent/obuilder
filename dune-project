@@ -15,7 +15,7 @@
  "Thomas Gazagnaire <thomas@gazagnaire.org>"
  "Thomas Leonard <talex5@gmail.com>"
  "Tim McGilchrist <timmcgil@gmail.com>")
-(maintainers "talex5@gmail.com")
+(maintainers "Tim McGilchrist <timmcgil@gmail.com>" "Antonin Décimo <antonin@tarides.com>")
 (license "Apache-2.0")
 (documentation "https://ocurrent.github.io/obuilder/")
 
