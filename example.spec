@@ -11,7 +11,7 @@
 	 (workdir /src)
 	 (user (uid 1000) (gid 1000))                           ; Build as the "opam" user
 	 (run (shell "sudo chown opam /src"))
-	 (env OPAM_HASH "eb733d35a0a83a2635d25cd85e905661d145aead")
+	 (env OPAM_HASH "f44d347b2119b4bdfddfb2a8ec55ae25c396c0d7")
 	 (run
 	  (network host)
 	  (shell "sudo apt-get --allow-releaseinfo-change update"))

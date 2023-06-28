@@ -15,7 +15,7 @@
 	((from ocaml/opam@sha256:4bfe3c0814b4220417d6ccbbed7eb5486a35d900024745c1f299973e9584e0e5)
 	 (workdir /src)
 	 (env OPAM_REPO_MINGW_HASH "921b0eceb594f96c0c7f40bb2676783be4362aeb") ; Fix the version of opam-repository-mingw we want
-	 (env OPAM_HASH "eb733d35a0a83a2635d25cd85e905661d145aead") ; Fix the version of opam-repository we want
+	 (env OPAM_HASH "f44d347b2119b4bdfddfb2a8ec55ae25c396c0d7") ; Fix the version of opam-repository we want
 	 (shell /cygwin64/bin/bash.exe --login -c)
 	 (run
 	  (network "nat")
