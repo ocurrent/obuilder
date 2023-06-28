@@ -16,7 +16,7 @@ module Context : sig
       @param env Environment in which to run commands.
       @param user Container user to run as.
       @param workdir Directory in the container namespace for cwd.
-      @param shell The command used to run shell commands (default [["/bin/bash"; "-c"]]).
+      @param shell The command used to run shell commands (default [["/usr/bin/env"; "bash"; "-c"]]).
       @param secrets Provided key-value pairs for secrets.
       @param log Function to receive log data.
   *)

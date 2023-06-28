@@ -37,7 +37,7 @@ module Context = struct
 
   let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?workdir ?shell ?(secrets=[]) ~log ~src_dir () =
     let workdir = Option.value ~default:(if Sys.win32 then {|C:/|} else "/") workdir in
-    let shell = Option.value ~default:(if Sys.win32 then ["cmd"; "/S"; "/C"] else ["/bin/bash"; "-c"]) shell in
+    let shell = Option.value ~default:(if Sys.win32 then ["cmd"; "/S"; "/C"] else ["/usr/bin/env"; "bash"; "-c"]) shell in
     { switch; env; src_dir; user; workdir; shell; log; scope = Scope.empty; secrets }
 
   let with_binding name value t =

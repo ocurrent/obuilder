@@ -48,7 +48,7 @@ let mock_op ?(result=Lwt_result.return ()) ?(delay_store=Lwt.return_unit) ?cance
   Mock_store.delay_store := delay_store;
   let cmd =
     match config.argv with
-    | ["/bin/bash"; "-c"; cmd] | ["cmd"; "/S"; "/C"; cmd] -> cmd
+    | ["/usr/bin/env" ; "bash"; "-c"; cmd] | ["cmd"; "/S"; "/C"; cmd] -> cmd
     | x -> Fmt.str "%a" Fmt.(Dump.list string) x
   in
   Build_log.printf log "%s@." cmd >>= fun () ->
@@ -715,7 +715,8 @@ let test_copy_bash _switch () =
         Os.pread ["cygpath"; "-m"; src_dir] >>= fun src_dir ->
         Lwt.return (String.trim bash, String.trim src_dir)
       else
-        Lwt.return ("/bin/bash", src_dir)
+        Os.pread ["which"; "bash"] >>= fun bash ->
+        Lwt.return (String.trim bash, src_dir)
     end >>= fun (bash, src_dir) ->
     let manifest_bash =
       Printf.sprintf "exec %s %S %S %d %s %d %s"
