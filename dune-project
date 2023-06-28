@@ -31,7 +31,7 @@
   logs
   (cmdliner (>= 1.2.0))
   (tar-unix (>= 2.4.0))
-  (yojson (>= "1.6.0"))
+  (yojson (>= 1.6.0))
   sexplib
   ppx_deriving
   ppx_sexp_conv

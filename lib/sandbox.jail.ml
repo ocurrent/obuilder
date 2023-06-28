@@ -8,9 +8,7 @@ type t = {
   jail_name : string;
 }
 
-type config = {
-  dummy: bool;
-} [@@deriving sexp]
+type config = unit [@@deriving sexp]
 
 (* Find out the user name to use within the jail, by parsing the
    /etc/passwd file within the jail filesystem. This is roughly
@@ -126,8 +124,8 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
   Lwt.on_termination cancelled (fun () ->
     let rec aux () =
       if Lwt.is_sleeping proc then (
-         let pp f = Fmt.pf f "jail -r obuilder" in
-         Os.sudo_result ~cwd [ "jail" ; "-r" ; "obuilder" ] ~pp >>= function
+         let pp f = Fmt.pf f "jail -r %s" t.jail_name in
+         Os.sudo_result ~cwd [ "jail" ; "-r" ; t.jail_name ] ~pp >>= function
          | Ok () -> Lwt.return_unit
          | Error (`Msg _) ->
            Lwt_unix.sleep 10.0 >>= aux
@@ -155,8 +153,5 @@ let create ~state_dir:_ _c =
 open Cmdliner
 
 (* FIXME Find out how to make this simpler - no special arguments needed here *)
-let dummy = Arg.value @@ Arg.flag @@ Arg.info ["dummy"]
-
 let cmdliner : config Term.t =
-  let make dummy = { dummy } in
-  Term.(const make $ dummy)
+  Term.(const ())
