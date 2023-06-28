@@ -13,7 +13,7 @@
 (rule
  (deps sandbox.runc.ml)
  (target sandbox.ml)
- (enabled_if (= %{system} linux))
+ (enabled_if (= %{os_type} linux))
  (action (copy %{deps} %{target})))
 
 (rule
