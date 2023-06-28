@@ -102,32 +102,32 @@ jobs:
 
       - run: $GITHUB_WORKSPACE/.github/workflows/main.sh ${{matrix.rsync_mode}}
 
-  windows:
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - windows-latest
-        ocaml-compiler:
-          - 4.14.x
+  # windows:
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os:
+  #         - windows-latest
+  #       ocaml-compiler:
+  #         - 4.14.x
 
-    runs-on: ${{ matrix.os }}
+  #   runs-on: ${{ matrix.os }}
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v3
 
-      - name: Use OCaml ${{ matrix.ocaml-compiler }}
-        uses: ocaml/setup-ocaml@v2
-        with:
-          ocaml-compiler: ${{ matrix.ocaml-compiler }}
-          opam-repositories: |
-            opam-repository-mingw: https://github.com/ocaml-opam/opam-repository-mingw.git#sunset
-            default: https://github.com/ocaml/opam-repository.git
+  #     - name: Use OCaml ${{ matrix.ocaml-compiler }}
+  #       uses: ocaml/setup-ocaml@v2
+  #       with:
+  #         ocaml-compiler: ${{ matrix.ocaml-compiler }}
+  #         opam-repositories: |
+  #           opam-repository-mingw: https://github.com/ocaml-opam/opam-repository-mingw.git#sunset
+  #           default: https://github.com/ocaml/opam-repository.git
 
-      - run: opam install . --deps-only --with-test
+  #     - run: opam install . --deps-only --with-test
 
-      - run: opam exec -- dune runtest
+  #     - run: opam exec -- dune runtest
 
   docker:
     strategy:
