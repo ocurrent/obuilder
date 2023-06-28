@@ -85,17 +85,13 @@ which should make it easier to generate and consume it automatically.
 When performing a build, the user gives OBuilder a specification file (as described below),
 and a source directory, containing files which may be copied into the image using `copy`.
 
-```sexp
-((from BASE) OP…)
-```
+    ((from BASE) OP…)
 
 Example:
 
-```sexp
-((from busybox@sha256:d366a4665ab44f0648d7a00ae3fae139d55e32f9712c67accd604bb55df9d05a)
- (shell /bin/sh -c)
- (run (shell "echo hello world")))
-```
+    ((from busybox@sha256:d366a4665ab44f0648d7a00ae3fae139d55e32f9712c67accd604bb55df9d05a)
+     (shell /bin/sh -c)
+     (run (shell "echo hello world")))
 
 `BASE` identifies a Docker image, which will be fetched using `docker pull` and imported into the OBuilder cache.
 OBuilder will not check for updates, so `BASE` should include a digest identifying the exact image, as shown above.
@@ -104,7 +100,7 @@ The operations are performed in order. Each operation gets a build context and a
 a new context and a new snapshot.
 The initial filesystem snapshot is `BASE`. `run` and `copy` operations create new snapshots.
 
-The initial context is supplied by the user (see [build.mli](lib/build.mli) for details).
+The initial context is supplied by the user (see [build.mli](https://github.com/ocurrent/obuilder/blob/master/lib/build.mli) for details).
 By default:
 - The environment is taken from the Docker configuration of `BASE`.
 - The user is `(uid 0) (gid 0)` on Linux, `(name ContainerAdministrator)` on Windows.
@@ -116,76 +112,60 @@ By default:
 You can define nested builds and use the output from them in `copy` operations.
 For example:
 
-```sexp
-((build dev
-        ((from ocaml/opam:alpine-3.12-ocaml-4.11)
-         (user (uid 1000) (gid 1000))
-         (workdir /home/opam)
-         (run (shell "echo 'print_endline {|Hello, world!|}' > main.ml"))
-         (run (shell "opam exec -- ocamlopt -ccopt -static -o hello main.ml"))))
- (from alpine:3.12)
- (shell /bin/sh -c)
- (copy (from (build dev))
-       (src /home/opam/hello)
-       (dst /usr/local/bin/hello))
- (run (shell "hello")))
-```
+    ((build dev
+     ((from ocaml/opam:alpine-3.12-ocaml-4.11)
+      (user (uid 1000) (gid 1000))
+      (workdir /home/opam)
+      (run (shell "echo 'print_endline {|Hello, world!|}' > main.ml"))
+      (run (shell "opam exec -- ocamlopt -ccopt -static -o hello main.ml"))))
+     (from alpine:3.12)
+     (shell /bin/sh -c)
+     (copy (from (build dev))
+      (src /home/opam/hello)
+      (dst /usr/local/bin/hello))
+     (run (shell "hello")))
 
 At the moment, the `(build …)` items must appear before the `(from …)` line.
 
 ### workdir
 
-```sexp
-(workdir DIR)
-```
+    (workdir DIR)
 
 Example:
 
-```sexp
-(workdir /usr/local)
-```
+    (workdir /usr/local)
 
 This operation sets the current working directory used for the following commands, until the next `workdir` operation.
 If the path given is relative, it is combined with the previous setting.
 
 ### shell
 
-```sexp
-(shell ARG…)
-```
+    (shell ARG…)
 
 Example:
 
-```sexp
-(shell /bin/bash -c)
-```
+    (shell /bin/bash -c)
 
 This sets the shell used for future `(run (shell COMMAND))` operations.
 The command run will be this list of arguments followed by the single argument `COMMAND`.
 
 ### run
 
-```sexp
-(run
- (cache CACHE…)?
- (network NETWORK…)?
- (secrets SECRET…)?
- (shell COMMAND))
-```
+    (run
+     (cache CACHE…)?
+     (network NETWORK…)?
+     (secrets SECRET…)?
+     (shell COMMAND))
 
 Examples:
 
-```sexp
-(run (shell "echo hello"))
-```
+    (run (shell "echo hello"))
 
-```sexp
-(run
- (cache (opam-archives (target /home/opam/.opam/download-cache)))
- (network host)
- (secrets (password (target /secrets/password)))
- (shell "opam install utop"))
-```
+    (run
+     (cache (opam-archives (target /home/opam/.opam/download-cache)))
+     (network host)
+     (secrets (password (target /secrets/password)))
+     (shell "opam install utop"))
 
 Runs the single argument `COMMAND` using the values in the current context (set by `workdir` and `shell`).
 
@@ -218,28 +198,22 @@ When used with Docker, make sure to use the **BuildKit** syntax, as only BuildKi
 
 ### copy
 
-```sexp
-(copy
- (from …)?
- (src SRC…)
- (dst DST)
- (exclude EXCL…)?)
-```
+    (copy
+     (from …)?
+     (src SRC…)
+     (dst DST)
+     (exclude EXCL…)?)
 
 Examples:
 
-```sexp
-(copy
- (src .)
- (dst build/)
- (exclude .git _build))
-```
+    (copy
+     (src .)
+     (dst build/)
+     (exclude .git _build))
 
-```sexp
-(copy
- (src platform.ml.linux)
- (dst platform.ml))
-```
+    (copy
+     (src platform.ml.linux)
+     (dst platform.ml))
 
 This copies files, directories and symlinks from the source directory (provided by the user when building) into
 the image. If `DST` does not start with `/` then it is relative to the current workdir.
@@ -273,31 +247,23 @@ Notes:
 
 ### user
 
-```sexp
-(user (uid UID) (gid GID))
-(user (name NAME))      ; on Windows
-```
+    (user (uid UID) (gid GID))
+    (user (name NAME)) ; on Windows
 
 Example:
 
-```sexp
-(user (uid 1000) (gid 1000))
-```
+    (user (uid 1000) (gid 1000))
 
 This updates the build context to set the user and group IDs used for the following `copy` and `run` commands.
 Note that only numeric IDs are supported.
 
 ### env
 
-```sexp
-(env NAME VALUE)
-```
+    (env NAME VALUE)
 
 Example:
 
-```sexp
-(env OPTIONS "-O2 -Wall")
-```
+    (env OPTIONS "-O2 -Wall")
 
 Updates the build context so that the environment variable `NAME` has the value `VALUE` in future `run` operations.
 
@@ -305,9 +271,7 @@ Updates the build context so that the environment variable `NAME` has the value 
 
 You can convert an OBuilder spec to a Dockerfile like this:
 
-```shell
-obuilder dockerfile -f example.spec > Dockerfile
-```
+    $ obuilder dockerfile -f example.spec > Dockerfile
 
 The dockerfile should work the same way as the spec file, except for these limitations:
 
@@ -322,7 +286,7 @@ The dockerfile should work the same way as the spec file, except for these limit
 ## Experimental macOS and Windows Support
 
 OBuilder abstracts over a fetching mechanism for the Docker base image, the sandboxing for the execution of build steps and the store for the cache.
-This makes OBuilder extremely portable and there exists experimental [macOS][] and [Windows][] backends. The Windows backend currently requires Docker for Windows installed.
+This makes OBuilder extremely portable and there exists experimental macOS and Windows backends. The Windows backend currently requires Docker for Windows installed.
 
 ## Licensing
 
@@ -331,9 +295,7 @@ See [LICENSE][] for the full license text.
 
 [Dockerfile]: https://docs.docker.com/engine/reference/builder/
 [OCluster]: https://github.com/ocurrent/ocluster
-[LICENSE]: ./LICENSE
-[macOS]: ./macOS.md
-[Windows]: ./windows.md
+[LICENSE]: https://github.com/ocurrent/obuilder/blob/master/LICENSE
 
 [github-shield]: https://github.com/ocurrent/obuilder/actions/workflows/main.yml/badge.svg
 [github-ci]: https://github.com/ocurrent/obuilder/actions/workflows/main.yml
