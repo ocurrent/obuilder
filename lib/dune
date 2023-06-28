@@ -13,7 +13,13 @@
 (rule
  (deps sandbox.runc.ml)
  (target sandbox.ml)
- (enabled_if (and (<> %{system} macosx) (<> %{system} freebsd)))
+ (enabled_if (= %{system} linux))
+ (action (copy %{deps} %{target})))
+
+(rule
+ (deps sandbox.dummy.ml)
+ (target sandbox.ml)
+ (enabled_if (= %{os_type} "Win32"))
  (action (copy %{deps} %{target})))
 
 (rule
