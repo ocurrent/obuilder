@@ -1,5 +1,4 @@
-Experimental macOS Support
---------------------------
+# Experimental macOS Support
 
 The macOS backend uses the "user" as the unit of abstraction for sandboxing. That is, for each build a new user is created.
 This user inherits a home-directory from the store which may come from previous builds using the storage backend.

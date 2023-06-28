@@ -42,6 +42,7 @@
   fpath
   (extunix (>= 0.4.0))
   (ocaml (>= 4.14.1))
+  (md2mld (>= 0.7.0))
   (alcotest-lwt (and (>= 1.7.0) :with-test))))
 
 (package
