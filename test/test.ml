@@ -443,7 +443,7 @@ let test_tar_long_filename _switch () =
     with_file (dst_dir / "out.tar") Lwt_unix.[O_WRONLY; O_CREAT; O_CLOEXEC] 0
     @@ fun to_untar ->
     let src_manifest = Manifest.generate ~exclude:[] ~src_dir "." |> Result.get_ok in
-    let user = Spec.(`Unix { uid=1000; gid=1000 }) in
+    let user = Spec.(`ById { uid=1000; gid=1000 }) in
     Tar_transfer.send_file
       ~src_dir
       ~src_manifest
@@ -503,7 +503,7 @@ let test_sexp () =
 let test_docker_unix () =
   let test ~buildkit name expect sexp =
     let spec = Spec.t_of_sexp (Sexplib.Sexp.of_string sexp) in
-    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`Unix spec in
+    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`ById spec in
     let expect = remove_indent expect in
     Alcotest.(check string) name expect got
   in
@@ -600,7 +600,7 @@ let test_docker_unix () =
 let test_docker_windows () =
   let test ~buildkit name expect sexp =
     let spec = Spec.t_of_sexp (Sexplib.Sexp.of_string sexp) in
-    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`Windows spec in
+    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`ByName spec in
     let expect = remove_indent expect in
     Alcotest.(check string) name expect got
   in

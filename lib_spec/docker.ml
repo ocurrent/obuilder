@@ -18,8 +18,8 @@ let pp_wrap ~escape =
 
 let pp_cache ~ctx f { Cache.id; target; buildkit_options } =
   let buildkit_options = match ctx.user with
-    | `Unix {uid; gid = _} -> ("uid", string_of_int uid) :: buildkit_options
-    | `Windows _ -> assert false
+    | `ById {uid; gid = _} -> ("uid", string_of_int uid) :: buildkit_options
+    | `ByName _ -> assert false
   in
   let buildkit_options =
     ("--mount=type", "cache") ::
@@ -31,8 +31,8 @@ let pp_cache ~ctx f { Cache.id; target; buildkit_options } =
 
 let pp_mount_secret ~ctx f { Secret.id; target; buildkit_options } =
   let buildkit_options = match ctx.user with
-    | `Unix {uid; gid = _} -> ("uid", string_of_int uid) :: buildkit_options
-    | `Windows _ -> assert false
+    | `ById {uid; gid = _} -> ("uid", string_of_int uid) :: buildkit_options
+    | `ByName _ -> assert false
   in
   let buildkit_options =
     ("--mount=type", "secret") ::
@@ -60,8 +60,8 @@ let pp_copy ~ctx f { Spec.from; src; dst; exclude = _ } =
     if is_root ctx.user then None
     else (
       match ctx.user with
-      | `Unix { uid; gid } -> Some (Printf.sprintf "%d:%d" uid gid)
-      | `Windows _ -> None
+      | `ById { uid; gid } -> Some (Printf.sprintf "%d:%d" uid gid)
+      | `ByName _ -> None
     )
   in
   Fmt.pf f "COPY %a%a%a %s"
@@ -91,8 +91,8 @@ let pp_op ~buildkit ~escape ctx f : Spec.op -> ctx = function
   | `Run x when buildkit      -> pp_run ~escape ~ctx f x; ctx
   | `Run x                    -> pp_run ~escape ~ctx f { x with cache = []; secrets = []}; ctx
   | `Copy x                   -> pp_copy ~ctx f x; ctx
-  | `User (`Unix { uid; gid } as u) -> Fmt.pf f "USER %d:%d" uid gid; { user = u }
-  | `User (`Windows { name } as u) -> Fmt.pf f "USER %s" name; { user = u }
+  | `User (`ById { uid; gid } as u) -> Fmt.pf f "USER %d:%d" uid gid; { user = u }
+  | `User (`ByName { name } as u) -> Fmt.pf f "USER %s" name; { user = u }
   | `Env (k, v)               -> Fmt.pf f "ENV %s=\"%s\"" k (quote ~escape v); ctx
 
 let rec convert ~buildkit ~escape ~ctx f (name, { Spec.child_builds; from; ops }) =
@@ -113,10 +113,10 @@ let rec convert ~buildkit ~escape ~ctx f (name, { Spec.child_builds; from; ops }
 let dockerfile_of_spec ~buildkit ~os t =
   Fmt.str "%a" (fun f ->
       match os with
-      | `Windows ->
+      | `ByName ->
         let ctx = { user = (Spec.root_windows :> Spec.user) } in
         (Fmt.pf f "@[<h>#escape=`@]@.";
          convert ~buildkit ~escape:'`' ~ctx f)
-      | `Unix ->
+      | `ById ->
         let ctx = { user = (Spec.root_unix :> Spec.user) } in
         convert ~buildkit ~escape:'\\' ~ctx f) (None, t)

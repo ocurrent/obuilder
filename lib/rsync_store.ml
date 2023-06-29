@@ -154,8 +154,8 @@ let cache ~user t name =
   (* Create writeable clone. *)
   let gen = cache.gen in
   let { Obuilder_spec.uid; gid } = match user with
-    | `Unix user -> user
-    | `Windows _ -> assert false (* rsync not supported on Windows *)
+    | `ById user -> user
+    | `ByName _ -> assert false (* rsync not supported on Windows *)
   in
   (* rsync --chown not supported by the rsync that macOS ships with *)
   Rsync.copy_children ~src:snapshot ~dst:tmp () >>= fun () ->

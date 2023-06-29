@@ -56,12 +56,12 @@ let copy_to ~dst src =
   aux ()
 
 let get_ids = function
-  | `Unix user -> Some user.Obuilder_spec.uid, Some user.gid, None, None
-  | `Windows user when user.Obuilder_spec.name = "ContainerAdministrator" ->
+  | `ById user -> Some user.Obuilder_spec.uid, Some user.gid, None, None
+  | `ByName user when user.Obuilder_spec.name = "ContainerAdministrator" ->
     (* https://cygwin.com/cygwin-ug-net/ntsec.html#ntsec-mapping *)
     let x = 93 and rid = 1 in
     Some (0x1000 * x + rid), Some (0x1000 * x + rid), Some user.name, Some user.name
-  | `Windows _ -> None, None, None, None
+  | `ByName _ -> None, None, None, None
 
 let copy_file ~src ~dst ~to_untar ~user =
   Lwt_unix.LargeFile.lstat src >>= fun stat ->
@@ -145,13 +145,13 @@ let transform ~user fname hdr =
   (* Make a copy to erase unneeded data from the tar headers. *)
   let hdr' = Tar.Header.(make ~file_mode:hdr.file_mode ~mod_time:hdr.mod_time hdr.file_name hdr.file_size) in
   let hdr' = match user with
-    | `Unix user ->
+    | `ById user ->
       { hdr' with Tar.Header.user_id = user.Obuilder_spec.uid; group_id = user.gid; }
-    | `Windows user when user.Obuilder_spec.name = "ContainerAdministrator" ->
+    | `ByName user when user.Obuilder_spec.name = "ContainerAdministrator" ->
       (* https://cygwin.com/cygwin-ug-net/ntsec.html#ntsec-mapping *)
       let id = let x = 93 and rid = 1 in 0x1000 * x + rid in
       { hdr' with user_id = id; group_id = id; uname = user.name; gname = user.name; }
-    | `Windows _ -> hdr'
+    | `ByName _ -> hdr'
   in
   match hdr.Tar.Header.link_indicator with
   | Normal ->

@@ -1,4 +1,4 @@
-val dockerfile_of_spec : buildkit:bool -> os:[`Unix | `Windows] -> Spec.t -> string
+val dockerfile_of_spec : buildkit:bool -> os:[`ById | `ByName] -> Spec.t -> string
 (** [dockerfile_of_spec ~buildkit ~os x] produces a Dockerfile
    that aims to be equivalent to [x].
 

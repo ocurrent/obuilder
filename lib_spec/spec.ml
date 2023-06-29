@@ -56,27 +56,27 @@ let copy_inlined = function
 let copy_of_sexp x = copy_of_sexp (inflate_record copy_inlined x)
 let sexp_of_copy x = deflate_record copy_inlined (sexp_of_copy x)
 
-type unix_user = {
+type numeric_user = {
   uid : int;
   gid : int;
 } [@@deriving sexp]
 
-type windows_user = {
+type named_user = {
   name : string;
 } [@@deriving sexp]
 
 type user = [
-  | `Unix of unix_user
-  | `Windows of windows_user
+  | `ById of numeric_user
+  | `ByName of named_user
 ] [@@deriving sexp]
 
 let user_of_sexp x =
   let open Sexplib.Sexp in
   match x with
   | List [List [Atom "name"; _]] ->
-    `Windows (windows_user_of_sexp x)
+    `ByName (named_user_of_sexp x)
   | List [List [Atom "uid"; _]; List [Atom "gid"; _]] ->
-    `Unix (unix_user_of_sexp x)
+    `ById (numeric_user_of_sexp x)
   | x -> Fmt.failwith "Invalid op: %a" Sexplib.Sexp.pp_hum x
 
 let sexp_of_user x : Sexplib.Sexp.t =
@@ -175,11 +175,11 @@ let shell xs = `Shell xs
 let run ?(cache=[]) ?(network=[]) ?(secrets=[]) fmt = fmt |> Printf.ksprintf (fun x -> `Run { shell = x; cache; network; secrets })
 let copy ?(from=`Context) ?(exclude=[]) src ~dst = `Copy { from; src; dst; exclude }
 let env k v = `Env (k, v)
-let user_unix ~uid ~gid = `User (`Unix { uid; gid })
-let user_windows ~name = `User (`Windows { name })
+let user_unix ~uid ~gid = `User (`ById { uid; gid })
+let user_windows ~name = `User (`ByName { name })
 
-let root_unix = `Unix { uid = 0; gid = 0 }
-let root_windows = `Windows { name = "ContainerAdministrator" }
+let root_unix = `ById { uid = 0; gid = 0 }
+let root_windows = `ByName { name = "ContainerAdministrator" }
 let root = if Sys.win32 then root_windows else root_unix
 
 let rec pp_no_boxes f : Sexplib.Sexp.t -> unit = function
