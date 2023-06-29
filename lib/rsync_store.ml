@@ -153,13 +153,13 @@ let cache ~user t name =
   end >>= fun () ->
   (* Create writeable clone. *)
   let gen = cache.gen in
-  let { Obuilder_spec.uid; gid } = match user with
-    | `ById user -> user
-    | `ByName _ -> assert false (* rsync not supported on Windows *)
+  let chown_argument = match user with
+    | `ById { Obuilder_spec.uid; gid } -> Printf.sprintf "%d:%d" uid gid
+    | `ByName { Obuilder_spec.name } -> name
   in
   (* rsync --chown not supported by the rsync that macOS ships with *)
   Rsync.copy_children ~src:snapshot ~dst:tmp () >>= fun () ->
-  Os.sudo [ "chown"; Printf.sprintf "%d:%d" uid gid; tmp ] >>= fun () ->
+  Os.sudo [ "chown"; chown_argument; tmp ] >>= fun () ->
   let release () =
     Lwt_mutex.with_lock cache.lock @@ fun () ->
     begin

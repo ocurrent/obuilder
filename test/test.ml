@@ -503,7 +503,7 @@ let test_sexp () =
 let test_docker_unix () =
   let test ~buildkit name expect sexp =
     let spec = Spec.t_of_sexp (Sexplib.Sexp.of_string sexp) in
-    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`ById spec in
+    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`Unix spec in
     let expect = remove_indent expect in
     Alcotest.(check string) name expect got
   in
@@ -600,7 +600,7 @@ let test_docker_unix () =
 let test_docker_windows () =
   let test ~buildkit name expect sexp =
     let spec = Spec.t_of_sexp (Sexplib.Sexp.of_string sexp) in
-    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`ByName spec in
+    let got = Obuilder_spec.Docker.dockerfile_of_spec ~buildkit ~os:`Windows spec in
     let expect = remove_indent expect in
     Alcotest.(check string) name expect got
   in

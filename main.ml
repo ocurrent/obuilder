@@ -181,10 +181,10 @@ let buildkit =
     ["buildkit"]
 
 let escape =
-  let styles = [("unix", `ById); ("windows", `ByName)] in
+  let styles = [ ("unix", `Unix); ("windows", `Windows)] in
   let doc = Arg.doc_alts_enum styles |> Printf.sprintf "Dockerfile escape style, must be %s." in
   Arg.value @@
-  Arg.opt Arg.(enum styles) (if Sys.unix then `ById else `ByName) @@
+  Arg.opt Arg.(enum styles) (if Sys.unix then `Unix else `Windows) @@
   Arg.info ~doc
     ~docv:"STYLE"
     ["escape"]

@@ -175,8 +175,6 @@ let shell xs = `Shell xs
 let run ?(cache=[]) ?(network=[]) ?(secrets=[]) fmt = fmt |> Printf.ksprintf (fun x -> `Run { shell = x; cache; network; secrets })
 let copy ?(from=`Context) ?(exclude=[]) src ~dst = `Copy { from; src; dst; exclude }
 let env k v = `Env (k, v)
-let user_unix ~uid ~gid = `User (`ById { uid; gid })
-let user_windows ~name = `User (`ByName { name })
 
 let root_unix = `ById { uid = 0; gid = 0 }
 let root_windows = `ByName { name = "ContainerAdministrator" }

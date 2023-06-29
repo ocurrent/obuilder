@@ -193,7 +193,8 @@ let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   begin match user with
     | `ById { Obuilder_spec.uid; gid } ->
       Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; tmp]
-    | `ByName _ -> assert false (* btrfs not supported on Windows*)
+    | `ByName { Obuilder_spec.name } ->
+      Os.sudo ["chown"; name; tmp]
   end >>= fun () ->
   let release () =
     Lwt_mutex.with_lock cache.lock @@ fun () ->

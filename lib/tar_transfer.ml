@@ -57,11 +57,20 @@ let copy_to ~dst src =
 
 let get_ids = function
   | `ById user -> Some user.Obuilder_spec.uid, Some user.gid, None, None
-  | `ByName user when user.Obuilder_spec.name = "ContainerAdministrator" ->
-    (* https://cygwin.com/cygwin-ug-net/ntsec.html#ntsec-mapping *)
-    let x = 93 and rid = 1 in
-    Some (0x1000 * x + rid), Some (0x1000 * x + rid), Some user.name, Some user.name
-  | `ByName _ -> None, None, None, None
+  | `ByName user when Sys.win32 ->
+    if user.Obuilder_spec.name = "ContainerAdministrator" then
+      (* https://cygwin.com/cygwin-ug-net/ntsec.html#ntsec-mapping *)
+      let x = 93 and rid = 1 in
+      Some (0x1000 * x + rid), Some (0x1000 * x + rid), Some user.name, Some user.name
+    else
+      None, None, None, None
+  | `ByName user ->
+    let name = user.Obuilder_spec.name in
+    try
+      let pwent = Unix.getpwnam name in
+      Some pwent.pw_uid, Some pwent.pw_gid, Some name, None
+    with Not_found ->
+      None, None, Some name, None
 
 let copy_file ~src ~dst ~to_untar ~user =
   Lwt_unix.LargeFile.lstat src >>= fun stat ->
@@ -144,14 +153,22 @@ let send_file ~src_dir ~src_manifest ~dst ~user ~to_untar =
 let transform ~user fname hdr =
   (* Make a copy to erase unneeded data from the tar headers. *)
   let hdr' = Tar.Header.(make ~file_mode:hdr.file_mode ~mod_time:hdr.mod_time hdr.file_name hdr.file_size) in
-  let hdr' = match user with
-    | `ById user ->
-      { hdr' with Tar.Header.user_id = user.Obuilder_spec.uid; group_id = user.gid; }
-    | `ByName user when user.Obuilder_spec.name = "ContainerAdministrator" ->
-      (* https://cygwin.com/cygwin-ug-net/ntsec.html#ntsec-mapping *)
-      let id = let x = 93 and rid = 1 in 0x1000 * x + rid in
-      { hdr' with user_id = id; group_id = id; uname = user.name; gname = user.name; }
-    | `ByName _ -> hdr'
+  let user_id, group_id, uname, gname = get_ids user in
+  let hdr' = match user_id with
+    | Some uid -> { hdr' with Tar.Header.user_id = uid }
+    | None -> hdr'
+  in
+  let hdr' = match group_id with
+    | Some gid -> { hdr' with Tar.Header.group_id = gid }
+    | None -> hdr'
+  in
+  let hdr' = match uname with
+    | Some name -> { hdr' with Tar.Header.uname = name }
+    | None -> hdr'
+  in
+  let hdr' = match gname with
+    | Some name -> { hdr' with Tar.Header.gname = name }
+    | None -> hdr'
   in
   match hdr.Tar.Header.link_indicator with
   | Normal ->

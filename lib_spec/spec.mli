@@ -50,8 +50,6 @@ val shell : string list -> op
 val run : ?cache:Cache.t list -> ?network:string list -> ?secrets:Secret.t list -> ('a, unit, string, op) format4 -> 'a
 val copy : ?from:[`Context | `Build of string] -> ?exclude:string list -> string list -> dst:string -> op
 val env : string -> string -> op
-val user_unix : uid:int -> gid:int -> op
-val user_windows : name:string -> op
 
 val root_unix : [`ById of numeric_user]
 val root_windows : [`ByName of named_user]
