@@ -20,6 +20,8 @@ module Make (Raw : S.STORE) = struct
        - [result] is still pending and [log] isn't finished.
        - [set_cancelled] is resolved iff [users = 0]. *)
     mutable in_progress : build Builds.t;
+    mutable cache_hit : int;
+    mutable cache_miss : int;
   }
 
   let finish_log ~set_log log =
@@ -47,6 +49,7 @@ module Make (Raw : S.STORE) = struct
   let get_build t ~base ~id ~cancelled ~set_log fn =
     Raw.result t.raw id >>= function
     | Some _ ->
+      t.cache_hit <- t.cache_hit + 1;
       let now = Unix.(gmtime (gettimeofday ())) in
       Dao.set_used t.dao ~id ~now;
       Raw.log_file t.raw id >>= fun log_file ->
@@ -57,6 +60,7 @@ module Make (Raw : S.STORE) = struct
       Lwt.wakeup set_log log;
       Lwt_result.return (`Loaded, id)
     | None ->
+      t.cache_miss <- t.cache_miss + 1;
       Raw.build t.raw ?base ~id (fun dir ->
           Raw.log_file t.raw id >>= fun log_file ->
           if Sys.file_exists log_file then Unix.unlink log_file;
@@ -127,6 +131,7 @@ module Make (Raw : S.STORE) = struct
   let result t id = Raw.result t.raw id
   let count t = Dao.count t.dao
   let df t = Raw.df t.raw
+  let cache_stats t = t.cache_hit, t.cache_miss
   let cache ~user t = Raw.cache ~user t.raw
 
   let delete ?(log=ignore) t id =
@@ -175,7 +180,7 @@ module Make (Raw : S.STORE) = struct
     Os.ensure_dir db_dir;
     let db = Db.of_dir (db_dir / "db.sqlite") in
     let dao = Dao.create db in
-    { raw; dao; in_progress = Builds.empty }
+    { raw; dao; in_progress = Builds.empty; cache_hit = 0; cache_miss = 0 }
 
   let unwrap t =
     Dao.close t.dao

@@ -80,6 +80,7 @@ end
 let root t = t.root
 
 let df t = Lwt.return (Os.free_space_percent t.root)
+let cache_stats _ = 0, 0
 
 let purge () =
   let* containers = Docker.Cmd.obuilder_containers () in

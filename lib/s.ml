@@ -125,6 +125,9 @@ module type BUILDER = sig
   val df : t -> float Lwt.t
   (** [df t] returns the percentage of free space in the store. *)
 
+  val cache_stats : t -> int * int
+  (** [cache_stats t] returns the number of cache hits and the number of cache misses. *)
+
   val healthcheck : ?timeout:float -> t -> (unit, [> `Msg of string]) Lwt_result.t
   (** [healthcheck t] performs a check that [t] is working correctly.
       @param timeout Cancel and report failure after this many seconds.
