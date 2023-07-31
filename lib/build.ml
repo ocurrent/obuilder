@@ -278,6 +278,9 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
   let df t =
     Store.df t.store
 
+  let cache_stats t =
+    Store.cache_stats t.store
+
   let log_to buffer tag x =
     match tag with
     | `Heading | `Note -> Buffer.add_string buffer (x ^ "\n")
@@ -533,6 +536,9 @@ module Make_Docker (Raw_store : S.STORE) = struct
 
   let df t =
     Store.df t.store
+
+  let cache_stats t =
+    Store.cache_stats t.store
 
   let log_to buffer tag x =
     match tag with
