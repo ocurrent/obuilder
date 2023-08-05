@@ -111,7 +111,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
   let proc =
     let cmd =
       let options = jail_options config rootdir tmp_dir in
-      "jail" :: "-c" :: jail_name :: options
+      "jail" :: "-c" :: ("name=" ^ jail_name) :: options
     in
     let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
     let pp f = Os.pp_cmd f ("", cmd) in
@@ -161,7 +161,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
 let create ~state_dir:_ _c =
   Lwt.return {
     (* Compute a unique (across obuilder instances) name prefix for the jail. *)
-    jail_name_prefix = "name=obuilder_" ^ (Int.to_string (Unix.getpid ()));
+    jail_name_prefix = "obuilder_" ^ (Int.to_string (Unix.getpid ()));
   }
 
 let finished () =
