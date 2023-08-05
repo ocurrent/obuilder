@@ -91,6 +91,8 @@ let jail_id = ref 0
 
 let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
   Lwt_io.with_temp_dir ~prefix:"obuilder-jail-" @@ fun tmp_dir ->
+  let zfs_volume = String.sub rootdir 1 (String.length rootdir - 1) in  (* remove / from front *)
+  Os.sudo [ "zfs"; "inherit"; "mountpoint"; zfs_volume ^ "/rootfs" ] >>= fun () ->
   let cwd = rootdir in
   let jail_name = t.jail_name_prefix ^ "_" ^ string_of_int !jail_id in
   incr jail_id;
