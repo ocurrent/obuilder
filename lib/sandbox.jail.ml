@@ -36,7 +36,21 @@ let jail_username rootdir config =
 
 (* Compute the complete set of arguments passed to the jail(8) command:
    jail username, jail path, command to run, etc. *)
-let jail_options config rootdir =
+let jail_options config rootdir tmp_dir =
+  let cache = match List.length config.Config.mounts with
+    | 0 -> []
+    | _ ->
+      let path = tmp_dir / "fstab" in
+      let rec print_fstab oc = function
+        | [] -> close_out oc
+        | { Config.Mount.src; dst; readonly; _ } :: tl ->
+          let full = rootdir ^ dst in
+          Os.ensure_dir full;
+          Printf.fprintf oc "%s %s nullfs %s 0 0\n" src full (if readonly then "ro" else "rw");
+          print_fstab oc tl in
+      let oc = open_out path in
+        print_fstab oc config.Config.mounts;
+      [ "mount.fstab=" ^ path ] in
   let username = jail_username rootdir config in
   let commandline =
     let env = List.rev_map (fun (k, v) -> k ^ "=" ^ v) config.env in
@@ -56,7 +70,7 @@ let jail_options config rootdir =
   let path = "path=" ^ rootdir in
   let devfs_setup = "mount.devfs" in
   let options =
-    let options = [ path ; devfs_setup ] in
+    let options = [ path ; devfs_setup ] @ cache in
     match config.network with
     | [ "host" ] ->
       "ip4=inherit" :: "ip6=inherit" :: "host=inherit" :: options
@@ -76,6 +90,7 @@ let copy_to_log ~src ~dst =
 let jail_id = ref 0
 
 let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
+  Lwt_io.with_temp_dir ~prefix:"obuilder-jail-" @@ fun tmp_dir ->
   let cwd = rootdir in
   let jail_name = t.jail_name_prefix ^ "_" ^ string_of_int !jail_id in
   incr jail_id;
@@ -93,7 +108,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
   let copy_log = copy_to_log ~src:out_r ~dst:log in
   let proc =
     let cmd =
-      let options = jail_options config rootdir in
+      let options = jail_options config rootdir tmp_dir in
       "jail" :: "-c" :: jail_name :: options
     in
     let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
@@ -112,6 +127,12 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
          filesystem. Do this here, ignoring the exit code of umount(8). *)
       let cmd = [ "sudo" ; "/sbin/umount" ; rootdir / "dev" ] in
       Os.exec ~is_success:(fun _ -> true) cmd >>= fun () ->
+      let fstab = tmp_dir / "fstab" in
+      (if Sys.file_exists fstab
+      then
+        let cmd = [ "sudo" ; "/sbin/umount" ; "-a" ; "-F" ; fstab ] in
+        Os.exec ~is_success:(fun _ -> true) cmd
+      else Lwt.return_unit) >>= fun () ->
       Lwt_result.ok Lwt.return_unit
     | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
     | Error e -> Lwt_result.fail e
