@@ -110,9 +110,6 @@ module Zfs = struct
       | `And_snapshots -> ["-r"; "-f"]
       | `And_snapshots_and_clones -> ["-R"; "-f"]
     in
-    (* At least under FreeBSD, pass the -f option to make sure any dangling
-       devfs mount within the filesystem gets automatically unmounted. *)
-    let opts = "-f" :: opts in
     Os.sudo (["zfs"; "destroy"] @ opts @ ["--"; Dataset.full_name t ds])
 
   let destroy_snapshot t ds snapshot mode =
