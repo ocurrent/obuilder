@@ -74,7 +74,8 @@ let jail_options config rootdir tmp_dir =
     match config.network with
     | [ "host" ] ->
       "ip4=inherit" :: "ip6=inherit" :: "host=inherit" :: options
-    | _ -> options
+    | _ ->
+      "exec.start=/sbin/ifconfig lo0 127.0.0.1/8" :: "vnet" :: options
   in
   List.rev_append options commandline
 
