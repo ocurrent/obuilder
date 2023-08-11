@@ -124,18 +124,18 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
     !Os.lwt_process_exec ~cwd ?stdin ~stdout ~stderr ~pp
       ("", Array.of_list cmd) >>= function
     | Ok 0 ->
-      (* If the command within the jail completes, the jail is automatically
-         removed, but without performing any of the stop and release actions,
-         thus we can not use "exec.stop" to unmount the in-jail devfs
-         filesystem. Do this here, ignoring the exit code of umount(8). *)
-      let cmd = [ "sudo" ; "/sbin/umount" ; rootdir / "dev" ] in
-      Os.exec ~is_success:(fun _ -> true) cmd >>= fun () ->
       let fstab = tmp_dir / "fstab" in
       (if Sys.file_exists fstab
       then
         let cmd = [ "sudo" ; "/sbin/umount" ; "-a" ; "-F" ; fstab ] in
         Os.exec ~is_success:(fun _ -> true) cmd
       else Lwt.return_unit) >>= fun () ->
+      (* If the command within the jail completes, the jail is automatically
+         removed, but without performing any of the stop and release actions,
+         thus we can not use "exec.stop" to unmount the in-jail devfs
+         filesystem. Do this here, ignoring the exit code of umount(8). *)
+      let cmd = [ "sudo" ; "/sbin/umount" ; rootdir / "dev" ] in
+      Os.exec ~is_success:(fun _ -> true) cmd >>= fun () ->
       Lwt_result.ok Lwt.return_unit
     | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
     | Error e -> Lwt_result.fail e
