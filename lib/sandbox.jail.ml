@@ -53,7 +53,7 @@ let jail_options config rootdir tmp_dir =
       [ "mount.fstab=" ^ path ] in
   let username = jail_username rootdir config in
   let commandline =
-    let env = List.rev_map (fun (k, v) -> k ^ "=" ^ v) config.env in
+    let env = List.rev_map (fun (k, v) -> k ^ "='" ^ v ^ "'") config.env in
     let commandline = List.rev (List.rev_map Filename.quote config.argv) in
     let commandline =
       match env with
