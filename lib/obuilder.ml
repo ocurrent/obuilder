@@ -16,8 +16,9 @@ module Store_spec = Store_spec
 module Docker_store = Docker_store
 
 (** {2 Fetchers} *)
-module User_temp = User_temp
+module Zfs_clone = Zfs_clone
 module Docker_extract = Docker.Extract
+module Archive_extract = Archive_extract
 
 (** {2 Sandboxes} *)
 

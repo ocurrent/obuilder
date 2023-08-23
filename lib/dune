@@ -5,9 +5,15 @@
  (action (copy %{deps} %{target})))
 
 (rule
+ (deps sandbox.jail.ml)
+ (target sandbox.ml)
+ (enabled_if (= %{system} freebsd))
+ (action (copy %{deps} %{target})))
+
+(rule
  (deps sandbox.runc.ml)
  (target sandbox.ml)
- (enabled_if (<> %{system} macosx))
+ (enabled_if (and (<> %{system} macosx) (<> %{system} freebsd)))
  (action (copy %{deps} %{target})))
 
 (rule
