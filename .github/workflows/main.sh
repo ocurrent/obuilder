@@ -16,6 +16,32 @@ sudo chmod a+x /usr/local/bin/uname
 opam exec -- make
 
 case "$1" in
+    xfs)
+        sudo chmod a+x /usr/local/bin/runc
+
+        dd if=/dev/zero of=/tmp/xfs.img bs=100M count=100
+        XFS_LOOP=$(sudo losetup -f)
+        sudo losetup -P "$XFS_LOOP" /tmp/xfs.img
+        sudo mkfs.xfs -f "$XFS_LOOP"
+        sudo mkdir /xfs
+        sudo mount -t xfs "$XFS_LOOP" /xfs
+        sudo chown "$(whoami)" /xfs
+
+        opam exec -- dune exec -- obuilder healthcheck --store=xfs:/xfs
+        opam exec -- dune exec -- ./stress/stress.exe --store=xfs:/xfs
+
+        # Populate the caches from our own GitHub Actions cache
+	mkdir -p /xfs/cache/c-opam-archives
+        cp -r ~/.opam/download-cache/* /xfs/cache/c-opam-archives/
+        sudo chown -R 1000:1000 /xfs/cache/c-opam-archives
+
+        opam exec -- dune exec -- obuilder build -f example.spec . --store=xfs:/xfs --color=always
+
+        sudo umount /xfs
+        sudo losetup -d "$XFS_LOOP"
+        sudo rm -f /tmp/xfs.img
+        ;;
+
     btrfs)
         sudo chmod a+x /usr/local/bin/runc
 
