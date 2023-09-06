@@ -4,30 +4,21 @@
 [![docs][docs-shield]][docs]
 [![OCaml-CI Build Status][ocaml-ci-shield]][ocaml-ci]
 
-
 OBuilder takes a build script (similar to a Dockerfile) and performs the steps in it in a sandboxed environment.
 
-After each step, OBuilder uses the snapshot feature of the filesystem (ZFS or
-Btrfs) to store the state of the build. There is also an Rsync backend that
-copies the build state. On Linux, it uses `runc` to sandbox the build steps, but
-any system that can run a command safely in a chroot could be used.
-Repeating a build will reuse the cached results where possible.
+After each step, OBuilder uses the snapshot feature of the filesystem (ZFS or Btrfs) to store the state of the build. There is also an Rsync backend that copies the build state. On Linux, it uses `runc` to sandbox the build steps, but any system that can run a command safely in a chroot could be used. Repeating a build will reuse the cached results where possible.
 
-OBuilder can also use Docker as a backend (fully replacing of `runc` and the
-snapshotting filesystem) on any system supported by Docker (Linux, Windows, …).
+OBuilder can also use Docker as a backend (fully replacing of `runc` and the snapshotting filesystem) on any system supported by Docker (Linux, Windows, …).
 
-OBuilder stores the log output of each build step.
-This is useful for CI, where you may still want to see the output even if the result was cached from some other build.
+OBuilder stores the log output of each build step. This is useful for CI, where you may still want to see the output even if the result was cached from some other build.
 
-As present, the initial base image is fetched from Docker Hub using `docker pull` and then snapshotted into the store.
+At present, the initial base image is fetched from Docker Hub using `docker pull` on Linux and then snapshotted into the store. Other systems use a conceptually similar process with the implementation in each platform section.
 
 ## Usage
 
-OBuilder is designed to be used as a component of a build scheduler such as [OCluster][].
-However, there is also a command-line interface for testing.
+OBuilder is designed to be used as a component of a build scheduler such as [OCluster][]. However, there is also a command-line interface for testing.
 
-To check that the system is working correctly, you can run a healthcheck.
-This checks that Docker is running and then does a simple test build (pulling the `busybox` image if not already present):
+To check that the system is working correctly, you can run a healthcheck. This checks that Docker is running and then does a simple test build (pulling the `busybox` image if not already present):
 
     $ obuilder healthcheck --store=zfs:tank
     Healthcheck passed
@@ -78,7 +69,7 @@ runc then sync operations will instead fail with `EPERM`.
 
 ## The build specification language
 
-The spec files are loosely based on the [Dockerfile][] format.
+The spec files are loosely based on the [Dockerfile]() format.
 The main difference is that the format uses S-expressions rather than a custom format,
 which should make it easier to generate and consume it automatically.
 
@@ -97,8 +88,7 @@ Example:
 OBuilder will not check for updates, so `BASE` should include a digest identifying the exact image, as shown above.
 
 The operations are performed in order. Each operation gets a build context and a filesystem snapshot, and may produce
-a new context and a new snapshot.
-The initial filesystem snapshot is `BASE`. `run` and `copy` operations create new snapshots.
+a new context and a new snapshot. The initial filesystem snapshot is `BASE`. `run` and `copy` operations create new snapshots.
 
 The initial context is supplied by the user (see [build.mli](https://github.com/ocurrent/obuilder/blob/master/lib/build.mli) for details).
 By default:
@@ -113,12 +103,12 @@ You can define nested builds and use the output from them in `copy` operations.
 For example:
 
     ((build dev
-     ((from ocaml/opam:alpine-3.12-ocaml-4.11)
+     ((from ocaml/opam:alpine-3.18-ocaml-5.0)
       (user (uid 1000) (gid 1000))
       (workdir /home/opam)
       (run (shell "echo 'print_endline {|Hello, world!|}' > main.ml"))
       (run (shell "opam exec -- ocamlopt -ccopt -static -o hello main.ml"))))
-     (from alpine:3.12)
+     (from alpine:3.18)
      (shell /bin/sh -c)
      (copy (from (build dev))
       (src /home/opam/hello)
@@ -136,7 +126,8 @@ Example:
     (workdir /usr/local)
 
 This operation sets the current working directory used for the following commands, until the next `workdir` operation.
-If the path given is relative, it is combined with the previous setting.
+If the path given is relative, it is combined with the previous setting. **WARNING** Workdir implementation is idiosyncratic
+on macOS, use with care.
 
 ### shell
 
@@ -248,7 +239,7 @@ Notes:
 ### user
 
     (user (uid UID) (gid GID))
-    (user (name NAME)) ; on Windows
+    (user (name NAME)) ; on Windows and FreeBSD
 
 Example:
 
@@ -283,10 +274,13 @@ The dockerfile should work the same way as the spec file, except for these limit
 - All `(network …)` fields are ignored, as Docker does not allow per-step control of
   networking.
 
-## Experimental macOS and Windows Support
+## Other Platforms
 
-OBuilder abstracts over a fetching mechanism for the Docker base image, the sandboxing for the execution of build steps and the store for the cache.
-This makes OBuilder extremely portable and there exists experimental macOS and Windows backends. The Windows backend currently requires Docker for Windows installed.
+OBuilder abstracts over a fetching mechanism for the Docker base image, the sandboxing for
+the execution of build steps and the store for the cache.
+This makes OBuilder extremely portable and there exists FreeBSD, macOS and Windows backends.
+The FreeBSD backend uses jails and ZFS, the macOS backend re-uses ZFS and user isolation, and
+the Windows backend currently requires Docker for Windows installed.
 
 ## Licensing
 
