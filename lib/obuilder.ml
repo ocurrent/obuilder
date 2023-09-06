@@ -12,6 +12,7 @@ module Docker = Docker
 module Btrfs_store = Btrfs_store
 module Zfs_store = Zfs_store
 module Rsync_store = Rsync_store
+module Xfs_store = Xfs_store
 module Store_spec = Store_spec
 module Docker_store = Docker_store
 
