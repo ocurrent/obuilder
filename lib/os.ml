@@ -218,6 +218,11 @@ let ensure_dir ?(mode=0o777) path =
   | `Present -> ()
   | `Missing -> Unix.mkdir path mode
 
+let read_link x =
+  match Unix.readlink x with
+  | s -> Some s
+  | exception Unix.Unix_error(Unix.ENOENT, _, _) -> None
+
 let rm ~directory =
   let pp _ ppf = Fmt.pf ppf "[ RM ]" in
   sudo_result ~pp:(pp "RM") ["rm"; "-r"; directory ] >>= fun t ->
@@ -286,4 +291,13 @@ let free_space_percent root_dir =
   let vfs = ExtUnix.All.statvfs (normalise_path root_dir) in
   let used = Int64.sub vfs.f_blocks vfs.f_bfree in
   100. -. 100. *. (Int64.to_float used) /. Int64.(to_float (add used vfs.f_bavail))
+
+let read_lines name process =
+  let ic = open_in name in
+  let try_read () =
+    try Some (input_line ic) with End_of_file -> None in
+  let rec loop acc = match try_read () with
+    | Some s -> loop ((process s) :: acc)
+    | None -> close_in ic; acc in
+  loop []
 
