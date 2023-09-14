@@ -9,6 +9,7 @@ module Make (Raw : S.STORE) = struct
     set_cancelled : unit Lwt.u;         (* Resolve this to cancel (when [users = 0]). *)
     log : Build_log.t Lwt.t;
     result : (([`Loaded | `Saved] * S.id), [`Cancelled | `Msg of string]) Lwt_result.t;
+    base : string option;
   }
 
   module Builds = Map.Make(String)
@@ -104,7 +105,7 @@ module Make (Raw : S.STORE) = struct
       let log, set_log = Lwt.wait () in
       let tail_log = log >>= fun log -> Build_log.tail ?switch log (client_log `Output) in
       let cancelled, set_cancelled = Lwt.wait () in
-      let build = { users = 1; set_cancelled; log; result } in
+      let build = { users = 1; set_cancelled; log; result; base } in
       Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref build; Lwt.return_unit) >>= fun () ->
       t.in_progress <- Builds.add id build t.in_progress;
       Lwt.async
@@ -149,28 +150,31 @@ module Make (Raw : S.STORE) = struct
     in
     aux id
 
-  let prune_lru ?(log=ignore) t ~before =
-    let items = Dao.lru t.dao ~before 1 in
-    let n = List.length items in
-    items |> Lwt_list.iter_s (fun id ->
-        log id;
-        Raw.delete t.raw id >|= fun () ->
-        Dao.delete t.dao id
-      )
-    >>= fun () ->
-    Lwt.return n
+  let prune_lru ?(log=ignore) t ~before limit =
+    let items = Dao.lru t.dao ~before limit in
+    let items = List.filter (fun id ->
+      Builds.filter (fun _ b -> match b.base with
+      | Some base -> base = id
+      | None -> false) t.in_progress |> Builds.is_empty) items in
+    match items with
+    | [] -> Lwt.return 0
+    | id :: _ ->
+      log id;
+      Raw.delete t.raw id >>= fun () ->
+      Dao.delete t.dao id ;
+      Lwt.return 1
 
   let prune ?log t ~before limit =
     Log.info (fun f -> f "Pruning %d items" limit);
-    let rec aux acc limit =
-      if limit = 0 then Lwt.return acc  (* Pruned everything we wanted to *)
+    let rec aux count =
+      if count >= limit then Lwt.return count  (* Pruned everything we wanted to *)
       else (
-        prune_lru ?log t ~before >>= function
-        | 0 -> Lwt.return acc           (* Nothing left to prune *)
-        | n -> aux (acc + n) (limit - n)
+        prune_lru ?log t ~before limit >>= function
+        | 0 -> Lwt.return count           (* Nothing left to prune *)
+        | n -> aux (count + n)
       )
     in
-    aux 0 limit >>= fun n ->
+    aux 0 >>= fun n ->
     Raw.complete_deletes t.raw >>= fun () ->
     Log.info (fun f -> f "Pruned %d items" n);
     Lwt.return n
