@@ -338,17 +338,25 @@ let servercore =
   match !img with
   | None ->
     let keyname = {|HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion|} in
-    let valuename = "DisplayVersion" in
+    let valuename = "CurrentBuild" in
     let* value = Os.pread ["reg"; "query"; keyname; "/v"; valuename] in
     let line = String.(value |> trim |> split_on_char '\n') |> Fun.flip List.nth 1 in
-    Scanf.sscanf line " DisplayVersion REG_SZ %s" @@ fun version ->
+    Scanf.sscanf line " CurrentBuild REG_SZ %i" @@ fun version ->
     let version' = match version with
-      (* FIXME: is this accurate? *)
-      | "22H2" | "21H2" | "21H1" -> "ltsc2022" | "2019" -> "ltsc2019" | "2016" -> "ltsc2016"
-      | v -> v
+      (* Prior to Windows 11 and Server 2022, the build number of the Windows
+       * must match the build number of container *)
+      | 14393 -> "ltsc2016" (* aka 1607 *)
+      | 16299 -> "1709"
+      | 17134 -> "1803"
+      | 17763 -> "ltsc2019" (* aka 1809 *)
+      | 18362 -> "1903"
+      | 18363 -> "1909"
+      | 19041 -> "2004"
+      | 19042 -> "20H2"
+      | _ -> "ltsc2022"
     in
     let img' = "mcr.microsoft.com/windows/servercore:" ^ version' in
-    Log.info (fun f -> f "Windows host is %s, will use %s." version img');
+    Log.info (fun f -> f "Windows host is build %i, will use tag %s." version img');
     img := Some (Lwt.return (`Docker_image img'));
     Option.get !img
   | Some img -> img
