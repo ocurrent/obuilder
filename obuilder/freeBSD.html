@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>freeBSD (obuilder.freeBSD)</title><link rel="stylesheet" href="../odoc.support/odoc.css"/><meta charset="utf-8"/><meta name="generator" content="odoc 2.2.0"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script></head><body class="odoc"><nav class="odoc-nav"><a href="index.html">Up</a> – <a href="index.html">obuilder</a> &#x00BB; freeBSD</nav><header class="odoc-preamble"><h1 id="porting-obuilder-to-freebsd"><a href="#porting-obuilder-to-freebsd" class="anchor"></a>Porting OBuilder to FreeBSD</h1></header><nav class="odoc-toc"><ul><li><a href="#the-problem">The problem</a></li><li><a href="#the-challenge">The challenge</a></li><li><a href="#porting-to-freebsd">Porting to FreeBSD</a><ul><li><a href="#the-fetcher">The fetcher</a></li><li><a href="#the-sandbox">The sandbox</a></li></ul></li><li><a href="#solving-the-chicken-and-egg-problem">Solving the chicken-and-egg problem</a><ul><li><a href="#freebsd-setup">FreeBSD setup</a></li><li><a href="#optional:-setting-up-a-freebsd-virtual-machine">Optional: setting up a FreeBSD Virtual Machine</a></li><li><a href="#stage-0">Stage 0</a></li><li><a href="#stage-1">Stage 1</a></li><li><a href="#building-obuilder-under-freebsd">Building OBuilder under FreeBSD</a></li></ul></li><li><a href="#integrating-with-ocluster">Integrating with OCluster</a></li><li><a href="#conclusion">Conclusion</a></li></ul></nav><div class="odoc-content"><h2 id="the-problem"><a href="#the-problem" class="anchor"></a>The problem</h2><p>OBuilder is a tool used to perform arbitrary, reproduceable builds of OCaml-related software within a sandboxed environment.</p><p>It has been written for Linux, with support for Windows and MacOS systems being added later. Porting to FreeBSD is the next logical step, since FreeBSD \(at least on amd64 and arm64 hardware\) is a Tier 1 platform in the OCaml ecosystem.</p><h2 id="the-challenge"><a href="#the-challenge" class="anchor"></a>The challenge</h2><p>Being initially Linux-centric, OBuilder is architected around three major requirements:</p><ul><li>initial build environments are <code>docker</code> images.</li><li>sandboxing is performed using the Open Container Initiative tool <code>runc</code>.</li><li>a filesystem with snapshot capabilities is needed, and acts as a cache of identical build steps.</li></ul><p>Neither of the first two items are available under FreeBSD \(a <code>docker</code> client is available but quite useless as there is no native <code>docker</code> server\), therefore alternative solutions must be found. As for the filesystem requirement, FreeBSD has been supporting Sun's ZFS filesystem out of the box for many releases now.</p><p>Fortunately, the existing archicture in OBuilder encapsulates these needs as <code>Fetcher</code>, <code>Sandbox</code> and <code>Store</code> modules, respectively, so the only work required would be write FreeBSD-specific <code>Fetcher</code> and <code>Sandbox</code> modules.</p><h2 id="porting-to-freebsd"><a href="#porting-to-freebsd" class="anchor"></a>Porting to FreeBSD</h2><h3 id="the-fetcher"><a href="#the-fetcher" class="anchor"></a>The fetcher</h3><p>An initial attempt was made to fetch Docker images without using the <code>docker</code> command. An existing script, <code>download-frozen-image</code>, can be found in the <code>moby</code> Github project \(the open source parts of <code>docker</code>\) to that effect.</p><p>However, although using that script to fetch the various layers of the <code>docker</code> image and apply them in order, the result will be useless, from a FreeBSD perspective, as all the <code>docker</code> images available are filled with Linux binaries, which can run under FreeBSD with the help of the compatibility module, but would mislead the OCaml toolchain into believing it is running under Linux, and thus would build Linux binaries.</p><p>Until <code>docker</code> is available under FreeBSD, there won't be a repository of FreeBSD images suitable for use for OBuilder. Such images will, at least in the beginning, be built locally in the Tarides CI network. It therefore makes sense to expect <code>.tar.gz</code> archives to be available from the CI network, and simply download and extract them to implement the <code>Fetcher</code> module. Moreover, FreeBSD provides its own <code>fetch</code> command which is able to download files over <code>http</code> and <code>https</code>, and can also use <code>file://</code> URIs, which turned out to be very helpful during development.</p><p>There is currently no attempt to support aliases or canonical names, so all the <code>(from ...)</code> stanza in OBuilder command files will need to be adjusted for use with FreeBSD. This limitation can be overcome by pre-populating the OBuilder cache with the most used images under their expected names on the OBuilder worker systems.</p><h3 id="the-sandbox"><a href="#the-sandbox" class="anchor"></a>The sandbox</h3><p>FreeBSD comes with its own sandboxing mechanism, named <code>jail</code>, since the late 1990s. In addition to only having access to a subset of the filesystem, jails can also be denied network access, which fits the OBuilder usage pattern, where network access is only allowed to fetch build dependencies.</p><p>In order to start a jail, the <code>jail</code> command is invoked with either a plain text configuration file providing its configuration, or with the configuration parameters \(in the &quot;name=value&quot; form\) on its commandline.</p><p>In order to keep things simple in OBuilder, and since the jail configuration will only need a few parameters, they are all passed on the commandline. This might be a problem, should the length of the command line to run, as specified in the OBuilder command file, reach the FreeBSD command line size limit, but as this limit is a few hundred kilobytes, this does not seem to be a serious concern.</p><p>The <code>jail</code> invocation will provide:</p><ul><li>a unique jail name.</li><li>the absolute path of the jail filesystem.</li><li>the command \(or shell script\) to run in the jail.</li><li>the user on behalf of which the command will be run. This requires the user to exist within the jail filesystem \(<code>/etc/passwd</code> and <code>/etc/group</code> entries\).</li></ul><p>More options may be used to allow for network access, or specify commands to run on the host or within the jail at various states of the jail lifecycle.</p><p>Also, for processes running under the jail to behave correctly, a stripped-down <code>devfs</code> pseudo-filesystem needs to be mounted on the <code>/dev</code> directory within the jail, and while this can be done automatically by <code>jail(8)</code> using the proper <code>mount.devfs</code> option, care must be taken to correctly unmount this directory after the command run within the jail has exited. In order to be sure there will be no leftover <code>devfs</code> mounts, which would prevent removal of the jail filesystem at cleanup time, an <code>umount</code> command is run unconditionally by OBuilder after the <code>jail</code> command exits.</p><p>Lastly, since most, if not all, OBuilder commands will expect a proper <code>opam</code> environment configuration, it is necessary to run the commands within a login shell, and such a shell can only be run as root. Therefore the command which will run within the jail is:</p><pre class="language-ocaml"><code>/usr/bin/su -l obuilder_user_name -c &quot;cd obuilder_directory &amp;&amp; obuilder_command&quot;</code></pre><h2 id="solving-the-chicken-and-egg-problem"><a href="#solving-the-chicken-and-egg-problem" class="anchor"></a>Solving the chicken-and-egg problem</h2><p>With the fetcher and the sandbox modules written, a complete OBuilder run can be attempted. But in order to do this, two more pieces are needed:</p><ul><li>a base FreeBSD image, to be used by OBuilder runs.</li><li>a native FreeBSD build of OBuilder.</li></ul><p>The base FreeBSD image will require a proper <code>opam switch</code> to be created. The commands used to create it can also be turned into an OBuilder command file, in order to be able to quickly build any particular switch version.</p><h3 id="freebsd-setup"><a href="#freebsd-setup" class="anchor"></a>FreeBSD setup</h3><p>The process of setting up a FreeBSD system, combined with the use of zfs snapshots, allows various stages of the FreeBSD setup to be archived and used as starting point for OBuilder operations.</p><p>We can take snapshots at the following points:</p><ul><li>after an initial simple FreeBSD installation, with a few external packages required by OBuilder itself added, and an <code>opam</code> user created. This will be known henceforth as &quot;stage0&quot;.</li><li>after <code>opam</code> has been installed and an initial <code>opam switch</code> created. This setup can be directly used as a starting point for OBuilder operations, and will be known henceforth as &quot;stage1&quot;.</li></ul><h3 id="optional:-setting-up-a-freebsd-virtual-machine"><a href="#optional:-setting-up-a-freebsd-virtual-machine" class="anchor"></a>Optional: setting up a FreeBSD Virtual Machine</h3><p>If no physical machine is available to install FreeBSD on, one may use <code>qemu</code> to run a virtual machine instead.</p><p>Simply download the installation dvd, and setup a disk image:</p><pre class="language-ocaml"><code>qemu-img create -f qcow2 da0.qcow2 10G</code></pre><p>Then launch a virtual machine with a few CPUs and a few gigabytes of memory:</p><pre class="language-ocaml"><code>qemu-system-x86_64 \
+    -smp 4 \
+    -m 4G \
+    -drive file=da0.qcow2,format=qcow2 \
+    -drive file=FreeBSD-13.2-RELEASE-amd64-dvd1.iso,media=cdrom</code></pre><p>Since the disk image has been freshly created, this will boot into the installation dvd.</p><h3 id="stage-0"><a href="#stage-0" class="anchor"></a>Stage 0</h3><p>FreeBSD installation is straightforward. There is nothing special to choose within the installer, except for the use of ZFS as the default filesystem \(which is the default choice nowadays\) and, of course, proper network configuration \(although the defaults of DHCP for IPv4 and SLAAC for IPv6 ought to work in most networks\).</p><p>The default ZFS setup creates one single pool for the disk, and separate filesystems in it. OBuilder will however require its own work pool, so the default ZFS settings \(&quot;guided root on zfs&quot; disk layout\) in the installer can't be used. It will be easier to build base images anyway if there is no separate zfs pool for <code>/usr/home</code>.</p><p>In order to save space, one might want to disable all optional system components when asked which ones to install.</p><p>After the installation completes and the system reboots, one may log in as root.</p><p>A quick check of <code>/etc/rc.conf</code> should confirm that:</p><ul><li>there is a <code>zfs_enable=&quot;YES&quot;</code> line.</li><li><p>network configuration is similar to</p><pre class="language-ocaml"><code>ifconfig_DEFAULT=&quot;DHCP inet6 accept_rtadv&quot;</code></pre><p>or</p><pre class="language-ocaml"><code>ifconfig_em0=&quot;DHCP&quot;
+ifconfig_em0_ipv6=&quot;inet6 accept_rtadv&quot;</code></pre></li></ul><p>At this point, it is possible to add an <code>opam</code> user with <code>adduser</code>:</p><pre class="language-ocaml"><code>echo 'opam:1000:::::::/bin/sh:' | adduser -q -w random -f -</code></pre><p>\(that's seven colons between the numerical uid and the shell.\)</p><p>Note that the assigned random password of the <code>opam</code> user won't be displayed, but this does not really matter since all uses of this account will be performed through <code>/usr/bin/su -l opam</code>.</p><p>A few packages need to be installed at this point:</p><pre class="language-ocaml"><code>pkg install -y bash curl git gmake patch rsync sudo zstd</code></pre><p>Note that <code>zstd</code> is an optional dependency when building an OCaml 4 switch, but a required dependency when building an OCaml 5 switch.</p><p>Now that <code>sudo</code> has been installed, it should be configured to let the <code>opam</code> user be able to use <code>sudo</code> for any command without entering any password, as OBuilder depends on this:</p><pre class="language-ocaml"><code>echo &quot;opam ALL=(ALL:ALL) NOPASSWD: ALL&quot; &gt; /usr/local/etc/sudoers.d/opam
+chmod 440 /usr/local/etc/sudoers.d/opam</code></pre><p>It is then time to take a snapshot of the system. Assuming the name of the zfs pool for the root directory is <code>zroot</code>, run:</p><pre class="language-ocaml"><code>zfs snapshot zroot@stage0</code></pre><p>The first snapshot can be cloned in order to build a filesystem archive of <code>stage0</code>, suitable to be used by OBuilder.</p><pre class="language-ocaml"><code>zfs clone zroot@stage0 zroot/clone</code></pre><p>However, some of the files have been made immutable during the installation \(for security reasons\), and would cause errors while attempting to clean up, so it is preferrable to remove these flags:</p><pre class="language-ocaml"><code>chflags -R 0 /zroot/clone</code></pre><p>Then, the image can be made significantly smaller by removing several file sets:</p><ul><li>rescue binaries and kernel modules \(won't be used by OBuilder\)</li><li>profiling libraries</li><li>manual pages</li></ul><pre class="language-ocaml"><code>cd /zroot/clone
+rm -fR rescue boot usr/share/games
+rm usr/bin/fortune usr/lib/lib*_p.a
+find usr/share/man -type f -delete
+cd /</code></pre><p>The last step consists of setting the usual permissions on the <code>/tmp</code> directory, since there will be no specific filesystem mounted there.</p><pre class="language-ocaml"><code>chmod 1777 /zroot/clone/tmp</code></pre><p>It is now possible to create the <code>stage0</code> archive and destroy the snapshot clone:</p><pre class="language-ocaml"><code>mkdir /archive
+tar -C /zroot/clone -czf /archive/stage0.tar.gz .
+zfs destroy zroot/clone</code></pre><p>The warnings regarding the inability to archive sockets in <code>/var</code> can be safely ignored.</p><h3 id="stage-1"><a href="#stage-1" class="anchor"></a>Stage 1</h3><p>Once an archive of <code>stage0</code> is available, it is possible to install <code>opam</code> and build an initial switch with the following OBuilder command file:</p><pre class="language-ocaml"><code>((build dev
+  ((from file:///path/to/stage0.tar.gz)
+    (workdir /home/opam)
+    (user (name opam))
+    (run
+      (network host)
+      (shell &quot;fetch -q https://github.com/ocaml/opam/releases/download/2.1.4/opam-full-2.1.4.tar.gz&quot;))
+    (run
+      (shell &quot;tar xzf opam-full-2.1.4.tar.gz&quot;))
+    (run
+      (network host) ; needed to fetch compiler and libraries
+      (shell
+        &quot;cd opam-full-2.1.4 &amp;&amp; \
+         gmake compiler &amp;&amp;
+         ./configure --prefix=/home/opam &amp;&amp;
+         gmake lib-ext&quot;))
+    (run
+      (shell &quot;cd opam-full-2.1.4 &amp;&amp; gmake &amp;&amp; gmake install&quot;))
+    (run
+      (network host)
+      (shell &quot;opam init -y -a --bare&quot;))
+    (run
+      (network host)
+      (shell &quot;opam switch create 4.14.1&quot;))
+))
+ ; nothing to do after build, but a valid from stanza is required
+ (from file:///path/to/stage0.tar.gz)
+)</code></pre><p>The first time, of course, OBuilder is not available yet, so these commands need to be run manually:</p><pre class="language-ocaml"><code>/usr/bin/su -l opam</code></pre><p>Then:</p><pre class="language-ocaml"><code>fetch -q https://github.com/ocaml/opam/releases/download/2.1.4/opam-full-2.1.4.tar.gz &amp;&amp;
+tar xzf opam-full-2.1.4.tar.gz &amp;&amp;
+cd opam-full-2.1.4 &amp;&amp;
+gmake compiler &amp;&amp;
+./configure --prefix=/home/opam &amp;&amp;
+gmake lib-ext &amp;&amp;
+gmake &amp;&amp;
+gmake install &amp;&amp;
+opam init -y -a --bare
+. ~/.opam/opam-init/init.sh
+opam switch create 4.14.1
+exit</code></pre><p>Once this is done, stage1 is complete; a zfs snapshot can be created, then a new archive can be built; one may consider removing sources in order to make the archive smaller.</p><pre class="language-ocaml"><code>rm /usr/home/opam/opam-full-2.1.4.tar.gz
+rm -fR /usr/home/opam/opam-full-2.1.4
+rm -fR /usr/home/opam/.opam/*/.opam-switch/sources
+rm -fR /usr/home/opam/.opam/download-cache
+zfs snapshot zroot@stage1
+mkdir /archive/stage1
+cd /archive/stage1
+tar xzpf /archive/stage0.tar.gz
+tar -C /usr/home -cf - opam | tar -C ./usr/home -xpf -
+tar czf /archive/stage1.tar.gz .
+cd /archive
+rm -fR stage1</code></pre><h3 id="building-obuilder-under-freebsd"><a href="#building-obuilder-under-freebsd" class="anchor"></a>Building OBuilder under FreeBSD</h3><p>This step is quite straightforward \(and will be even simpler once the FreeBSD support bits are merged into the main repository\):</p><pre class="language-ocaml"><code>pkg install -y pkgconf sqlite3
+/usr/bin/su -l opam
+git clone https://github.com/dustanddreams/obuilder.git
+cd obuilder
+git checkout freebsdjail-sandbox
+sed -i.orig 's/(Docker_extract)/(Archive_extract)/' main.ml
+opam install -y dune
+opam install -y --deps-only -t obuilder
+opam install -y crunch extunix fpath # missed by the above step
+dune build &amp;&amp; dune install</code></pre><p>or, using an existing OBuilder setup, adapted from <code>obuilder.spec</code> found in the OBuilder source repository:</p><pre class="language-ocaml"><code>((build dev
+  ((from file:///path/to/stage1.tar.gz)
+   (workdir /src)
+   (user (uid 1000) (gid 1000))
+   (run (shell &quot;sudo chown opam /src&quot;))
+   ; Copy just the opam file first (helps caching)
+   (copy (src obuilder-spec.opam obuilder.opam) (dst ./))
+   (run (shell &quot;opam pin add -yn .&quot;))
+   ; Install OCaml dependencies
+   (run
+     (network host)
+     (shell &quot;sudo pkg install -y pkgconf sqlite3&quot;))
+   (run
+     (network host)
+     (cache (opam-archives (target /home/opam/.opam/download-cache)))
+     (shell &quot;opam install -y --deps-only -t obuilder&quot;))
+     (copy
+      (src .)
+      (dst /src/)
+      (exclude .git _build _opam))
+     ; Build and test
+     (run (shell &quot;opam exec -- dune build @install @runtest&quot;))))
+ ; Now generate a small runtime image with just the resulting binary:
+ (from file:///path/to/stage0.tar.gz)
+ (run
+   (network host)
+   (shell &quot;pkg install -y libedit pkgconf sqlite3&quot;))
+   (copy (from (build dev))
+      (src /src/_build/default/main.exe)
+      (dst /usr/local/bin/obuilder))
+   (run (shell &quot;obuilder --help&quot;)))</code></pre><h2 id="integrating-with-ocluster"><a href="#integrating-with-ocluster" class="anchor"></a>Integrating with OCluster</h2><p>OCluster is a larger framework which processes build requests on a cluster of systems, each running OBuilder. In order to make the FreeBSD systems compatible with OCluster needs, a few more adjustments are necessary:</p><ul><li>a <code>docker</code> client needs to be installed on the OBuilder machine, even if it will not be used, as part of OCluster checks. Fortunately the <code>docker</code> client is available as a FreeBSD package, <code>pkg install -y docker</code> will do.</li><li>an <code>obuilder</code> zfs pool needs to be created \(on a separate disk or a separate partition\).</li></ul><p>In addition to this, the <code>stage0</code> and <code>stage1</code> snapshots can be used to set up an initial image cache on each OBuilder worker machine, using <code>zfs send</code> on the source machine and <code>zfs recv</code> on the build machine, to make the <code>stage0</code> and <code>stage1</code> snapshots available as <code>/obuilder/base-image/busybox</code> and <code>/obuilder/base-image/ocaml-4.14.1</code> respectively.</p><p>Since the cache will take precedence over the fetcher action, this will allow OBuilder spec files to keep referring to the names from the docker registry.</p><h2 id="conclusion"><a href="#conclusion" class="anchor"></a>Conclusion</h2><p>The modular design of OBuilder has allowed for it to be easily adapted to run under FreeBSD. A few FreeBSD systems are currently being set up as OBuilder workers within the OCluster orchestrator used by Tarides for automated OCaml package testing, and will hopefully benefit the OCaml FreeBSD community.</p></div></body></html>
