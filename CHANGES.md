@@ -1,7 +1,17 @@
 ### unreleased
 
 - Add a Docker backend for Windows and Linux jobs.
-  (@MisterDA #127 #75, reviewed by @talex5, @tmcgilchrist)
+  (@MisterDA #127 #75, reviewed by @talex5 and @tmcgilchrist)
+- Add FreeBSD sandbox backend using jail(8)
+  (@dustanddreams #156 #174, reviewed by @tmcgilchrist, @MisterDA, and @mtelvers)
+- Add Macos ZFS sandbox (@mtelvers #164, reviewed by @tmcgilchrist)
+- Support XFS store (@mtelvers #170, reviewed by @tmcgilchrist)
+
+- Search for bash rather than assume it lies in /bin (@dustanddreams #159, reviewed by @tmcgilchrist)
+- Prune builds one at a time up to the limit (@mtelvers #157)
+- Specify upper bound on number of items in the store (@mtelvers #158, reviewed by @MisterDA)
+- Fix case where BTRFS is not fully allocated (@mtelvers #162)
+- Avoid pruning parent cache objects (@mtelvers #176, reviewed by @tmcgilchrist)
 
 ### v0.5.1 2023-02-17
 
