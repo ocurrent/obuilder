@@ -16,6 +16,26 @@ sudo chmod a+x /usr/local/bin/uname
 opam exec -- make
 
 case "$1" in
+    overlayfs)
+        sudo chmod a+x /usr/local/bin/runc
+
+        sudo mkdir /overlayfs
+        sudo mount -t tmpfs -o size=10G tmpfs /overlayfs
+        sudo chown "$(whoami)" /overlayfs
+
+        opam exec -- dune exec -- obuilder healthcheck --store=overlayfs:/overlayfs
+        opam exec -- dune exec -- ./stress/stress.exe --store=overlayfs:/overlayfs
+
+        # Populate the caches from our own GitHub Actions cache
+	mkdir -p /overlayfs/cache/c-opam-archives
+        cp -r ~/.opam/download-cache/* /overlayfs/cache/c-opam-archives/
+        sudo chown -R 1000:1000 /overlayfs/cache/c-opam-archives
+
+        opam exec -- dune exec -- obuilder build -f example.spec . --store=overlayfs:/overlayfs --color=always
+
+        sudo umount /overlayfs
+        ;;
+
     xfs)
         sudo chmod a+x /usr/local/bin/runc
 
@@ -165,6 +185,6 @@ case "$1" in
        ;;
 
     *)
-        printf "Usage: .run-gha-tests.sh [btrfs|rsync_hardlink|rsync_copy|zfs]" >&2
+        printf "Usage: .run-gha-tests.sh [btrfs|rsync_hardlink|rsync_copy|zfs|overlayfs]" >&2
         exit 1
 esac

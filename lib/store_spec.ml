@@ -7,6 +7,7 @@ type t = [
   | `Zfs of string    (* Path with pool at end *)
   | `Rsync of (string * Rsync_store.mode)  (* Path for the root of the store *)
   | `Xfs of string    (* Path *)
+  | `Overlayfs of string (* Path *)
   | `Docker of string (* Path *)
 ]
 
@@ -18,14 +19,16 @@ let of_string s =
   | Some ("btrfs", path) when is_absolute path -> Ok (`Btrfs path)
   | Some ("rsync", path) when is_absolute path -> Ok (`Rsync path)
   | Some ("xfs", path) when is_absolute path -> Ok (`Xfs path)
+  | Some ("overlayfs", path) when is_absolute path -> Ok (`Overlayfs path)
   | Some ("docker", path) -> Ok (`Docker path)
-  | _ -> Error (`Msg "Store must start with zfs:, btrfs:/, rsync:/ or xfs:/")
+  | _ -> Error (`Msg "Store must start with zfs:, btrfs:/, rsync:/, xfs:/ or overlayfs:")
 
 let pp f = function
   | `Zfs path -> Fmt.pf f "zfs:%s" path
   | `Btrfs path -> Fmt.pf f "btrfs:%s" path
   | `Rsync path -> Fmt.pf f "rsync:%s" path
   | `Xfs path -> Fmt.pf f "xfs:%s" path
+  | `Overlayfs path -> Fmt.pf f "overlayfs:%s" path
   | `Docker path -> Fmt.pf f "docker:%s" path
 
 type store = Store : (module S.STORE with type t = 'a) * 'a -> store
@@ -43,6 +46,9 @@ let to_store = function
   | `Xfs path ->
     `Native, Xfs_store.create ~path >|= fun store ->
     Store ((module Xfs_store), store)
+  | `Overlayfs path ->
+    `Native, Overlayfs_store.create ~path >|= fun store ->
+    Store ((module Overlayfs_store), store)
   | `Docker path ->
     `Docker, Docker_store.create path >|= fun store ->
     Store ((module Docker_store), store)
@@ -54,7 +60,7 @@ let store_t = Arg.conv (of_string, pp)
 let store ?docs names =
   Arg.opt Arg.(some store_t) None @@
   Arg.info
-    ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path), $(b,xfs:/path), $(b,zfs:pool) or $(b,docker:path) for the OBuilder cache."
+    ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path), $(b,xfs:/path), $(b,overlayfs:/path), $(b,zfs:pool) or $(b,docker:path) for the OBuilder cache."
     ~docv:"STORE"
     ?docs
     names
@@ -87,6 +93,7 @@ let of_t store rsync_mode =
   | Some (`Btrfs path), None -> (`Btrfs path)
   | Some (`Zfs path), None -> (`Zfs path)
   | Some (`Xfs path), None -> (`Xfs path)
+  | Some (`Overlayfs path), None -> (`Overlayfs path)
   | Some (`Docker path), None -> (`Docker path)
   | _, _ -> failwith "Store type required must be one of btrfs:/path, rsync:/path, xfs:/path, zfs:pool or docker:path for the OBuilder cache."
 
