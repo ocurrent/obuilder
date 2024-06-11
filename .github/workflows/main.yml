@@ -8,7 +8,7 @@ on:
     - cron: 0 1 * * MON
 
 env:
-  RUNC_VERSION: v1.1.4
+  RUNC_VERSION: v1.1.12
 
 jobs:
   build:
@@ -19,6 +19,7 @@ jobs:
           - ubuntu-latest
         ocaml-compiler:
           - 4.14.x
+          - 5.2.x
 
     runs-on: ${{ matrix.os }}
 
@@ -34,7 +35,7 @@ jobs:
           version: 2
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Use OCaml ${{ matrix.ocaml-compiler }}
         uses: ocaml/setup-ocaml@v2
@@ -45,7 +46,7 @@ jobs:
 
       - name: Cache runc
         id: cache-runc
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /usr/local/bin/runc
           key: ${{ env.RUNC_VERSION }}
@@ -67,6 +68,7 @@ jobs:
           - ubuntu-latest
         ocaml-compiler:
           - 4.14.x
+          - 5.2.x
         rsync_mode:
           # - rsync_hardlink_unsafe
           - rsync_hardlink
@@ -80,7 +82,7 @@ jobs:
         run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Use OCaml ${{ matrix.ocaml-compiler }}
         uses: ocaml/setup-ocaml@v2
@@ -91,7 +93,7 @@ jobs:
 
       - name: Cache runc
         id: cache-runc
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /usr/local/bin/runc
           key: ${{ env.RUNC_VERSION }}
@@ -111,12 +113,13 @@ jobs:
   #         - windows-latest
   #       ocaml-compiler:
   #         - 4.14.x
+  #         - 5.2.x
 
   #   runs-on: ${{ matrix.os }}
 
   #   steps:
   #     - name: Checkout code
-  #       uses: actions/checkout@v3
+  #       uses: actions/checkout@v4
 
   #     - name: Use OCaml ${{ matrix.ocaml-compiler }}
   #       uses: ocaml/setup-ocaml@v2
@@ -138,12 +141,13 @@ jobs:
           - ubuntu-latest
         ocaml-compiler:
           - 4.14.x
+          - 5.2.x
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Use OCaml ${{ matrix.ocaml-compiler }}
         uses: ocaml/setup-ocaml@v2
@@ -153,8 +157,8 @@ jobs:
       - run: opam install . --deps-only --with-test
 
       # - name: Set up QEMU
-      #   uses: docker/setup-qemu-action@v2
+      #   uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - run: $GITHUB_WORKSPACE/.github/workflows/main.sh docker
