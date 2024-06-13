@@ -43,9 +43,8 @@ module Docker_config = struct
     let network = network |> List.concat_map (fun network -> ["--network"; network]) in
     let user =
       match user with
-      | `Unix { Obuilder_spec.uid; gid } when not Sys.win32 -> ["--user"; strf "%d:%d" uid gid]
-      | `Windows { name } when Sys.win32 -> ["--user"; name]
-      | _ -> assert false
+      | `ById { Obuilder_spec.uid; gid } -> ["--user"; strf "%d:%d" uid gid]
+      | `ByName { name } -> ["--user"; name]
     in
     let mount_secrets =
       let id = ref (-1) in

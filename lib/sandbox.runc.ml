@@ -108,8 +108,9 @@ module Json_config = struct
     assert (entrypoint = None);
     let user =
       let { Obuilder_spec.uid; gid } = match user with
-        | `Unix user -> user
-        | `Windows _ -> assert false (* runc not supported on Windows *) in
+        | `ById user -> user
+        | `ByName _ -> failwith "runc sandbox requires numerical user ids"
+      in
       `Assoc [
         "uid", `Int uid;
         "gid", `Int gid;

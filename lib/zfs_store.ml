@@ -93,12 +93,15 @@ end = struct
     | false -> fn ()
 end
 
-let user = `Unix { Obuilder_spec.uid = Unix.getuid (); gid = Unix.getgid () }
+let user = `ById { Obuilder_spec.uid = Unix.getuid (); gid = Unix.getgid () }
 
 module Zfs = struct
   let chown ~user t ds =
-    let { Obuilder_spec.uid; gid } = match user with `Unix user -> user | `Windows _ -> assert false in
-    Os.sudo ["chown"; strf "%d:%d" uid gid; Dataset.path t ds]
+    let chown_argument = match user with
+      | `ById { Obuilder_spec.uid; gid } -> strf "%d:%d" uid gid
+      | `ByName { Obuilder_spec.name } -> name
+    in
+    Os.sudo ["chown"; chown_argument; Dataset.path t ds]
 
   let create t ds =
     Os.sudo ["zfs"; "create"; "--"; Dataset.full_name t ds]

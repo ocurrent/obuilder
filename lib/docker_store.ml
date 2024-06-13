@@ -178,10 +178,13 @@ let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   let gen = cache.gen in
   let* () = Cache.snapshot ~src:snapshot tmp in
   let+ () = match user with
-    | `Unix { Obuilder_spec.uid; gid } ->
+    | `ById { Obuilder_spec.uid; gid } ->
       let* tmp = Docker.Cmd.mount_point tmp in
       Os.sudo ["chown"; strf "%d:%d" uid gid; tmp]
-    | `Windows _ -> Lwt.return_unit (* FIXME: does Windows need special treatment? *)
+    | `ByName _ when Sys.win32 -> Lwt.return_unit (* FIXME: does Windows need special treatment? *)
+    | `ByName { Obuilder_spec.name } ->
+      let* tmp = Docker.Cmd.mount_point tmp in
+      Os.sudo ["chown"; name; tmp]
   in
   let release () =
     Lwt_mutex.with_lock cache.lock @@ fun () ->
