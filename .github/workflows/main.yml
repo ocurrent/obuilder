@@ -24,14 +24,9 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      # The ppa is needed because of https://www.mail-archive.com/ubuntu-bugs@lists.ubuntu.com/msg5972997.html
-      - run: |
-          sudo add-apt-repository ppa:jonathonf/zfs && \
-          sudo apt-get --allow-releaseinfo-change update
-
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: btrfs-progs zfs-dkms zfsutils-linux xfsprogs
+          packages: btrfs-progs zfsutils-linux xfsprogs
           version: 2
 
       - name: Checkout code
@@ -56,6 +51,7 @@ jobs:
         run: |
           sudo wget https://github.com/opencontainers/runc/releases/download/$RUNC_VERSION/runc.amd64 -O /usr/local/bin/runc
 
+      - run: $GITHUB_WORKSPACE/.github/workflows/main.sh overlayfs
       - run: $GITHUB_WORKSPACE/.github/workflows/main.sh btrfs
       - run: $GITHUB_WORKSPACE/.github/workflows/main.sh zfs
       - run: $GITHUB_WORKSPACE/.github/workflows/main.sh xfs
