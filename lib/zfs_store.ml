@@ -247,7 +247,7 @@ let build t ?base ~id fn =
     (fun ex ->
         Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
         Zfs.destroy t ds `And_snapshots >>= fun () ->
-        Lwt.fail ex
+        Lwt.reraise ex
     )
 
 let result t id =

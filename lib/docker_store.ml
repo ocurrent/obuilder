@@ -110,9 +110,9 @@ let build t ?base ~id (fn:(string -> (unit, 'e) Lwt_result.t)) : (unit, 'e) Lwt_
   | None ->
     Lwt.catch
       (fun () -> fn (Path.empty t))
-      (fun exn ->
-         Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn exn);
-         Lwt.fail exn)
+      (fun ex ->
+         Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
+         Lwt.reraise ex)
   | Some base ->
     let base = Docker.docker_image base in
     let tmp_image = (Docker.docker_image ~tmp:true id) in
@@ -125,10 +125,10 @@ let build t ?base ~id (fn:(string -> (unit, 'e) Lwt_result.t)) : (unit, 'e) Lwt_
             the container still has a reference to the cache. *)
          let+ () = Docker.Cmd.image (`Remove tmp_image) in
          r)
-      (fun exn ->
-         Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn exn);
+      (fun ex ->
+         Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
          let* () = Docker.Cmd.image (`Remove tmp_image) in
-         Lwt.fail exn)
+         Lwt.reraise ex)
 
 let delete t id =
   let image = Docker.docker_image id in
