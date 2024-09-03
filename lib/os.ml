@@ -105,8 +105,8 @@ let exec ?timeout ?cwd ?stdin ?stdout ?stderr ?(is_success=((=) 0)) ?(cmd="") ar
   let pp f = pp_cmd f (cmd, argv) in
   !lwt_process_exec ?timeout ?cwd ?stdin ?stdout ?stderr ~pp (cmd, Array.of_list argv) >>= function
   | Ok n when is_success n -> Lwt.return_unit
-  | Ok n -> Lwt.fail_with (Fmt.str "%t failed with exit status %d" pp n)
-  | Error (`Msg m) -> Lwt.fail (Failure m)
+  | Ok n -> Fmt.failwith "%t failed with exit status %d" pp n
+  | Error (`Msg m) -> failwith m
 
 let running_as_root = not (Sys.unix) || Unix.getuid () = 0
 
@@ -205,7 +205,7 @@ let pread_all ?stdin ~pp ?(cmd="") argv =
   >>= fun (stdin, stdout) ->
   child >>= function
   | Ok i -> Lwt.return (i, stdin, stdout)
-  | Error (`Msg m) -> Lwt.fail (Failure m)
+  | Error (`Msg m) -> failwith m
 
 let check_dir x =
   match Unix.lstat x with
@@ -300,4 +300,3 @@ let read_lines name process =
     | Some s -> loop ((process s) :: acc)
     | None -> close_in ic; acc in
   loop []
-
