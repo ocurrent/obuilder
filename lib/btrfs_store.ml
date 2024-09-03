@@ -90,11 +90,8 @@ let check_kernel_version () =
       | Some maj, Some min when (maj, min) >= (5, 8) ->
           Lwt.return_unit
       | Some maj, Some min ->
-          Lwt.fail_with
-            (Fmt.str
-               "You need at least linux 5.8 to use the btrfs backend, \
-                but current kernel version is '%d.%d'"
-               maj min)
+          Fmt.failwith "You need at least linux 5.8 to use the btrfs backend, \
+                        but current kernel version is '%d.%d'" maj min
       | _, _ ->
           Fmt.failwith "Could not parse kernel version %S" kver
       end
