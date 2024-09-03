@@ -1,5 +1,5 @@
 ; This script builds OBuilder itself using a snapshot of the
-; ocaml/opam:windows-mingw-ltsc2022-ocaml-4.14 base image.
+; ocaml/opam:windows-server-mingw-ltsc2022-ocaml-4.14 base image.
 ;
 ; Run it from the top-level of the OBuilder source tree, e.g.
 ;
@@ -12,10 +12,10 @@
 ; ROOTID is computed as follows: $(realpath "$(root)" | sha256sum | cut -b -7)
 
 ((build dev
-	((from ocaml/opam@sha256:4bfe3c0814b4220417d6ccbbed7eb5486a35d900024745c1f299973e9584e0e5)
+	((from ocaml/opam@sha256:cdd6e6604489d7700af2768f939439593c5c2f5e6585db8827297ec02d1113ef)
 	 (workdir /src)
 	 (env OPAM_REPO_MINGW_HASH "921b0eceb594f96c0c7f40bb2676783be4362aeb") ; Fix the version of opam-repository-mingw we want
-	 (env OPAM_HASH "f44d347b2119b4bdfddfb2a8ec55ae25c396c0d7") ; Fix the version of opam-repository we want
+	 (env OPAM_HASH "8187cd8d3681d53f5042b5da316fa3f5e005a247") ; Fix the version of opam-repository we want
 	 (shell /cygwin64/bin/bash.exe --login -c)
 	 (run
 	  (network "nat")
@@ -73,7 +73,7 @@
 	  (exclude .git _build _opam duniverse))
 	 (run (shell "ocaml-env exec --64 -- dune build @install"))))    ; Build
  ; Now generate a small runtime image with just the resulting binary:
- (from mcr.microsoft.com/windows/servercore:ltsc2022)
+ (from mcr.microsoft.com/windows/server:ltsc2022)
  (run (shell "mkdir C:\obuilder"))
  (copy (from (build dev))
        (src /cygwin64/usr/x86_64-w64-mingw32/sys-root/mingw/bin/libsqlite3-0.dll)
