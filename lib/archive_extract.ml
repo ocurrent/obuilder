@@ -24,5 +24,4 @@ let fetch ~log ~rootfs base =
     (function
      | Sys_error s ->
        Fmt.failwith "Archive fetcher encountered a system error: %s" s
-     | e -> Lwt.fail e)
-
+     | ex -> Lwt.reraise ex)

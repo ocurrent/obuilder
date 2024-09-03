@@ -78,7 +78,7 @@ let build t ?base ~id fn =
     (fun ex ->
       Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
       Xfs.delete result_tmp >>= fun () ->
-      Lwt.fail ex
+      Lwt.reraise ex
     )
 
 let delete t id =
@@ -136,7 +136,7 @@ let cache ~user t name =
         cache.gen <- cache.gen + 1;
         Xfs.delete snapshot >>= fun () ->
         Xfs.rename ~src:tmp ~dst:snapshot
-      ) else 
+      ) else
         Xfs.delete tmp
     end
   in

@@ -110,7 +110,7 @@ let build t ?base ~id fn =
     (fun ex ->
       Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
       Rsync.delete result_tmp >>= fun () ->
-      Lwt.fail ex
+      Lwt.reraise ex
     )
 
 let delete t id =

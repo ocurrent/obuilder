@@ -202,7 +202,8 @@ let build t ?base ~id fn =
       >>= fun () -> Lwt.return r)
     (fun ex ->
       Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
-      Overlayfs.delete [ merged; work; in_progress ] >>= fun () -> Lwt.fail ex)
+      Overlayfs.delete [ merged; work; in_progress ] >>= fun () ->
+      Lwt.reraise ex)
 
 let delete t id =
   let path = Path.result t id in
@@ -218,7 +219,7 @@ let delete t id =
       |> List.map decendants
       |> List.flatten
       |> List.append [ parent ]
-  in decendants path 
+  in decendants path
       |> Overlayfs.delete
 
 let result t id =

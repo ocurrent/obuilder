@@ -22,7 +22,7 @@ let catch_cancel fn =
   Lwt.catch fn
     (function
       | Lwt.Canceled -> Lwt_result.fail `Cancelled
-      | ex -> Lwt.fail ex
+      | ex -> Lwt.reraise ex
     )
 
 let tail ?switch t dst =
