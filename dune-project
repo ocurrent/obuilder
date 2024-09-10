@@ -1,4 +1,4 @@
-(lang dune 3.7)
+(lang dune 3.16)
 (name obuilder)
 
 (formatting disabled)
@@ -29,19 +29,19 @@
   astring
   (fmt (>= 0.8.9))
   logs
-  (cmdliner (>= 1.2.0))
-  (tar-unix (and (>= 2.4.0) (< 3.0.0)))
+  (cmdliner (>= 1.3.0))
+  (tar-unix (and (>= 2.6.0) (< 3.0.0)))
   (yojson (>= 1.6.0))
   sexplib
   ppx_deriving
   ppx_sexp_conv
   (sha (>= 1.15.4))
-  sqlite3
+  (sqlite3 (>= 5.2.0))
   (crunch (and (>= 3.3.1) :build))
   (obuilder-spec (= :version))
   fpath
-  (extunix (>= 0.4.0))
-  (ocaml (>= 4.14.1))
+  (extunix (>= 0.4.2))
+  (ocaml (>= 4.14.2))
   (alcotest-lwt (and (>= 1.7.0) :with-test))))
 
 (package
@@ -55,4 +55,4 @@
   astring
   ppx_deriving
   ppx_sexp_conv
-  (ocaml (>= 4.14.1))))
+  (ocaml (>= 4.14.2))))
