@@ -24,13 +24,13 @@ homepage: "https://github.com/ocurrent/obuilder"
 doc: "https://ocurrent.github.io/obuilder/"
 bug-reports: "https://github.com/ocurrent/obuilder/issues"
 depends: [
-  "dune" {>= "3.7"}
+  "dune" {>= "3.16"}
   "fmt" {>= "0.8.9"}
   "sexplib"
   "astring"
   "ppx_deriving"
   "ppx_sexp_conv"
-  "ocaml" {>= "4.14.1"}
+  "ocaml" {>= "4.14.2"}
   "odoc" {with-doc}
 ]
 build: [
