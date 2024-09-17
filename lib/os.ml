@@ -232,54 +232,6 @@ let rm ~directory =
     Log.warn (fun f -> f "Failed to remove %s because %s" directory m);
     Lwt.return_unit
 
-(** delete_recursively code taken from Lwt. *)
-
-let win32_unlink fn =
-  Lwt.catch
-    (fun () -> Lwt_unix.unlink fn)
-    (function
-      | Unix.Unix_error (Unix.EACCES, _, _) as ex ->
-        Lwt_unix.lstat fn >>= fun {st_perm; _} ->
-        (* Try removing the read-only attribute *)
-        Lwt_unix.chmod fn 0o666 >>= fun () ->
-        Lwt.catch
-          (fun () -> Lwt_unix.unlink fn)
-          (function _ ->
-             (* Restore original permissions *)
-             Lwt_unix.chmod fn st_perm >>= fun () ->
-             Lwt.reraise ex)
-      | ex -> Lwt.reraise ex)
-
-let unlink =
-  if Sys.win32 then
-    win32_unlink
-  else
-    Lwt_unix.unlink
-
-(* This is likely VERY slow for directories with many files. That is probably
-   best addressed by switching to blocking calls run inside a worker thread,
-   i.e. with Lwt_preemptive. *)
-let rec delete_recursively directory =
-  Lwt_unix.files_of_directory directory
-  |> Lwt_stream.iter_s begin fun entry ->
-    if entry = Filename.current_dir_name ||
-       entry = Filename.parent_dir_name then
-      Lwt.return ()
-    else
-      let path = Filename.concat directory entry in
-      Lwt_unix.lstat path >>= fun {Lwt_unix.st_kind; _} ->
-      match st_kind with
-      | S_DIR -> delete_recursively path
-      | S_LNK when (Sys.win32 || Sys.cygwin) ->
-        Lwt_unix.stat path >>= fun {Lwt_unix.st_kind; _} ->
-        begin match st_kind with
-          | S_DIR -> Lwt_unix.rmdir path
-          | _ -> unlink path
-        end
-      | _ -> unlink path
-  end >>= fun () ->
-  Lwt_unix.rmdir directory
-
 let normalise_path root_dir =
   if Sys.win32 then
     let vol, _ = Fpath.(v root_dir |> split_volume) in
