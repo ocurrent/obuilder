@@ -15,8 +15,8 @@ type config = unit [@@deriving sexp]
    Note that the gid is currently ignored. *)
 let jail_username rootdir config =
   match config.Config.user with
-  | `Windows w -> w.name
-  | `Unix { uid; _ } ->
+  | `ByName { name } -> name
+  | `ById { Obuilder_spec.uid; _ } ->
     let pwdfile = rootdir / "etc" / "passwd" in
     let uidstr = string_of_int uid in
     let rec parse_line ch =
