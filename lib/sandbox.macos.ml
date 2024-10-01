@@ -109,8 +109,8 @@ let create ~state_dir:_ c =
     lock = Lwt_mutex.create ();
   }
 
-let finished () =
-  Os.sudo [ "zfs"; "unmount"; "obuilder/result" ] >>= fun () ->
+let finished (t : t) =
+  Macos.sudo_fallback [ "zfs"; "unmount"; "obuilder/result" ] [ "zfs"; "unmount"; "-f"; "obuilder/result" ] ~uid:t.uid >>= fun () ->
   Os.sudo [ "zfs"; "mount"; "obuilder/result" ] >>= fun () ->
   Lwt.return ()
 

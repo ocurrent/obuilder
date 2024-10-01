@@ -459,7 +459,7 @@ let create (c : config) =
   let+ () = if Result.is_error volume_exists then create_tar_volume t else Lwt.return_unit in
   t
 
-let finished () =
+let finished _ =
   Lwt.return ()
 
 open Cmdliner

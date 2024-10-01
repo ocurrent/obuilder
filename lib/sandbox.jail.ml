@@ -165,7 +165,7 @@ let create ~state_dir:_ _c =
     jail_name_prefix = "obuilder_" ^ (Int.to_string (Unix.getpid ()));
   }
 
-let finished () =
+let finished _ =
   Lwt.return ()
 
 open Cmdliner

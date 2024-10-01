@@ -204,7 +204,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       (resolved_secret :: result) ) (Ok []) secrets
 
   let rec run_steps t ~(context:Context.t) ~base = function
-    | [] -> Sandbox.finished () >>= fun () -> Lwt_result.return base
+    | [] -> Sandbox.finished t.sandbox >>= fun () -> Lwt_result.return base
     | op :: ops ->
       context.log `Heading Fmt.(str "%a" (pp_op ~context) op);
       let k = run_steps t ops in

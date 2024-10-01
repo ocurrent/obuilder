@@ -333,7 +333,7 @@ let create ~state_dir (c : config) =
   clean_runc state_dir >|= fun () ->
   { runc_state_dir = state_dir; fast_sync = c.fast_sync; arches }
 
-let finished () =
+let finished _ =
   Lwt.return ()
 
 open Cmdliner

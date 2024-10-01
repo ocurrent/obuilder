@@ -89,7 +89,7 @@ module type SANDBOX = sig
       @param log Used for child's stdout and stderr.
   *)
 
-  val finished : unit -> unit Lwt.t
+  val finished : t -> unit Lwt.t
 end
 
 module type BUILDER = sig
