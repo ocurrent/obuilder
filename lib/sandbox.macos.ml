@@ -110,7 +110,8 @@ let create ~state_dir:_ c =
   }
 
 let finished () =
-  Os.sudo [ "zfs"; "unmount"; "obuilder/result" ] >>= fun () ->
+  let pp s ppf = Fmt.pf ppf "[ zfs ] %s\n" s in
+  Os.sudo_result ~pp:(pp "unmount") [ "zfs"; "unmount"; "obuilder/result" ] >>= fun _ ->
   Os.sudo [ "zfs"; "mount"; "obuilder/result" ] >>= fun () ->
   Lwt.return ()
 
