@@ -14,8 +14,7 @@ let invoke_fetcher base destdir =
     fetcher >>= fun () ->
     extracter
 
-let fetch ~log ~rootfs base =
-  let _ = log in
+let fetch ~log:_ ~root:_ ~rootfs base =
   Lwt.catch
     (fun () ->
      invoke_fetcher base rootfs >>= fun () ->

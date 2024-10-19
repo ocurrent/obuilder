@@ -21,6 +21,9 @@ let run ~cancelled ?stdin ~log t (config:Obuilder.Config.t) dir =
         | ex -> Lwt_result.fail (`Msg (Printexc.to_string ex))
       )
 
+let tar_in ~cancelled ?stdin ~log t config result_tmp =
+  run ~cancelled ?stdin ~log t config result_tmp
+
 let create () = { expect = Queue.create () }
 
 let finished () = Lwt.return ()

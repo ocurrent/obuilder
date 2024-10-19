@@ -10,7 +10,7 @@ let ( / ) = Filename.concat
     rootfs = "/Volumes/obuilder/result/522fb2a0e81ba278bc1ae7314bd754201505e6493f4f2f40a166c416624a4005/rootfs"
     with base = "busybox", or base = "macos-homebrew-ocaml-4.14" -> clone home and brew subvolumes *)
 
-let fetch ~log:_ ~rootfs base =
+let fetch ~log:_ ~root:_ ~rootfs base =
   let path =
     let remove_on_match s lst = if List.hd lst = s then List.tl lst else lst in
     String.split_on_char '/' rootfs

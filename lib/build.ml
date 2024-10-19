@@ -161,7 +161,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
               ()
           in
           Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
-          let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
+          let proc = Sandbox.tar_in ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
           let send =
             (* If the sending thread finishes (or fails), close the writing socket
                immediately so that the tar process finishes too. *)
@@ -233,11 +233,12 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
   let get_base t ~log base =
     log `Heading (Fmt.str "(from %a)" Sexplib.Sexp.pp_hum (Atom base));
     let id = Sha256.to_hex (Sha256.string base) in
+    let root = Store.root t.store in
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
         Log.info (fun f -> f "Base image not present; importing %S…" base);
         let rootfs = tmp / "rootfs" in
         Os.sudo ["mkdir"; "-m"; "755"; "--"; rootfs] >>= fun () ->
-        Fetch.fetch ~log ~rootfs base >>= fun env ->
+        Fetch.fetch ~log ~root ~rootfs base >>= fun env ->
         Os.write_file ~path:(tmp / "env")
           (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
         Lwt_result.return ()
@@ -277,6 +278,9 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
 
   let df t =
     Store.df t.store
+
+  let root t =
+    Store.root t.store
 
   let cache_stats t =
     Store.cache_stats t.store
@@ -536,6 +540,9 @@ module Make_Docker (Raw_store : S.STORE) = struct
 
   let df t =
     Store.df t.store
+
+  let root t =
+    Store.root t.store
 
   let cache_stats t =
     Store.cache_stats t.store

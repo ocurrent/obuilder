@@ -66,13 +66,13 @@ let default_exec ?timeout ?cwd ?stdin ?stdout ?stderr ~pp argv =
 
 (* Similar to default_exec except using open_process_none in order to get the
    pid of the forked process. On macOS this allows for cleaner job cancellations *)
-let open_process ?cwd ?stdin ?stdout ?stderr ?pp:_ argv =
+let open_process ?cwd ?env ?stdin ?stdout ?stderr ?pp:_ argv =
   Logs.info (fun f -> f "Fork exec %a" pp_cmd ("", argv));
   let proc =
     let stdin  = Option.map redirection stdin in
     let stdout = Option.map redirection stdout in
     let stderr = Option.map redirection stderr in
-    let process = Lwt_process.open_process_none ?cwd ?stdin ?stdout ?stderr ("", (Array.of_list argv)) in
+    let process = Lwt_process.open_process_none ?cwd ?env ?stdin ?stdout ?stderr ("", (Array.of_list argv)) in
   (process#pid, process#status)
   in
     Option.iter close_redirection stdin;
@@ -213,6 +213,12 @@ let check_dir x =
   | _ -> Fmt.failwith "Exists, but is not a directory: %S" x
   | exception Unix.Unix_error(Unix.ENOENT, _, _) -> `Missing
 
+let check_file x =
+  match Unix.lstat x with
+  | Unix.{ st_kind = S_REG; _ } -> `Present
+  | _ -> Fmt.failwith "Exists, but is not a regular file: %S" x
+  | exception Unix.Unix_error(Unix.ENOENT, _, _) -> `Missing
+
 let ensure_dir ?(mode=0o777) path =
   match check_dir path with
   | `Present -> ()
@@ -230,6 +236,24 @@ let rm ~directory =
   | Ok () -> Lwt.return_unit
   | Error (`Msg m) ->
     Log.warn (fun f -> f "Failed to remove %s because %s" directory m);
+    Lwt.return_unit
+
+let mv ~src dst =
+  let pp _ ppf = Fmt.pf ppf "[ MV ]" in
+  sudo_result ~pp:(pp "MV") ["mv"; src; dst ] >>= fun t ->
+  match t with
+  | Ok () -> Lwt.return_unit
+  | Error (`Msg m) ->
+    Log.warn (fun f -> f "Failed to move %s to %s because %s" src dst m);
+    Lwt.return_unit
+
+let cp ~src dst =
+  let pp _ ppf = Fmt.pf ppf "[ CP ]" in
+  sudo_result ~pp:(pp "CP") ["cp"; "-pRduT"; "--reflink=auto"; src; dst ] >>= fun t ->
+  match t with
+  | Ok () -> Lwt.return_unit
+  | Error (`Msg m) ->
+    Log.warn (fun f -> f "Failed to copy from %s to %s because %s" src dst m);
     Lwt.return_unit
 
 let normalise_path root_dir =

@@ -8,3 +8,4 @@ The entry point of this library is the module:
 - {{!page-macOS}macOS implementation documentation}.
 - {{!page-freebsd}FreeBSD implementation documentation}.
 - {{!page-windows}Windows implementation documentation}.
+- {{!page-qemu}QEMU implementation documentation}.

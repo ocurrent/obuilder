@@ -101,6 +101,9 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
       Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
     else Lwt_result.fail `Cancelled)
 
+let tar_in ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
+  run ~cancelled ?stdin ~log t config result_tmp
+
 let create ~state_dir:_ c =
   Lwt.return {
     uid = c.uid;

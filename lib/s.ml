@@ -89,6 +89,21 @@ module type SANDBOX = sig
       @param log Used for child's stdout and stderr.
   *)
 
+  val tar_in :
+    cancelled:unit Lwt.t ->
+    ?stdin:Os.unix_fd ->
+    log:Build_log.t ->
+    t ->
+    Config.t ->
+    string ->
+    (unit, [`Cancelled | `Msg of string]) Lwt_result.t
+  (** [run ~cancelled t config dir] runs the operation [config] in a sandbox with root
+      filesystem [dir].
+      @param cancelled Resolving this kills the process (and returns [`Cancelled]).
+      @param stdin Passed to child as its standard input.
+      @param log Used for child's stdout and stderr.
+  *)
+
   val finished : unit -> unit Lwt.t
 end
 
@@ -122,6 +137,9 @@ module type BUILDER = sig
   val count : t -> int64
   (** [count t] return number of items in the store. *)
 
+  val root : t -> string
+  (** [root t] returns the root of the store. *)
+
   val df : t -> float Lwt.t
   (** [df t] returns the percentage of free space in the store. *)
 
@@ -135,10 +153,10 @@ module type BUILDER = sig
 end
 
 module type FETCHER = sig
-  val fetch : log:Build_log.t -> rootfs:string -> string -> Config.env Lwt.t
-  (** [fetch ~log ~rootfs base] initialises the [rootfs] directory by
-      fetching and extracting the [base] image.
-      Returns the image's environment.
+  val fetch : log:Build_log.t -> root:string -> rootfs:string -> string -> Config.env Lwt.t
+  (** [fetch ~log ~root ~rootfs base] initialises the [rootfs]
+      directory by fetching and extracting the [base] image.  [root]
+      is the root of the store.  Returns the image's environment.
       @param log Used for outputting the progress of the fetch
       @param rootfs The directory in which to extract the base image *)
 end
