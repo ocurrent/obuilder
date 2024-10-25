@@ -184,7 +184,7 @@
 
         <SynchronousCommand wcm:action="add">
           <Order>13</Order>
-	  <CommandLine>c:\cygwin64\bin\awk -i inplace "/(^#)|(^$)/{print;next}{$4=""noacl,""$4; print}" C:\cygwin64\etc\fstab</CommandLine>
+	  <CommandLine>c:\cygwin64\bin\gawk.exe -i inplace "/(^#)|(^$)/{print;next}{$4=""noacl,""$4;print}" C:\cygwin64\etc\fstab</CommandLine>
           <Description>Add opam-repository</Description>
         </SynchronousCommand>
 
