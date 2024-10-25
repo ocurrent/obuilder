@@ -66,7 +66,7 @@ let store_t = Arg.conv (of_string, pp)
 let store ?docs names =
   Arg.opt Arg.(some store_t) None @@
   Arg.info
-    ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path), $(b,xfs:/path), $(b,overlayfs:/path), $(b,zfs:pool), $(b,qmu:/path) or $(b,docker:path) for the OBuilder cache."
+    ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path), $(b,xfs:/path), $(b,overlayfs:/path), $(b,zfs:pool), $(b,qemu:/path) or $(b,docker:path) for the OBuilder cache."
     ~docv:"STORE"
     ?docs
     names

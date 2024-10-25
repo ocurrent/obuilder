@@ -53,7 +53,7 @@ obuilder: [INFO] Exec "mv" "/var/lib/docker/test/result-tmp/dce4336e183de81da753
 ```
 
 Moving on to the next stage in the build which is the `run` directive.
-First, `qemu-img` creates a snapshot of the current `resuilt` layer into
+First, `qemu-img` creates a snapshot of the current `result` layer into
 `result-tmp`.  Then `qemu-system-x86_64` is started with this snapshot as
 the base image.  `ssh` is used to poll the machine until it is available.
 Next, `scp` runs to copy the cache `opam-archives` over to the target
