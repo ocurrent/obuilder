@@ -139,9 +139,14 @@ let cache ~user:_ t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   Os.cp ~src:master tmp >>= fun () ->
   let release () =
     Lwt_mutex.with_lock cache.lock @@ fun () ->
-      cache.children <- cache.children - 1;
-      Os.cp ~src:tmp master >>= fun () ->
-      Os.rm ~directory:tmp
+    cache.children <- cache.children - 1;
+    let cache_stat = Unix.stat master in
+    let tmp_stat = Unix.stat tmp in
+    (if tmp_stat.st_size > cache_stat.st_size then
+      Os.cp ~src:tmp master
+    else
+      Lwt.return ()) >>= fun () ->
+    Os.rm ~directory:tmp
   in
   Lwt.return (tmp, release)
 

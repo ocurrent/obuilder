@@ -54,23 +54,26 @@ obuilder: [INFO] Exec "mv" "/var/lib/docker/test/result-tmp/dce4336e183de81da753
 
 Moving on to the next stage in the build which is the `run` directive.
 First, `qemu-img` creates a snapshot of the current `result` layer into
-`result-tmp`.  Then `qemu-system-x86_64` is started with this snapshot as
-the base image.  `ssh` is used to poll the machine until it is available.
-Next, `scp` runs to copy the cache `opam-archives` over to the target
-directory `/Users/opam/AppData/Local/opam/download-cache`.  Finally,
-the actual commands are sent over `ssh` to install `tar`.  The step
-completes with an `scp` of the cache back to the host followed by an
-ACPI shutdown command sent to the qemu console.
+`result-tmp`.  Then any cache volumes are copied and `qemu-system-x86_64`
+is started with this snapshot as the base image and the cache volumes
+available as extra disks.  `ssh` is used to poll the machine until it is
+available.  Next, `ssh` commands are executed to create a NTFS junction
+point on the directory `c:\Users\opam\AppData\Local\opam\download-cache`.
+Finally, the actual commands are sent over `ssh` to install `tar`.
+The step completes with an `scp` of the cache back to the host followed
+by an ACPI shutdown command sent to the qemu console.
 
 ```
-/: (run (cache (opam-archives (target /Users/opam/AppData/Local/opam/download-cache)))
+/: (run (cache (opam-archives (target "C:\\Users\\opam\\AppData\\Local\\opam\\download-cache")))
         (shell "opam install tar"))
-obuilder: [INFO] Exec "qemu-img" "create" "-f" "qcow2" "-b" "/var/lib/docker/test/result/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2" "-F" "qcow2" "/var/lib/docker/test/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3/rootfs/image.qcow2" "40G"
-obuilder: [INFO] Exec "cp" "-pRduT" "--reflink=auto" "/var/lib/docker/test/cache/c-opam-archives" "/var/lib/docker/test/cache-tmp/0-c-opam-archives"
-obuilder: [INFO] Fork exec "qemu-system-x86_64" "-m" "16G" "-smp" "8" "-machine" "accel=kvm,type=q35" "-cpu" "host" "-nic" "user,hostfwd=tcp::34649-:22" "-display" "none" "-monitor" "stdio" "-drive" "file=/var/lib/docker/test/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3/rootfs/image.qcow2,format=qcow2"
-obuilder: [INFO] Exec "ssh" "opam@localhost" "-p" "34649" "-o" "BatchMode=yes" "-o" "NoHostAuthenticationForLocalhost=yes" "exit"
-obuilder: [INFO] Exec "scp" "-P" "34649" "-o" "NoHostAuthenticationForLocalhost=yes" "-prq" "/var/lib/docker/test/cache-tmp/0-c-opam-archives/md5" "/var/lib/docker/test/cache-tmp/0-c-opam-archives/sha512" "/var/lib/docker/test/cache-tmp/0-c-opam-archives/sha256" "opam@localhost:/Users/opam/AppData/Local/opam/download-cache"
-obuilder: [INFO] Fork exec "ssh" "opam@localhost" "-p" "34649" "-o" "NoHostAuthenticationForLocalhost=yes" "cd" "/" "&&" "opam install tar"
+obuilder: [INFO] Exec "qemu-img" "create" "-f" "qcow2" "-b" "/var/cache/obuilder/test/result/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2" "-F" "qcow2" "/var/cache/obuilder/test/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3/rootfs/image.qcow2" "40G"
+obuilder: [INFO] Exec "cp" "-pRduT" "--reflink=auto" "/var/cache/obuilder/test/cache/c-opam-archives" "/var/cache/obuilder/test/cache-tmp/0-c-opam-archives"
+obuilder: [INFO] Fork exec "qemu-system-x86_64" "-m" "16G" "-smp" "8" "-machine" "accel=kvm,type=q35" "-cpu" "host" "-nic" "user,hostfwd=tcp::56229-:22" "-display" "none" "-monitor" "stdio" "-drive" "file=/var/cache/obuilder/test/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3/rootfs/image.qcow2,format=qcow2" "-drive" "file=/var/cache/obuilder/test/cache-tmp/0-c-opam-archives/rootfs/image.qcow2,format=qcow2"
+obuilder: [INFO] Exec "ssh" "opam@localhost" "-p" "56229" "-o" "NoHostAuthenticationForLocalhost=yes" "exit"
+obuilder: [INFO] Exec "ssh" "opam@localhost" "-p" "56229" "-o" "NoHostAuthenticationForLocalhost=yes" "cmd" "/c" "rmdir /s /q 'C:\Users\opam\AppData\Local\opam\download-cache'"
+obuilder: [INFO] Exec "ssh" "opam@localhost" "-p" "56229" "-o" "NoHostAuthenticationForLocalhost=yes" "cmd" "/c" "mklink /j 'C:\Users\opam\AppData\Local\opam\download-cache' 'd:\'"
+Junction created for C:\Users\opam\AppData\Local\opam\download-cache <<===>> d:\
+obuilder: [INFO] Fork exec "ssh" "opam@localhost" "-p" "56229" "-o" "NoHostAuthenticationForLocalhost=yes" "cd" "/" "&&" "opam install tar"
 The following actions will be performed:
 === install 8 packages
   - install checkseum         0.5.2  [required by decompress]
@@ -100,11 +103,9 @@ The following actions will be performed:
 -> installed tar.3.1.2
 Done.
 # Run eval $(opam env) to update the current shell environment
-obuilder: [INFO] Exec "scp" "-P" "34649" "-o" "NoHostAuthenticationForLocalhost=yes" "-prq" "opam@localhost:/Users/opam/AppData/Local/opam/download-cache/*" "/var/lib/docker/test/cache-tmp/0-c-opam-archives"
-obuilder: [INFO] Sending QEMU an ACPI shutdown event
-obuilder: [INFO] Exec "cp" "-pRduT" "--reflink=auto" "/var/lib/docker/test/cache-tmp/0-c-opam-archives" "/var/lib/docker/test/cache/c-opam-archives"
-obuilder: [INFO] Exec "rm" "-r" "/var/lib/docker/test/cache-tmp/0-c-opam-archives"
-obuilder: [INFO] Exec "mv" "/var/lib/docker/test/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3" "/var/lib/docker/test/result/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3"
+obuilder: [INFO] Exec "cp" "-pRduT" "--reflink=auto" "/var/cache/obuilder/test/cache-tmp/0-c-opam-archives" "/var/cache/obuilder/test/cache/c-opam-archives"
+obuilder: [INFO] Exec "rm" "-r" "/var/cache/obuilder/test/cache-tmp/0-c-opam-archives"
+obuilder: [INFO] Exec "mv" "/var/cache/obuilder/test/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3" "/var/cache/obuilder/test/result/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3"
 ---> saved as "8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3"
 Got: "8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3"
 ```

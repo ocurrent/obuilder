@@ -36,6 +36,10 @@ let get_free_port () =
 let run ~cancelled ?stdin ~log t config result_tmp =
   let pp f = Os.pp_cmd f ("", config.Config.argv) in
 
+  let extra_mounts = List.map (fun { Config.Mount.src; _ } ->
+    ["-drive"; "file=" ^ src / "rootfs" / "image.qcow2" ^ ",format=qcow2"]
+  ) config.Config.mounts |> List.flatten in
+
   Os.with_pipe_to_child @@ fun ~r:qemu_r ~w:qemu_w ->
   let qemu_stdin = `FD_move_safely qemu_r in
   let qemu_monitor = Lwt_io.(of_fd ~mode:output) qemu_w in
@@ -48,23 +52,25 @@ let run ~cancelled ?stdin ~log t config result_tmp =
               "-nic"; "user,hostfwd=tcp::" ^ port ^ "-:22";
               "-display"; "none";
               "-monitor"; "stdio";
-              "-drive"; "file=" ^ result_tmp / "rootfs" / "image.qcow2" ^ ",format=qcow2" ] in
+              "-drive"; "file=" ^ result_tmp / "rootfs" / "image.qcow2" ^ ",format=qcow2" ]
+              @ extra_mounts in
   let _, proc = Os.open_process ~stdin:qemu_stdin ~stdout:`Dev_null ~pp cmd in
+
+  let ssh = ["ssh"; "opam@localhost"; "-p"; port; "-o"; "NoHostAuthenticationForLocalhost=yes"] in
 
   let rec loop = function
     | 0 -> Lwt_result.fail (`Msg "No connection")
     | n ->
-      Os.exec_result ~pp ["ssh"; "opam@localhost"; "-p"; port; "-o"; "BatchMode=yes"; "-o"; "NoHostAuthenticationForLocalhost=yes"; "exit"] >>= function
+      Os.exec_result ~pp (ssh @ ["exit"]) >>= function
       | Ok _ -> Lwt_result.ok (Lwt.return ())
-      | _ -> Lwt_unix.sleep 2. >>= fun _ -> loop (n - 1) in
-  Lwt_unix.sleep 2. >>= fun _ ->
+      | _ -> Lwt_unix.sleep 1. >>= fun _ -> loop (n - 1) in
+  Lwt_unix.sleep 5. >>= fun _ ->
   loop 30 >>= fun _ ->
 
-  Lwt_list.iter_s (fun { Config.Mount.src; dst; _ } ->
-    let folders = Sys.readdir src |> Array.to_list |> List.map (fun f -> src / f) in
-    if List.length folders > 0 then
-      Os.exec (["scp"; "-P"; port; "-o"; "NoHostAuthenticationForLocalhost=yes"; "-prq"] @ folders @ ["opam@localhost:" ^ dst ])
-    else Lwt.return ()) config.Config.mounts >>= fun () ->
+  Lwt_list.iteri_s (fun i { Config.Mount.dst; _ } ->
+    Os.exec (ssh @ ["cmd"; "/c"; "rmdir /s /q '" ^ dst ^ "'"]) >>= fun () ->
+    let drive_letter = String.init 1 (fun _ -> Char.chr (Char.code 'd' + i)) in
+    Os.exec (ssh @ ["cmd"; "/c"; "mklink /j '" ^ dst ^ "' '" ^ drive_letter ^ ":\\'"])) config.Config.mounts >>= fun () ->
 
   Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
   let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
@@ -78,7 +84,7 @@ let run ~cancelled ?stdin ~log t config result_tmp =
   | "/usr/bin/env" :: "bash" :: "-c" :: tl -> tl
   | "/bin/sh" :: "-c" :: tl -> tl
   | x -> x in
-  let _, proc2 = Os.open_process ~env ?stdin ~stdout ~stderr ~pp (["ssh"; "opam@localhost"; "-p"; port; "-o"; "NoHostAuthenticationForLocalhost=yes"] @ sendenv @ ["cd"; config.Config.cwd; "&&"] @ cmd) in
+  let _, proc2 = Os.open_process ~env ?stdin ~stdout ~stderr ~pp (ssh @ sendenv @ ["cd"; config.Config.cwd; "&&"] @ cmd) in
   Lwt.on_termination cancelled (fun () ->
     let aux () =
       if Lwt.is_sleeping proc then
@@ -89,9 +95,6 @@ let run ~cancelled ?stdin ~log t config result_tmp =
   );
   Os.process_result ~pp proc2 >>= fun res ->
   copy_log >>= fun () ->
-
-  Lwt_list.iter_s (fun { Config.Mount.src; dst; _ } ->
-    Os.exec ["scp"; "-P"; port; "-o"; "NoHostAuthenticationForLocalhost=yes"; "-prq"; "opam@localhost:" ^ dst ^ "/*"; src ]) config.Config.mounts >>= fun () ->
 
   Log.info (fun f -> f "Sending QEMU an ACPI shutdown event");
   Lwt_io.write qemu_monitor "system_powerdown\n" >>= fun () ->
