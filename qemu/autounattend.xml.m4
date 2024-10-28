@@ -33,7 +33,7 @@
               <Path>cmd /c reg add "HKLM\SYSTEM\Setup\LabConfig" /v "BypassRAMCheck" /t REG_DWORD /d 1</Path>
           </RunSynchronousCommand>
         </RunSynchronous>
-        
+
         <DiskConfiguration>
           <Disk wcm:action="add">
             <CreatePartitions>
@@ -63,6 +63,25 @@
               </ModifyPartition>
             </ModifyPartitions>
             <DiskID>0</DiskID>
+            <WillWipeDisk>true</WillWipeDisk>
+          </Disk>
+          <Disk wcm:action="add">
+            <CreatePartitions>
+              <CreatePartition wcm:action="add">
+                <Order>1</Order>
+                <Type>Primary</Type>
+                <Extend>true</Extend>
+              </CreatePartition>
+            </CreatePartitions>
+            <ModifyPartitions>
+              <ModifyPartition wcm:action="add">
+                <Format>NTFS</Format>
+                <Letter>D</Letter>
+                <Order>1</Order>
+                <PartitionID>1</PartitionID>
+              </ModifyPartition>
+            </ModifyPartitions>
+            <DiskID>1</DiskID>
             <WillWipeDisk>true</WillWipeDisk>
           </Disk>
         </DiskConfiguration>
@@ -160,7 +179,7 @@
 
         <SynchronousCommand wcm:action="add">
           <Order>9</Order>
-	  <CommandLine>cmd /c "copy e:\setup-x86_64.exe c:\windows\setup-x86_64.exe"</CommandLine>
+	  <CommandLine>cmd /c "copy f:\setup-x86_64.exe c:\windows\setup-x86_64.exe"</CommandLine>
           <Description>Copy cygwin executable</Description>
         </SynchronousCommand>
 
@@ -172,102 +191,132 @@
 
         <SynchronousCommand wcm:action="add">
           <Order>11</Order>
+	  <CommandLine>cmd /c "mkdir C:\cygwin64\lib\cygsympathy"</CommandLine>
+	  <Description>Create lib/cygsympathy</Description>
+        </SynchronousCommand>
+
+        <SynchronousCommand wcm:action="add">
+          <Order>12</Order>
+	  <CommandLine>cmd /c "mkdir C:\cygwin64\etc\postinstall"</CommandLine>
+	  <Description>Create etc/postinstall</Description>
+        </SynchronousCommand>
+
+        <SynchronousCommand wcm:action="add">
+          <Order>13</Order>
+	  <CommandLine>cmd /c "copy f:\cygsympathy.cmd C:\cygwin64\lib\cygsympathy"</CommandLine>
+	  <Description>Install cmd script</Description>
+        </SynchronousCommand>
+
+        <SynchronousCommand wcm:action="add">
+          <Order>14</Order>
+	  <CommandLine>cmd /c "copy f:\cygsympathy.sh C:\cygwin64\lib\cygsympathy\cygsympathy"</CommandLine>
+	  <Description>Install cmd script</Description>
+        </SynchronousCommand>
+
+        <SynchronousCommand wcm:action="add">
+          <Order>15</Order>
+	  <CommandLine>mklink C:\cygwin64\etc\postinstall\zp_zcygsympathy.sh C:\cygwin64\lib\cygsympathy\cygsympathy</CommandLine>
+	  <Description>Install cmd script</Description>
+        </SynchronousCommand>
+
+        <SynchronousCommand wcm:action="add">
+          <Order>16</Order>
 	  <CommandLine>c:\windows\setup-x86_64.exe -q -O -s https://cygwin.mirror.uk.sargasso.net -P mingw64-x86_64-gcc-core,rsync,git,make,patch,unzip,pkgconf,pkg-config</CommandLine>
           <Description>Install cygwin</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>12</Order>
+          <Order>17</Order>
 	  <CommandLine>setx /m PATH "c:\cygwin64\bin;c:\cygwin64\usr\x86_64-w64-mingw32\sys-root\mingw\bin;%PATH%"</CommandLine>
           <Description>Set PATH environment variable</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>13</Order>
+          <Order>18</Order>
 	  <CommandLine>c:\cygwin64\bin\gawk.exe -i inplace "/(^#)|(^$)/{print;next}{$4=""noacl,""$4;print}" C:\cygwin64\etc\fstab</CommandLine>
           <Description>Add opam-repository</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>14</Order>
+          <Order>19</Order>
 	  <CommandLine>setx /m OPAMCONFIRMLEVEL unsafe-yes</CommandLine>
           <Description>Set PATH environment variable</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>15</Order>
+          <Order>20</Order>
 	  <CommandLine>setx /m OPAMYES 1</CommandLine>
           <Description>Set PATH environment variable</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>16</Order>
+          <Order>21</Order>
 	  <CommandLine>reg add HKLM\SOFTWARE\OpenSSH /v DefaultShell /d c:\cygwin64\bin\bash.exe</CommandLine>
           <Description>Configure WinRM</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>17</Order>
-	  <CommandLine>cmd /c "msiexec /q /norestart /i e:\openssh-win64.msi"</CommandLine>
+          <Order>22</Order>
+	  <CommandLine>cmd /c "msiexec /q /norestart /i f:\openssh-win64.msi"</CommandLine>
           <Description>Install OpenSSH</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>18</Order>
-	  <CommandLine>cmd /c "copy e:\id_ed25519.pub c:\programdata\ssh\administrators_authorized_keys"</CommandLine>
+          <Order>23</Order>
+	  <CommandLine>cmd /c "copy f:\id_ed25519.pub c:\programdata\ssh\administrators_authorized_keys"</CommandLine>
           <Description>Install public key</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>19</Order>
+          <Order>24</Order>
 	  <CommandLine>cmd /c "echo AcceptENV * >> c:\programdata\ssh\sshd_config"</CommandLine>
           <Description>Install public key</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>20</Order>
+          <Order>25</Order>
           <CommandLine>netsh advfirewall firewall set rule group="OpenSSH SSH Server Preview (sshd)" new profile=any enable=yes</CommandLine>
           <Description>Configure OpenSSH</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>21</Order>
-	  <CommandLine>cmd /c "copy e:\opam-2.2.exe c:\cygwin64\bin\opam.exe"</CommandLine>
+          <Order>26</Order>
+	  <CommandLine>cmd /c "copy f:\opam-2.2.exe c:\cygwin64\bin\opam.exe"</CommandLine>
           <Description>Copy opam executable</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>22</Order>
-	  <CommandLine>cmd /c "copy e:\opam-2.2.exe c:\cygwin64\bin\opam-2.2.exe"</CommandLine>
+          <Order>27</Order>
+	  <CommandLine>cmd /c "copy f:\opam-2.2.exe c:\cygwin64\bin\opam-2.2.exe"</CommandLine>
           <Description>Copy opam executable</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>23</Order>
-	  <CommandLine>cmd /c "copy e:\opam-dev.exe c:\cygwin64\bin\opam-dev.exe"</CommandLine>
+          <Order>28</Order>
+	  <CommandLine>cmd /c "copy f:\opam-dev.exe c:\cygwin64\bin\opam-dev.exe"</CommandLine>
           <Description>Copy opam executable</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>24</Order>
+          <Order>29</Order>
 	  <CommandLine>c:\cygwin64\bin\bash.exe --login -c "cd /cygdrive/c/Users/opam && git clone https://github.com/ocaml/opam-repository"</CommandLine>
           <Description>Add opam-repository</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>25</Order>
+          <Order>30</Order>
 	  <CommandLine>c:\cygwin64\bin\opam init -y -k local -a c:\users\opam\opam-repository --bare --cygwin-location=c:\cygwin64</CommandLine>
           <Description>Opam init</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>26</Order>
+          <Order>31</Order>
 	  <CommandLine>c:\cygwin64\bin\opam switch create VERSION --packages=ocaml-base-compiler.VERSION</CommandLine>
           <Description>Opam switch</Description>
         </SynchronousCommand>
 
         <SynchronousCommand wcm:action="add">
-          <Order>27</Order>
+          <Order>32</Order>
 	  <CommandLine>c:\cygwin64\bin\opam pin add -k version ocaml-base-compiler VERSION</CommandLine>
           <Description>Opam switch</Description>
         </SynchronousCommand>
@@ -319,3 +368,4 @@
   </settings>
 
 </unattend>
+

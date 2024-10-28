@@ -140,8 +140,8 @@ let cache ~user:_ t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   let release () =
     Lwt_mutex.with_lock cache.lock @@ fun () ->
     cache.children <- cache.children - 1;
-    let cache_stat = Unix.stat master in
-    let tmp_stat = Unix.stat tmp in
+    let cache_stat = Unix.stat (master / "rootfs" / "image.qcow2") in
+    let tmp_stat = Unix.stat (tmp / "rootfs" / "image.qcow2") in
     (if tmp_stat.st_size > cache_stat.st_size then
       Os.cp ~src:tmp master
     else
