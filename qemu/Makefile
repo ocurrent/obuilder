@@ -24,13 +24,13 @@ windows-server-2022-x86_64-ocaml-4.14.img: unattend-4.14.2.iso
 		-drive file=SW_DVD9_Win_Server_STD_CORE_2022_2108.6_64Bit_English_DC_STD_MLF_X23-03231.ISO,media=cdrom \
 		-drive file=unattend-4.14.2.iso,media=cdrom
 
-unattend-4.14.2.iso: autounattend.xml.m4 id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-dev.exe setup-x86_64.exe cygsympathy.cmd cygsympathy.sh
+unattend-4.14.2.iso: autounattend.xml.m4 id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-dev.exe setup-x86_64.exe
 	m4 -D VERSION=4.14.2 autounattend.xml.m4 > autounattend.xml
-	mkisofs -o unattend-4.14.2.iso -r -J autounattend.xml id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-dev.exe setup-x86_64.exe cygsympathy.cmd cygsympathy.sh
+	mkisofs -o unattend-4.14.2.iso -r -J autounattend.xml id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-dev.exe setup-x86_64.exe
 
-unattend-5.2.0.iso: autounattend.xml.m4 id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-dev.exe setup-x86_64.exe cygsympathy.cmd cygsympathy.sh
+unattend-5.2.0.iso: autounattend.xml.m4 id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-dev.exe setup-x86_64.exe
 	m4 -D VERSION=5.2.0 autounattend.xml.m4 > autounattend.xml
-	mkisofs -o unattend-5.2.0.iso -r -J autounattend.xml id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-dev.exe setup-x86_64.exe cygsympathy.cmd cygsympathy.sh
+	mkisofs -o unattend-5.2.0.iso -r -J autounattend.xml id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-dev.exe setup-x86_64.exe
 
 opam-2.2.exe:
 	curl -L https://github.com/ocaml/opam/releases/download/2.2.1/opam-2.2.1-x86_64-windows.exe -o opam-2.2.exe
@@ -46,12 +46,6 @@ setup-x86_64.exe:
 
 virtio-win.iso:
 	curl -L https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-0.1.262-2/virtio-win.iso -o virtio-win.iso
-
-cygsympathy.cmd:
-	curl -L https://raw.githubusercontent.com/metastack/cygsympathy/master/cygsympathy.cmd -o cygsympathy.cmd
-
-cygsympathy.sh:
-	curl -L https://raw.githubusercontent.com/metastack/cygsympathy/master/cygsympathy.sh -o cygsympathy.sh
 
 # Ubuntu
 
