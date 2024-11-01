@@ -89,6 +89,12 @@ module type SANDBOX = sig
       @param log Used for child's stdout and stderr.
   *)
 
+  val shell : string list option
+  (** [shell] optional value to be used as the default shell. *)
+
+  val tar : string list option
+  (** [tar] tar command for this sandbox. *)
+
   val finished : unit -> unit Lwt.t
 end
 
@@ -127,6 +133,9 @@ module type BUILDER = sig
 
   val df : t -> float Lwt.t
   (** [df t] returns the percentage of free space in the store. *)
+
+  val shell : string list option
+  (** [shell] optional value to be used as the default shell. *)
 
   val cache_stats : t -> int * int
   (** [cache_stats t] returns the number of cache hits and the number of cache misses. *)

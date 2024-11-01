@@ -20,23 +20,6 @@ type t = {
 
 let ( / ) = Filename.concat
 
-module Qemu_img = struct
-  let qemu_img ?(sudo=false) args =
-    let args = "qemu-img" :: args in
-    let args = if sudo && not running_as_root then "sudo" :: args else args in
-    Os.exec ~stdout:`Dev_null args
-
-  let snapshot _ ~src dst =
-    Os.ensure_dir dst;
-    Os.ensure_dir (dst / "rootfs");
-    qemu_img (["create"; "-f"; "qcow2"; "-b"; src / "rootfs" / "image.qcow2"; "-F"; "qcow2"; dst / "rootfs" / "image.qcow2"; "40G"])
-end
-
-let delete_snapshot_if_exists path =
-  match Os.check_dir path with
-  | `Missing -> Lwt.return_unit
-  | `Present -> Os.rm ~directory:path
-
 module Path = struct
   (* A qemu store contains several subdirectories:
 
@@ -53,10 +36,31 @@ module Path = struct
   let state t            = t.root / "state"
   let cache t name       = t.root / "cache" / Escape.cache name
   let cache_tmp t i name = t.root / "cache-tmp" / strf "%d-%s" i (Escape.cache name)
+  let image path         = path / "rootfs" / "image.qcow2"
+end
+
+module Qemu_img = struct
+  let qemu_img ?(sudo=false) args =
+    let args = "qemu-img" :: args in
+    let args = if sudo && not running_as_root then "sudo" :: args else args in
+    Os.exec ~stdout:`Dev_null args
+
+  let snapshot ~src dst =
+    Os.ensure_dir dst;
+    Os.ensure_dir (dst / "rootfs");
+    qemu_img (["create"; "-f"; "qcow2"; "-b"; Path.image src ; "-F"; "qcow2"; Path.image dst; "40G"])
+
+  let create dst =
+    Os.ensure_dir dst;
+    Os.ensure_dir (dst / "rootfs");
+    qemu_img (["create"; "-f"; "qcow2"; Path.image dst; "40G"])
 end
 
 let delete t id =
-  delete_snapshot_if_exists (Path.result t id)
+  let path = Path.result t id in
+  match Os.check_dir path with
+  | `Missing -> Lwt.return_unit
+  | `Present -> Os.rm ~directory:path
 
 let purge path =
   Sys.readdir path |> Array.to_list |> Lwt_list.iter_s (fun item ->
@@ -87,7 +91,7 @@ let build t ?base ~id fn =
   assert (not (Sys.file_exists result));        (* Builder should have checked first *)
   begin match base with
     | None -> Lwt.return (Os.ensure_dir result_tmp)
-    | Some base -> Qemu_img.snapshot `RW ~src:(Path.result t base) result_tmp
+    | Some base -> Qemu_img.snapshot ~src:(Path.result t base) result_tmp
   end
   >>= fun () ->
   Lwt.try_bind
@@ -131,17 +135,17 @@ let cache ~user:_ t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   t.next <- t.next + 1;
   let master = Path.cache t name in
   (* Create cache if it doesn't already exist. *)
-  let () = match Os.check_dir master with
-    | `Missing -> Os.ensure_dir master
-    | `Present -> () in
+  (match Os.check_dir master with
+    | `Missing -> Qemu_img.create master
+    | `Present -> Lwt.return ()) >>= fun () ->
   cache.children <- cache.children + 1;
   let () = Os.ensure_dir tmp in
   Os.cp ~src:master tmp >>= fun () ->
   let release () =
     Lwt_mutex.with_lock cache.lock @@ fun () ->
     cache.children <- cache.children - 1;
-    let cache_stat = Unix.stat (master / "rootfs" / "image.qcow2") in
-    let tmp_stat = Unix.stat (tmp / "rootfs" / "image.qcow2") in
+    let cache_stat = Unix.stat (Path.image master) in
+    let tmp_stat = Unix.stat (Path.image tmp) in
     (if tmp_stat.st_size > cache_stat.st_size then
       Os.cp ~src:tmp master
     else

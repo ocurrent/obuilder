@@ -336,6 +336,10 @@ let create ~state_dir (c : config) =
 let finished () =
   Lwt.return ()
 
+let shell = None
+
+let tar = None
+
 open Cmdliner
 
 let docs = "RUNC SANDBOX"

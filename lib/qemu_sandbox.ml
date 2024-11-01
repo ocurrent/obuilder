@@ -79,13 +79,7 @@ let run ~cancelled ?stdin ~log t config result_tmp =
   let copy_log = copy_to_log ~src:out_r ~dst:log in
   let env = List.map (fun (k, v) -> k ^ "=" ^ v) config.Config.env |> Array.of_list in
   let sendenv = if Array.length env > 0 then List.map (fun (k, _) -> ["-o"; "SendEnv=" ^ k]) config.Config.env |> List.flatten else [] in
-  let cmd = match config.Config.argv with
-  | "cmd" :: "/S" :: "/C" :: tl
-  | "/usr/bin/env" :: "bash" :: "-c" :: tl -> tl
-  | "/bin/sh" :: "-c" :: tl -> tl
-  | "tar" :: "-xf" :: "-" :: _ -> ["/cygdrive/c/Windows/System32/tar.exe"; "-xvf"; "-"; "-C"; config.Config.cwd]
-  | x -> x in
-  let _, proc2 = Os.open_process ~env ?stdin ~stdout ~stderr ~pp (ssh @ sendenv @ ["cd"; config.Config.cwd; "&&"] @ cmd) in
+  let _, proc2 = Os.open_process ~env ?stdin ~stdout ~stderr ~pp (ssh @ sendenv @ ["cd"; config.Config.cwd; "&&"] @ config.Config.argv) in
   Lwt.on_termination cancelled (fun () ->
     let aux () =
       if Lwt.is_sleeping proc then
@@ -121,6 +115,10 @@ let create (c : config) =
 
 let finished () =
   Lwt.return ()
+
+let shell = Some []
+
+let tar = Some ["/cygdrive/c/Windows/System32/tar.exe"; "-xf"; "-"; "-C"; "/"]
 
 open Cmdliner
 

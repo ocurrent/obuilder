@@ -168,6 +168,10 @@ let create ~state_dir:_ _c =
 let finished () =
   Lwt.return ()
 
+let shell = None
+
+let tar = None
+
 open Cmdliner
 
 let cmdliner : config Term.t =

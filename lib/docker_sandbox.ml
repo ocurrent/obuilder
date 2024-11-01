@@ -462,6 +462,10 @@ let create (c : config) =
 let finished () =
   Lwt.return ()
 
+let shell = None
+
+let tar = None
+
 open Cmdliner
 
 let docs = "DOCKER BACKEND"
