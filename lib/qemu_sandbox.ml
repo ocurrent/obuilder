@@ -83,6 +83,7 @@ let run ~cancelled ?stdin ~log t config result_tmp =
   | "cmd" :: "/S" :: "/C" :: tl
   | "/usr/bin/env" :: "bash" :: "-c" :: tl -> tl
   | "/bin/sh" :: "-c" :: tl -> tl
+  | "tar" :: "-xf" :: "-" :: _ -> ["/cygdrive/c/Windows/System32/tar.exe"; "-xvf"; "-"; "-C"; config.Config.cwd]
   | x -> x in
   let _, proc2 = Os.open_process ~env ?stdin ~stdout ~stderr ~pp (ssh @ sendenv @ ["cd"; config.Config.cwd; "&&"] @ cmd) in
   Lwt.on_termination cancelled (fun () ->
@@ -112,20 +113,6 @@ let run ~cancelled ?stdin ~log t config result_tmp =
   Os.process_result ~pp proc >>= fun _ ->
 
   if Lwt.is_sleeping cancelled then Lwt.return (res :> (unit, [`Msg of string | `Cancelled]) result)
-  else Lwt_result.fail `Cancelled
-
-let tar_in ~cancelled ?stdin ~log:_ _ config result_tmp =
-  let proc =
-    let cmd = ["guestfish";
-               "add-drive"; result_tmp / "rootfs" / "image.qcow2"; ":";
-               "run"; ":";
-               "mount"; "/dev/sda2"; "/"; ":";
-               "tar-in"; "-"; config.Config.cwd; ] in
-    let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
-    let pp f = Os.pp_cmd f ("", config.Config.argv) in
-    Os.sudo_result ?stdin ~pp cmd in
-  proc >>= fun r ->
-  if Lwt.is_sleeping cancelled then Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
   else Lwt_result.fail `Cancelled
 
 let create (c : config) =

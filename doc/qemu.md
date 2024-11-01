@@ -115,3 +115,36 @@ Got: "8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3"
 While this initial version only runs on x86_64 targetting x86_64
 processors it would be entirely possibly to extend this to other
 architectures.
+
+# Project source
+
+Obuilder uses `tar` to copy the project source into the sandbox.
+Attempts to use `tar -xf - . | ssh opam@localhost -p 60022 tar -xf -`
+fail as the data is corrupted.  This can be show also with `cat test.file
+| ssh opam@localhost -p 60022 sha256sum -` where files of < 1M work most
+of the time, but larger test files give a different hash everytime.
+
+An alternative would be to use `guestfish` as below.  This works, albeit
+the NTFS file permissions aren't clean, but I'm not happy with it as
+it requires knowing the partition number ahead of time - `/dev/sda2` -
+which impacts the ability of this to work more generically.
+
+```
+let tar_in ~cancelled ?stdin ~log:_ _ config result_tmp =
+  let proc =
+    let cmd = ["guestfish";
+               "add-drive"; result_tmp / "rootfs" / "image.qcow2"; ":";
+               "run"; ":";
+               "mount"; "/dev/sda2"; "/"; ":";
+               "tar-in"; "-"; config.Config.cwd; ] in
+    let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
+    let pp f = Os.pp_cmd f ("", config.Config.argv) in
+    Os.sudo_result ?stdin ~pp cmd in
+  proc >>= fun r ->
+  if Lwt.is_sleeping cancelled then Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
+  else Lwt_result.fail `Cancelled
+```
+
+Windows ships with BSD tar in `System32` so we and that does work with an
+`ssh` pipe.
+

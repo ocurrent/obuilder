@@ -155,9 +155,6 @@ let run ~cancelled ?stdin ~log t config (id:S.id) =
   if Lwt.is_sleeping cancelled then (r :> (unit, [`Msg of string | `Cancelled]) result)
   else Error `Cancelled
 
-let tar_in ~cancelled ?stdin ~log t config result_tmp =
-  run ~cancelled ?stdin ~log t config result_tmp
-
 (* Duplicate of Build.hostname. *)
 let hostname = "builder"
 

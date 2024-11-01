@@ -318,9 +318,6 @@ let run ~cancelled ?stdin:stdin ~log t config results_dir =
   if Lwt.is_sleeping cancelled then Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
   else Lwt_result.fail `Cancelled
 
-let tar_in ~cancelled ?stdin ~log t config result_tmp =
-  run ~cancelled ?stdin ~log t config result_tmp
-
 let clean_runc dir =
   Sys.readdir dir
   |> Array.to_list

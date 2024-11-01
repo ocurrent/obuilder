@@ -161,7 +161,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
               ()
           in
           Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
-          let proc = Sandbox.tar_in ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
+          let proc = Sandbox.run ~cancelled ~stdin:from_us ~log t.sandbox config result_tmp in
           let send =
             (* If the sending thread finishes (or fails), close the writing socket
                immediately so that the tar process finishes too. *)

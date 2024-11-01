@@ -89,21 +89,6 @@ module type SANDBOX = sig
       @param log Used for child's stdout and stderr.
   *)
 
-  val tar_in :
-    cancelled:unit Lwt.t ->
-    ?stdin:Os.unix_fd ->
-    log:Build_log.t ->
-    t ->
-    Config.t ->
-    string ->
-    (unit, [`Cancelled | `Msg of string]) Lwt_result.t
-  (** [run ~cancelled t config dir] runs the operation [config] in a sandbox with root
-      filesystem [dir].
-      @param cancelled Resolving this kills the process (and returns [`Cancelled]).
-      @param stdin Passed to child as its standard input.
-      @param log Used for child's stdout and stderr.
-  *)
-
   val finished : unit -> unit Lwt.t
 end
 

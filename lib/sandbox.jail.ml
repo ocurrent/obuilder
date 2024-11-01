@@ -159,9 +159,6 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
   else
     Lwt_result.fail `Cancelled
 
-let tar_in ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
-  run ~cancelled ?stdin ~log t config rootdir
-
 let create ~state_dir:_ _c =
   Lwt.return {
     (* Compute a unique (across obuilder instances) name prefix for the jail. *)
