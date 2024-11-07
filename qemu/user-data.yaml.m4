@@ -16,6 +16,7 @@ runcmd:
   - chmod +x /usr/bin/opam-dev
   - ln -s /usr/bin/opam-dev /usr/bin/opam
   - apt update
+  - apt upgrade
   - apt install build-essential unzip bubblewrap -y
   - su - opam -c "git clone https://github.com/ocaml/opam-repository"
   - su - opam -c "opam init -k local -a /home/opam/opam-repository --bare --disable-sandboxing"
