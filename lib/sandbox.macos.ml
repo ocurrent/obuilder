@@ -114,9 +114,9 @@ let finished () =
   Os.sudo [ "zfs"; "mount"; "obuilder/result" ] >>= fun () ->
   Lwt.return ()
 
-let shell = None
+let shell _ = None
 
-let tar = None
+let tar _ = None
 
 let uid =
   Arg.required @@

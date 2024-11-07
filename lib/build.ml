@@ -148,7 +148,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       (* Fmt.pr "COPY: %a@." Sexplib.Sexp.pp_hum (sexp_of_copy_details details); *)
       let id = Sha256.to_hex (Sha256.string (Sexplib.Sexp.to_string (sexp_of_copy_details details))) in
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
-          let argv = Option.value ~default:(["tar"; "-xf"; "-"]) Sandbox.tar in
+          let argv = Option.value ~default:(["tar"; "-xf"; "-"]) (Sandbox.tar t.sandbox) in
           let config = Config.v
               ~cwd:"/"
               ~argv
@@ -279,8 +279,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
   let df t =
     Store.df t.store
 
-  let shell =
-    Sandbox.shell
+  let shell t =
+    Sandbox.shell t.sandbox
 
   let root t =
     Store.root t.store
@@ -544,8 +544,7 @@ module Make_Docker (Raw_store : S.STORE) = struct
   let df t =
     Store.df t.store
 
-  let shell =
-    Sandbox.shell
+  let shell _ = None
 
   let root t =
     Store.root t.store

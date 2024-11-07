@@ -6,16 +6,23 @@ which can provide an SSH interface.
 # Base Images
 
 These need to be provided as boot disks.  There is a `Makefile` in the
-`qemu` directory which builds two base images:
+`qemu` directory which builds several base images:
 
-- ubuntu-noble-x86_64-ocaml-4.14.img
-- windows-server-2022-x86_64-ocaml-4.14.img
+- ubuntu-noble-amd64-ocaml-4.14.2.qcow2
+- ubuntu-noble-amd64-ocaml-5.2.0.qcow2
+- ubuntu-noble-riscv64-ocaml-4.14.2.qcow2
+- ubuntu-noble-riscv64-ocaml-5.2.0.qcow2
+- openbsd-67-amd64-ocaml-4.14.2.qcow2
+- openbsd-67-amd64-ocaml-5.2.0.qcow2
+- windows-server-2022-amd64-ocaml-4.14.2.qcow2
+- windows-server-2022-amd64-ocaml-5.2.0.qcow2
 
-The base images build automatically using Cloud Init on Ubuntu and
-`autounattend.xml` on Windows.
+The base images build automatically using Cloud Init on Ubuntu,
+`autounattend.xml` on Windows and `autoinstall` on OpenBSD.
+
+Use `make ubuntu`, `make windows` or `make openbsd`.
 
 # Operation
-
 
 A spec which reference the required base image in using the `from`
 directive, then run the whatever commands are required.  An trivial
@@ -23,19 +30,19 @@ example is given below.
 
 ```
 (
- (from windows-server-2022-x86_64-ocaml-4.14)
+ (from windows-server-2022-amd64-ocaml-4.14.2)
  (run
-  (cache (opam-archives (target /Users/opam/AppData/Local/opam/download-cache)))
+  (run (cache (opam-archives (target "c:\\Users\\opam\\AppData\\local\\opam\\download-cache")))
   (shell "opam install tar")
  )
 )
 ```
 
 A typical invocation via `obuilder build` would be as below.  Note that
-in this example, the base images would be in `/data/base-image/*.img`.
+in this example, the base images would be in `/var/cache/obuilder/base-image/*.qcow2`.
 
 ```
-./_build/install/default/bin/obuilder build --store=qemu:/data -v -f test.spec --qemu-memory 16 --qemu-cpus 8 .
+obuilder build --store=qemu:/var/cache/obuilder -v -f test.spec --qemu-memory 16 --qemu-cpus 8 --qemu-guest-os windows .
 ```
 
 The `from` directive causes `qemu-img` to create a snapshot of the base
@@ -43,11 +50,11 @@ image and stage it in the `result-tmp` folder.  When this completes
 successfully, `result-tmp` is moved to `result`:
 
 ```
-(from windows-server-2022-x86_64-ocaml-4.14)
-obuilder: [INFO] Base image not present; importing "windows-server-2022-x86_64-ocaml-4.14"…
+(from windows-server-2022-amd64-ocaml-4.14)
+obuilder: [INFO] Base image not present; importing "windows-server-2022-amd64-ocaml-4.14"…
 obuilder: [INFO] Exec "mkdir" "-m" "755" "--" "/var/lib/docker/test/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs"
-obuilder: [INFO] Exec "qemu-img" "create" "-f" "qcow2" "-b" "/var/lib/docker/test/base-image/windows-server-2022-x86_64-ocaml-4.14.img" "-F" "qcow2" "/var/lib/docker/test/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2"
-Formatting '/var/lib/docker/test/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2', fmt=qcow2 cluster_size=65536 extended_l2=off compression_type=zlib size=42949672960 backing_file=/var/lib/docker/test/base-image/windows-server-2022-x86_64-ocaml-4.14.img backing_fmt=qcow2 lazy_refcounts=off refcount_bits=16
+obuilder: [INFO] Exec "qemu-img" "create" "-f" "qcow2" "-b" "/var/lib/docker/test/base-image/windows-server-2022-amd64-ocaml-4.14.qcow2" "-F" "qcow2" "/var/lib/docker/test/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2"
+Formatting '/var/lib/docker/test/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2', fmt=qcow2 cluster_size=65536 extended_l2=off compression_type=zlib size=42949672960 backing_file=/var/lib/docker/test/base-image/windows-server-2022-amd64-ocaml-4.14.qcow2 backing_fmt=qcow2 lazy_refcounts=off refcount_bits=16
 obuilder: [INFO] Exec "mv" "/var/lib/docker/test/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101" "/var/lib/docker/test/result/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101"
 ---> saved as “dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101”
 ```
@@ -110,13 +117,35 @@ obuilder: [INFO] Exec "mv" "/var/cache/obuilder/test/result-tmp/8a897f21e54db877
 Got: "8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3"
 ```
 
-# Note
+# Machine architectures
 
-While this initial version only runs on x86_64 targetting x86_64
-processors it would be entirely possibly to extend this to other
-architectures.
+QEMU support a variety of machine architectures.  The target architecture
+can be selected using `--qemu-guest-arch` parameter.  At the moment only
+AMD64 and RISCV64 are implemented in obuilder.
 
-# Project source
+```
+obuilder build --store=qemu:/var/cache/obuilder -v -f test.spec --qemu-memory 16 --qemu-cpus 8 --qemu-guest-os linux --qemu-guest-arch riscv64 .
+```
+
+By default, guests are given 30 seconds to boot and respond to SSH.
+If you have slower hardware, you can add `--qemu-boot-time` to allow more
+time of the machine to boot.
+
+# Cache
+
+Caching is implemented using additional hard disks which are added
+to the machine and mounted on the cache location.  Different guest
+operating systems will require different filesystems to be available.
+The `Makefile` builds suitable empty disks to be used as cache disks.
+
+The `spec` file could account for the different cache disks by using
+`opam-archives-XXX` rather than just `opam-archives`.  e.g.
+
+```
+run (cache (opam-archives-ntfs (target "C:\\Users\\opam\\AppData\\Local\\opam\\download-cache")))
+```
+
+# Importing the project source
 
 Obuilder uses `tar` to copy the project source into the sandbox.
 Attempts to use `tar -xf - . | ssh opam@localhost -p 60022 tar -xf -`

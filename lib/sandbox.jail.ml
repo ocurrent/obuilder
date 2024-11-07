@@ -168,9 +168,9 @@ let create ~state_dir:_ _c =
 let finished () =
   Lwt.return ()
 
-let shell = None
+let shell _ = None
 
-let tar = None
+let tar _ = None
 
 open Cmdliner
 

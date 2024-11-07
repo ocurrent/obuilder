@@ -25,6 +25,6 @@ let create () = { expect = Queue.create () }
 
 let finished () = Lwt.return ()
 
-let shell = None
+let shell _ = None
 
-let tar = None
+let tar _ = None
