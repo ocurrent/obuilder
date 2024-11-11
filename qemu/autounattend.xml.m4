@@ -297,6 +297,7 @@
                     <Description>Shutdown</Description>
                 </SynchronousCommand>
             </FirstLogonCommands>
+            <TimeZone>UTC</TimeZone>
         </component>
     </settings>
     <settings pass="offlineServicing">
