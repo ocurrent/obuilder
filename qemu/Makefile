@@ -7,10 +7,10 @@ clean:
 windows: windows-server-2022-amd64-ocaml-4.14.qcow2 windows-server-2022-amd64-ocaml-5.2.qcow2 busybox.qcow2
 
 windows-server-2022-amd64-ocaml-5.2.qcow2: windows-server-2022-amd64-ocaml-5.2.0.qcow2
-	ln -s $< $@
+	ln -sf $< $@
 
 windows-server-2022-amd64-ocaml-4.14.qcow2: windows-server-2022-amd64-ocaml-4.14.2.qcow2
-	ln -s $< $@
+	ln -sf $< $@
 
 windows-server-2022-amd64-ocaml-%.qcow2: unattend-%.iso virtio-win.ISO
 	qemu-img create -f qcow2 $@ 40G
@@ -44,7 +44,13 @@ virtio-win.ISO:
 
 # Ubuntu
 
-ubuntu: ubuntu-noble-amd64-ocaml-4.14.2.qcow2 ubuntu-noble-amd64-ocaml-5.2.0.qcow2 ubuntu-noble-riscv64-ocaml-4.14.2.qcow2 ubuntu-noble-riscv64-ocaml-5.2.0.qcow2 busybox.qcow2
+ubuntu: ubuntu-noble-amd64-ocaml-4.14.qcow2 ubuntu-noble-amd64-ocaml-5.2.qcow2 ubuntu-noble-riscv64-ocaml-4.14.qcow2 ubuntu-noble-riscv64-ocaml-5.2.qcow2 busybox.qcow2
+
+ubuntu-noble-%-ocaml-5.2.qcow2: ubuntu-noble-%-ocaml-5.2.0.qcow2
+	ln -sf $< $@
+
+ubuntu-noble-%-ocaml-4.14.qcow2: ubuntu-noble-%-ocaml-4.14.2.qcow2
+	ln -sf $< $@
 
 seed-%.iso: user-data.yaml.m4
 	m4 -D VERSION=$* $< > user-data.yaml
@@ -90,15 +96,21 @@ busybox.qcow2: noble-server-cloudimg-amd64.qcow2 seed.iso
 
 openbsd: openbsd-76-amd64-ocaml-4.14.2.qcow2 openbsd-76-amd64-ocaml-5.2.0.qcow2
 
+openbsd-76-amd64-ocaml-5.2.qcow2: openbsd-76-amd64-ocaml-5.2.0.qcow2
+	ln -sf $< $@
+
+openbsd-76-amd64-ocaml-4.14.qcow2: openbsd-76-amd64-ocaml-4.14.2.qcow2
+	ln -sf $< $@
+
 openbsd-76-amd64-ocaml-%.qcow2: tftp/auto_install tftp/bsd.rd tftp/etc/boot.conf mirror%
 	qemu-img create -f qcow2 $@ 24G
 	qemu-img create -f qcow2 cache-ffs.qcow2 20G
-	python3 -m http.server --directory mirror --bind 0.0.0.0 80 & \
+	python3 -m http.server --directory mirror --bind 0.0.0.0 80 & pid=$$! && \
 	qemu-system-x86_64 -m 16G -smp 8 -machine accel=kvm,type=pc -cpu host -display none -vnc :0 \
 		-drive file=$@,if=virtio \
 		-drive file=cache-ffs.qcow2,if=virtio \
-		-nic user,model=virtio,tftp-server-name=10.0.2.2,tftp=tftp,bootfile=auto_install,hostfwd=tcp::60022-:22 ;\
-	kill \%1
+		-nic user,model=virtio,tftp-server-name=10.0.2.2,tftp=tftp,bootfile=auto_install,hostfwd=tcp::60022-:22 ; \
+	kill $$pid
 
 tftp/auto_install:
 	mkdir -p tftp
