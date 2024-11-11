@@ -67,11 +67,14 @@ let run ~cancelled ?stdin ~log t config result_tmp =
                    "-kernel"; "/usr/lib/u-boot/qemu-riscv64_smode/uboot.elf";
                    "-device"; "virtio-net-device,netdev=net0";
                    "-serial"; "none"] in
+  let network = match config.network with
+    | [ "host" ] -> ""
+    | _ -> "restrict=yes," in
   let cmd = qemu_binary @ [
               "-monitor"; "stdio";
               "-m"; (string_of_int t.qemu_memory) ^ "G";
               "-smp"; string_of_int t.qemu_cpus;
-              "-netdev"; "user,id=net0,hostfwd=tcp::" ^ port ^ "-:22";
+              "-netdev"; "user,id=net0," ^ network ^ "hostfwd=tcp::" ^ port ^ "-:22";
               "-drive"; "file=" ^ result_tmp / "rootfs" / "image.qcow2" ^ ",if=virtio" ]
               @ extra_mounts in
   let _, proc = Os.open_process ~stdin:qemu_stdin ~stdout:`Dev_null ~pp cmd in
