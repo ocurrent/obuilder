@@ -263,36 +263,41 @@
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
                     <Order>23</Order>
-                    <CommandLine>cmd /c "copy e:\opam-dev.exe c:\cygwin64\bin\opam-dev.exe"</CommandLine>
+                    <CommandLine>cmd /c "copy e:\opam-2.3.exe c:\cygwin64\bin\opam-2.3.exe"</CommandLine>
                     <Description>Copy opam executable</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
                     <Order>24</Order>
+                    <CommandLine>cmd /c "copy e:\opam-dev.exe c:\cygwin64\bin\opam-dev.exe"</CommandLine>
+                    <Description>Copy opam executable</Description>
+                </SynchronousCommand>
+                <SynchronousCommand wcm:action="add">
+                    <Order>25</Order>
                     <CommandLine>c:\cygwin64\bin\bash.exe --login -c "cd /cygdrive/c/Users/opam &amp;&amp; git clone https://github.com/ocaml/opam-repository"</CommandLine>
                     <Description>Add opam-repository</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>25</Order>
+                    <Order>26</Order>
                     <CommandLine>c:\cygwin64\bin\opam init -y -k local -a c:\users\opam\opam-repository --bare --cygwin-location=c:\cygwin64</CommandLine>
                     <Description>Opam init</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>26</Order>
+                    <Order>27</Order>
                     <CommandLine>c:\cygwin64\bin\opam switch create VERSION --packages=ocaml-base-compiler.VERSION</CommandLine>
                     <Description>Opam switch</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>27</Order>
+                    <Order>28</Order>
                     <CommandLine>c:\cygwin64\bin\opam pin add -k version ocaml-base-compiler VERSION</CommandLine>
                     <Description>Opam switch</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>28</Order>
+                    <Order>29</Order>
                     <CommandLine>mkdir c:\users\opam\src</CommandLine>
                     <Description>Create a src directory</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>29</Order>
+                    <Order>30</Order>
                     <CommandLine>shutdown /s /t 10</CommandLine>
                     <Description>Shutdown</Description>
                 </SynchronousCommand>

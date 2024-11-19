@@ -11,12 +11,10 @@ runcmd:
   - mkdir /tmp/opam
   - curl -L https://opam.ocaml.org/install.sh -o /tmp/opam/install.sh
   - chmod +x /tmp/opam/install.sh
-  - (cd /tmp/opam && ./install.sh --download-only --dev)
-  - mv /tmp/opam/opam-* /usr/bin/opam-dev
-  - chmod +x /usr/bin/opam-dev
-  - ln -s /usr/bin/opam-dev /usr/bin/opam
+  - (cd /tmp/opam && for version in 2.2.1 2.3.0 dev ; do if [ "$version" = "dev" ] ; then ./install.sh --dev --download-only ; else ./install.sh --version $version --download-only ; fi ; chmod a+x opam-* ; mv opam-* /usr/bin/opam-"${version%.*}" ; done && rm install.sh)
+  - ln -s /usr/bin/opam-2.2 /usr/bin/opam
   - apt update
-  - apt upgrade
+  - apt upgrade -y
   - apt install build-essential unzip bubblewrap -y
   - su - opam -c "git clone https://github.com/ocaml/opam-repository"
   - su - opam -c "opam init -k local -a /home/opam/opam-repository --bare --disable-sandboxing"
