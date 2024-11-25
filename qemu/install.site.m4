@@ -5,9 +5,15 @@ echo "permit nopass keepenv :wheel" >> /etc/doas.conf
 
 cat <<EOF >> /etc/rc.firsttime
 syspatch
+usermod -G staff opam
+sed -i'' '/^staff:/a\\
+	:stacksize-cur=32M:\\\\
+' /etc/login.conf
+sed -i"" -e 's/rw,/rw,softdep,noatime,/g' /etc/fstab
+mount -o update,noatime,softdep /home
 echo "AcceptEnv=*" >> /etc/ssh/sshd_config
 echo "PermitUserEnvironment=yes" >> /etc/ssh/sshd_config
-pkg_add curl-- gmake gtar-- gpatch unzip-- rsync-- git
+pkg_add curl-- gmake gtar-- gpatch unzip-- rsync-- git bash
 /usr/local/bin/curl -L https://github.com/ocaml/opam/releases/download/2.3.0/opam-2.3.0-x86_64-openbsd -o /usr/bin/opam-2.3
 chmod +x /usr/bin/opam-2.3
 ln -s /usr/bin/opam-2.3 /usr/bin/opam
