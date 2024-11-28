@@ -1,4 +1,4 @@
-(** Sandbox builds using Docker. *)
+(** Sandbox builds using QEMU. *)
 
 include S.SANDBOX
 

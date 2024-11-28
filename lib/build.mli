@@ -6,8 +6,8 @@ module Context : sig
     ?env:Config.env ->
     ?user:Obuilder_spec.user ->
     ?workdir:string ->
-    ?shell:string list ->
     ?secrets:(string * string) list ->
+    shell:string list ->
     log:S.logger ->
     src_dir:string ->
     unit -> t

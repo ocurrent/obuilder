@@ -213,12 +213,6 @@ let check_dir x =
   | _ -> Fmt.failwith "Exists, but is not a directory: %S" x
   | exception Unix.Unix_error(Unix.ENOENT, _, _) -> `Missing
 
-let check_file x =
-  match Unix.lstat x with
-  | Unix.{ st_kind = S_REG; _ } -> `Present
-  | _ -> Fmt.failwith "Exists, but is not a regular file: %S" x
-  | exception Unix.Unix_error(Unix.ENOENT, _, _) -> `Missing
-
 let ensure_dir ?(mode=0o777) path =
   match check_dir path with
   | `Present -> ()

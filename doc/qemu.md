@@ -5,8 +5,15 @@ which can provide an SSH interface.
 
 # Base Images
 
-These need to be provided as boot disks.  There is a `Makefile` in the
-`qemu` directory which builds several base images:
+`obuilder` requires a base image aka a root file system, to use as
+the basis of the container which it creates.  For example the `runc`
+backend extracts the root file system from a Docker base image, while
+a FreeBSD `jail` uses a FreeBSD installation on a ZFS volume.  `qemu`
+requires virtual _hard disks_ with the operating system preinstalled.
+
+In order to use the the [QEMU](https://www.qemu.org) backend with
+`obuilder` base images need to be created. A [Makefile](../qemu/Makefile)
+is provided which builds several base images:
 
 - ubuntu-noble-amd64-ocaml-4.14.2.qcow2
 - ubuntu-noble-amd64-ocaml-5.2.0.qcow2
@@ -17,16 +24,16 @@ These need to be provided as boot disks.  There is a `Makefile` in the
 - windows-server-2022-amd64-ocaml-4.14.2.qcow2
 - windows-server-2022-amd64-ocaml-5.2.0.qcow2
 
-The base images build automatically using Cloud Init on Ubuntu,
-`autounattend.xml` on Windows and `autoinstall` on OpenBSD.
-
-Use `make ubuntu`, `make windows` or `make openbsd`.
+The base images build are build using `make ubuntu`, `make windows` or
+`make openbsd`.  The builds are unattended builds requiring no manual
+intervention. Cloud Init is used on Ubuntu, `autounattend.xml` on Windows
+and `autoinstall` on OpenBSD.
 
 # Operation
 
-A spec which reference the required base image in using the `from`
-directive, then run the whatever commands are required.  An trivial
-example is given below.
+A spec references the required base image using the `from` directive,
+then runs whatever commands are required.  An trivial to install the
+`tar` package from opam on Windows example is given below.
 
 ```
 (
@@ -38,8 +45,12 @@ example is given below.
 )
 ```
 
-A typical invocation via `obuilder build` would be as below.  Note that
-in this example, the base images would be in `/var/cache/obuilder/base-image/*.qcow2`.
+If this spec is saved in the file `test.spec` then a typical invocation
+via `obuilder build` would be as below.
+
+The base images should have been built already and moved to the
+`base-image` folder below the folder specified by `--store`.
+i.e. `/var/cache/obuilder/base-image/*.qcow2`.
 
 ```
 obuilder build --store=qemu:/var/cache/obuilder -v -f test.spec --qemu-memory 16 --qemu-cpus 8 --qemu-guest-os windows .
@@ -52,10 +63,10 @@ successfully, `result-tmp` is moved to `result`:
 ```
 (from windows-server-2022-amd64-ocaml-4.14)
 obuilder: [INFO] Base image not present; importing "windows-server-2022-amd64-ocaml-4.14"…
-obuilder: [INFO] Exec "mkdir" "-m" "755" "--" "/var/lib/docker/test/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs"
-obuilder: [INFO] Exec "qemu-img" "create" "-f" "qcow2" "-b" "/var/lib/docker/test/base-image/windows-server-2022-amd64-ocaml-4.14.qcow2" "-F" "qcow2" "/var/lib/docker/test/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2"
-Formatting '/var/lib/docker/test/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2', fmt=qcow2 cluster_size=65536 extended_l2=off compression_type=zlib size=42949672960 backing_file=/var/lib/docker/test/base-image/windows-server-2022-amd64-ocaml-4.14.qcow2 backing_fmt=qcow2 lazy_refcounts=off refcount_bits=16
-obuilder: [INFO] Exec "mv" "/var/lib/docker/test/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101" "/var/lib/docker/test/result/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101"
+obuilder: [INFO] Exec "mkdir" "-m" "755" "--" "/var/cache/obuilder/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs"
+obuilder: [INFO] Exec "qemu-img" "create" "-f" "qcow2" "-b" "/var/cache/obuilder/base-image/windows-server-2022-amd64-ocaml-4.14.qcow2" "-F" "qcow2" "/var/cache/obuilder/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2"
+Formatting '/var/cache/obuilder/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2', fmt=qcow2 cluster_size=65536 extended_l2=off compression_type=zlib size=42949672960 backing_file=/var/cache/obuilder/base-image/windows-server-2022-amd64-ocaml-4.14.qcow2 backing_fmt=qcow2 lazy_refcounts=off refcount_bits=16
+obuilder: [INFO] Exec "mv" "/var/cache/obuilder/result-tmp/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101" "/var/cache/obuilder/result/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101"
 ---> saved as “dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101”
 ```
 
@@ -73,9 +84,9 @@ by an ACPI shutdown command sent to the qemu console.
 ```
 /: (run (cache (opam-archives (target "C:\\Users\\opam\\AppData\\Local\\opam\\download-cache")))
         (shell "opam install tar"))
-obuilder: [INFO] Exec "qemu-img" "create" "-f" "qcow2" "-b" "/var/cache/obuilder/test/result/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2" "-F" "qcow2" "/var/cache/obuilder/test/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3/rootfs/image.qcow2" "40G"
-obuilder: [INFO] Exec "cp" "-pRduT" "--reflink=auto" "/var/cache/obuilder/test/cache/c-opam-archives" "/var/cache/obuilder/test/cache-tmp/0-c-opam-archives"
-obuilder: [INFO] Fork exec "qemu-system-x86_64" "-m" "16G" "-smp" "8" "-machine" "accel=kvm,type=q35" "-cpu" "host" "-nic" "user,hostfwd=tcp::56229-:22" "-display" "none" "-monitor" "stdio" "-drive" "file=/var/cache/obuilder/test/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3/rootfs/image.qcow2,format=qcow2" "-drive" "file=/var/cache/obuilder/test/cache-tmp/0-c-opam-archives/rootfs/image.qcow2,format=qcow2"
+obuilder: [INFO] Exec "qemu-img" "create" "-f" "qcow2" "-b" "/var/cache/obuilder/result/dce4336e183de81da7537728ed710f2906e9f75431694d9de80b95a9d9ff1101/rootfs/image.qcow2" "-F" "qcow2" "/var/cache/obuilder/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3/rootfs/image.qcow2" "40G"
+obuilder: [INFO] Exec "cp" "-pRduT" "--reflink=auto" "/var/cache/obuilder/cache/c-opam-archives" "/var/cache/obuilder/cache-tmp/0-c-opam-archives"
+obuilder: [INFO] Fork exec "qemu-system-x86_64" "-m" "16G" "-smp" "8" "-machine" "accel=kvm,type=q35" "-cpu" "host" "-nic" "user,hostfwd=tcp::56229-:22" "-display" "none" "-monitor" "stdio" "-drive" "file=/var/cache/obuilder/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3/rootfs/image.qcow2,format=qcow2" "-drive" "file=/var/cache/obuilder/cache-tmp/0-c-opam-archives/rootfs/image.qcow2,format=qcow2"
 obuilder: [INFO] Exec "ssh" "opam@localhost" "-p" "56229" "-o" "NoHostAuthenticationForLocalhost=yes" "exit"
 obuilder: [INFO] Exec "ssh" "opam@localhost" "-p" "56229" "-o" "NoHostAuthenticationForLocalhost=yes" "cmd" "/c" "rmdir /s /q 'C:\Users\opam\AppData\Local\opam\download-cache'"
 obuilder: [INFO] Exec "ssh" "opam@localhost" "-p" "56229" "-o" "NoHostAuthenticationForLocalhost=yes" "cmd" "/c" "mklink /j 'C:\Users\opam\AppData\Local\opam\download-cache' 'd:\'"
@@ -110,9 +121,9 @@ The following actions will be performed:
 -> installed tar.3.1.2
 Done.
 # Run eval $(opam env) to update the current shell environment
-obuilder: [INFO] Exec "cp" "-pRduT" "--reflink=auto" "/var/cache/obuilder/test/cache-tmp/0-c-opam-archives" "/var/cache/obuilder/test/cache/c-opam-archives"
-obuilder: [INFO] Exec "rm" "-r" "/var/cache/obuilder/test/cache-tmp/0-c-opam-archives"
-obuilder: [INFO] Exec "mv" "/var/cache/obuilder/test/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3" "/var/cache/obuilder/test/result/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3"
+obuilder: [INFO] Exec "cp" "-pRduT" "--reflink=auto" "/var/cache/obuilder/cache-tmp/0-c-opam-archives" "/var/cache/obuilder/cache/c-opam-archives"
+obuilder: [INFO] Exec "rm" "-r" "/var/cache/obuilder/cache-tmp/0-c-opam-archives"
+obuilder: [INFO] Exec "mv" "/var/cache/obuilder/result-tmp/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3" "/var/cache/obuilder/result/8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3"
 ---> saved as "8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3"
 Got: "8a897f21e54db877fc971c757ef7ffc2e1293e191dc60c3a18f24f0d3f0926f3"
 ```
@@ -174,6 +185,5 @@ let tar_in ~cancelled ?stdin ~log:_ _ config result_tmp =
   else Lwt_result.fail `Cancelled
 ```
 
-Windows ships with BSD tar in `System32` so we and that does work with an
-`ssh` pipe.
+Windows ships with BSD tar in `System32` and that does work with an `ssh` pipe.
 

@@ -1,6 +1,8 @@
 open Lwt.Infix
 open Sexplib.Conv
 
+include S.Sandbox_default
+
 let ( / ) = Filename.concat
 
 let copy_to_log ~src ~dst =
@@ -85,7 +87,7 @@ let run ~cancelled ?stdin ~log t config result_tmp =
     | 0 -> Lwt_result.fail (`Msg "No connection")
     | n ->
       Os.exec_result ~pp (ssh @ ["exit"]) >>= function
-      | Ok _ -> Lwt_result.ok (Lwt.return ())
+      | Ok _ -> Lwt.return_ok ()
       | _ -> Lwt_unix.sleep 1. >>= fun _ -> loop (n - 1) in
   Lwt_unix.sleep 5. >>= fun _ ->
   loop t.qemu_boot_time >>= fun _ ->
@@ -152,16 +154,13 @@ let create (c : config) =
   let t = { qemu_cpus = c.cpus; qemu_memory = c.memory; qemu_guest_os = c.guest_os; qemu_guest_arch = c.guest_arch; qemu_boot_time = c.boot_time } in
   Lwt.return t
 
-let finished () =
-  Lwt.return ()
-
-let shell _ = Some []
+let shell _ = []
 
 let tar t =
   match t.qemu_guest_os with
-  | Linux -> None
-  | OpenBSD -> Some ["gtar"; "-xf"; "-"]
-  | Windows -> Some ["/cygdrive/c/Windows/System32/tar.exe"; "-xf"; "-"; "-C"; "/"]
+  | Linux -> tar t
+  | OpenBSD -> ["gtar"; "-xf"; "-"]
+  | Windows -> ["/cygdrive/c/Windows/System32/tar.exe"; "-xf"; "-"; "-C"; "/"]
 
 open Cmdliner
 

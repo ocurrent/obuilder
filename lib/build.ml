@@ -35,9 +35,8 @@ module Context = struct
     secrets : (string * string) list;
   }
 
-  let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?workdir ?shell ?(secrets=[]) ~log ~src_dir () =
+  let v ?switch ?(env=[]) ?(user=Obuilder_spec.root) ?workdir ?(secrets=[]) ~shell ~log ~src_dir () =
     let workdir = Option.value ~default:(if Sys.win32 then {|C:/|} else "/") workdir in
-    let shell = Option.value ~default:(if Sys.win32 then ["cmd"; "/S"; "/C"] else ["/usr/bin/env"; "bash"; "-c"]) shell in
     { switch; env; src_dir; user; workdir; shell; log; scope = Scope.empty; secrets }
 
   let with_binding name value t =
@@ -148,7 +147,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       (* Fmt.pr "COPY: %a@." Sexplib.Sexp.pp_hum (sexp_of_copy_details details); *)
       let id = Sha256.to_hex (Sha256.string (Sexplib.Sexp.to_string (sexp_of_copy_details details))) in
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
-          let argv = Option.value ~default:(["tar"; "-xf"; "-"]) (Sandbox.tar t.sandbox) in
+          let argv = Sandbox.tar t.sandbox in
           let config = Config.v
               ~cwd:"/"
               ~argv
@@ -293,7 +292,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     | `Heading | `Note -> Buffer.add_string buffer (x ^ "\n")
     | `Output -> Buffer.add_string buffer x
 
-  let healthcheck ?(timeout=30.0) t =
+  let healthcheck ?(timeout=300.0) t =
     Os.with_pipe_from_child (fun ~r ~w ->
         let result = Docker.Cmd.version ~stderr:(`FD_move_safely w) () in
         let r = Lwt_io.(of_fd ~mode:input) r ~close:Lwt.return in
@@ -306,7 +305,7 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     let log = log_to buffer in
     (* Get the base image first, before starting the timer. *)
     let switch = Lwt_switch.create () in
-    let context = Context.v ~switch ~log ~src_dir:"/tmp" () in
+    let context = Context.v ~shell:(Sandbox.shell t.sandbox) ~switch ~log ~src_dir:"/tmp" () in
     healthcheck_base () >>= function healthcheck_base ->
     get_base t ~log healthcheck_base >>= function
     | Error (`Msg _) as x -> Lwt.return x
@@ -544,7 +543,8 @@ module Make_Docker (Raw_store : S.STORE) = struct
   let df t =
     Store.df t.store
 
-  let shell _ = None
+  let shell t =
+    Docker_sandbox.shell t.sandbox
 
   let root t =
     Store.root t.store
@@ -557,7 +557,7 @@ module Make_Docker (Raw_store : S.STORE) = struct
     | `Heading | `Note -> Buffer.add_string buffer (x ^ "\n")
     | `Output -> Buffer.add_string buffer x
 
-  let healthcheck ?(timeout=if Sys.win32 then 300.0 else 30.0) t =
+  let healthcheck ?(timeout=if Sys.win32 then 300.0 else 300.0) t =
     Os.with_pipe_from_child (fun ~r ~w ->
         let result = Docker.Cmd.version ~stderr:(`FD_move_safely w) () in
         let r = Lwt_io.(of_fd ~mode:input) r ~close:Lwt.return in
@@ -571,7 +571,7 @@ module Make_Docker (Raw_store : S.STORE) = struct
     (* Get the base image first, before starting the timer. *)
     let switch = Lwt_switch.create () in
     let src_dir = if Sys.win32 then {|C:\TEMP|} else "/tmp" in
-    let context = Context.v ~switch ~log ~src_dir () in
+    let context = Context.v ~shell:(Docker_sandbox.shell t.sandbox) ~switch ~log ~src_dir () in
     healthcheck_base () >>= function healthcheck_base ->
     get_base t ~log healthcheck_base >>= function
     | Error (`Msg _) as x -> Lwt.return x

@@ -71,6 +71,13 @@ module type STORE = sig
       so that the free space is accurate. *)
 end
 
+module Sandbox_default =
+  struct
+    let tar _ = ["tar"; "-xf"; "-"]
+    let shell _ = if Sys.win32 then ["cmd"; "/S"; "/C"] else ["/usr/bin/env"; "bash"; "-c"]
+    let finished () = Lwt.return ()
+  end
+
 module type SANDBOX = sig
   type t
 
@@ -89,11 +96,11 @@ module type SANDBOX = sig
       @param log Used for child's stdout and stderr.
   *)
 
-  val shell : t -> string list option
-  (** [shell] optional value to be used as the default shell. *)
+  val shell : t -> string list
+  (** [shell t] Command line for the default shell. *)
 
-  val tar : t -> string list option
-  (** [tar] tar command for this sandbox. *)
+  val tar : t -> string list
+  (** [tar t] Command line to invoke tar for this sandbox. *)
 
   val finished : unit -> unit Lwt.t
 end
@@ -134,7 +141,7 @@ module type BUILDER = sig
   val df : t -> float Lwt.t
   (** [df t] returns the percentage of free space in the store. *)
 
-  val shell : t -> string list option
+  val shell : t -> string list
   (** [shell] optional value to be used as the default shell. *)
 
   val cache_stats : t -> int * int

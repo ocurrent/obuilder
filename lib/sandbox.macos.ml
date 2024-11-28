@@ -1,6 +1,8 @@
 open Lwt.Infix
 open Cmdliner
 
+include S.Sandbox_default
+
 type t = {
   uid: int;
   gid: int;
@@ -113,10 +115,6 @@ let finished () =
   Os.sudo [ "zfs"; "unmount"; "obuilder/result" ] >>= fun () ->
   Os.sudo [ "zfs"; "mount"; "obuilder/result" ] >>= fun () ->
   Lwt.return ()
-
-let shell _ = None
-
-let tar _ = None
 
 let uid =
   Arg.required @@

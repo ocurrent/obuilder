@@ -64,7 +64,7 @@ let build () store spec native_conf docker_conf qemu_conf src_dir secrets =
         exit 1
     in
     let secrets = List.map (fun (id, path) -> id, read_whole_file path) secrets in
-    let context = Obuilder.Context.v ~log ~src_dir ?shell:(Builder.shell builder) ~secrets () in
+    let context = Obuilder.Context.v ~log ~src_dir ~shell:(Builder.shell builder) ~secrets () in
     Builder.build builder context spec >>= function
     | Ok x ->
       Fmt.pr "Got: %S@." (x :> string);

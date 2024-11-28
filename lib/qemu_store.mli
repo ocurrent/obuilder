@@ -3,5 +3,5 @@
 include S.STORE
 
 val create : root:string -> t Lwt.t
-(** [create ~path] creates a new overlayfs store where everything will
-    be stored under [path]. *)
+(** [create ~root] creates a new QEMU store directory where everything will
+    be stored under [root]. *)

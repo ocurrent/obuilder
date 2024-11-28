@@ -1,3 +1,6 @@
+
+include Obuilder.S.Sandbox_default
+
 type t = {
   expect :
     (cancelled:unit Lwt.t ->
@@ -24,7 +27,3 @@ let run ~cancelled ?stdin ~log t (config:Obuilder.Config.t) dir =
 let create () = { expect = Queue.create () }
 
 let finished () = Lwt.return ()
-
-let shell _ = None
-
-let tar _ = None

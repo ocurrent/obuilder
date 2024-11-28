@@ -1,6 +1,8 @@
 open Lwt.Infix
 open Sexplib.Conv
 
+include S.Sandbox_default
+
 let ( / ) = Filename.concat
 
 type t = {
@@ -332,13 +334,6 @@ let create ~state_dir (c : config) =
   Log.info (fun f -> f "Architectures for multi-arch system: %a" Fmt.(Dump.list string) arches);
   clean_runc state_dir >|= fun () ->
   { runc_state_dir = state_dir; fast_sync = c.fast_sync; arches }
-
-let finished () =
-  Lwt.return ()
-
-let shell _ = None
-
-let tar _ = None
 
 open Cmdliner
 
