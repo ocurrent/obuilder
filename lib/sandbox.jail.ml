@@ -1,6 +1,8 @@
 open Lwt.Infix
 open Sexplib.Conv
 
+include S.Sandbox_default
+
 let ( / ) = Filename.concat
 
 type t = {
@@ -164,9 +166,6 @@ let create ~state_dir:_ _c =
     (* Compute a unique (across obuilder instances) name prefix for the jail. *)
     jail_name_prefix = "obuilder_" ^ (Int.to_string (Unix.getpid ()));
   }
-
-let finished () =
-  Lwt.return ()
 
 open Cmdliner
 

@@ -367,7 +367,7 @@ module Extract = struct
           | Some _ as pair -> pair
       )
 
-  let fetch ~log ~rootfs base =
+  let fetch ~log ~root:_ ~rootfs base =
     let* () = with_container ~log base (fun cid ->
         Os.with_pipe_between_children @@ fun ~r ~w ->
         let exporter = Cmd.export ~stdout:(`FD_move_safely w) (`Docker_container cid) in

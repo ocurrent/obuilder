@@ -2,6 +2,8 @@ open Lwt.Syntax
 let ( >>!= ) = Lwt_result.bind
 open Sexplib.Conv
 
+include S.Sandbox_default
+
 let ( / ) = Filename.concat
 let ( // ) dirname filename =
   if Sys.win32 then
@@ -458,9 +460,6 @@ let create (c : config) =
   let* volume_exists = Docker.Cmd.exists (`Docker_volume (Docker.obuilder_libexec ())) in
   let+ () = if Result.is_error volume_exists then create_tar_volume t else Lwt.return_unit in
   t
-
-let finished () =
-  Lwt.return ()
 
 open Cmdliner
 

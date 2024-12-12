@@ -1,6 +1,8 @@
 open Lwt.Infix
 open Cmdliner
 
+include S.Sandbox_default
+
 type t = {
   uid: int;
   gid: int;

@@ -71,7 +71,7 @@ let mock_op ?(result=Lwt_result.return ()) ?(delay_store=Lwt.return_unit) ?cance
 let test_simple _switch () =
   with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log = Log.create "b" in
-  let context = Context.v ~src_dir ~log:(Log.add log) () in
+  let context = Context.v ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log) () in
   let spec = Spec.(stage ~from:"base" [ run "Append" ]) in
   Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
   B.build builder context spec >>!= get store "output" >>= fun result ->
@@ -100,7 +100,7 @@ let test_prune _switch () =
   with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
   let start = Unix.(gettimeofday () |> gmtime) in
   let log = Log.create "b" in
-  let context = Context.v ~src_dir ~log:(Log.add log) () in
+  let context = Context.v ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log) () in
   let spec = Spec.(stage ~from:"base" [ run "Append" ]) in
   Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
   B.build builder context spec >>!= get store "output" >>= fun result ->
@@ -126,8 +126,8 @@ let test_concurrent _switch () =
   with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log1 = Log.create "b1" in
   let log2 = Log.create "b2" in
-  let context1 = Obuilder.Context.v ~log:(Log.add log1) ~src_dir () in
-  let context2 = Obuilder.Context.v ~log:(Log.add log2) ~src_dir () in
+  let context1 = Obuilder.Context.v ~shell:(Mock_sandbox.shell sandbox) ~log:(Log.add log1) ~src_dir () in
+  let context2 = Obuilder.Context.v ~shell:(Mock_sandbox.shell sandbox) ~log:(Log.add log2) ~src_dir () in
   let spec1 = Obuilder.Spec.(stage ~from:"base"[ run "A"; run "B" ]) in
   let spec2 = Obuilder.Spec.(stage ~from:"base"[ run "A"; run "C" ]) in
   let a, a_done = Lwt.wait () in
@@ -172,8 +172,8 @@ let test_concurrent_failure _switch () =
   with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log1 = Log.create "b1" in
   let log2 = Log.create "b2" in
-  let context1 = Obuilder.Context.v ~log:(Log.add log1) ~src_dir () in
-  let context2 = Obuilder.Context.v ~log:(Log.add log2) ~src_dir () in
+  let context1 = Obuilder.Context.v ~shell:(Mock_sandbox.shell sandbox) ~log:(Log.add log1) ~src_dir () in
+  let context2 = Obuilder.Context.v ~shell:(Mock_sandbox.shell sandbox) ~log:(Log.add log2) ~src_dir () in
   let spec1 = Obuilder.Spec.(stage ~from:"base" [ run "A"; run "B" ]) in
   let spec2 = Obuilder.Spec.(stage ~from:"base" [ run "A"; run "C" ]) in
   let a, a_done = Lwt.wait () in
@@ -209,8 +209,8 @@ let test_concurrent_failure_2 _switch () =
   with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log1 = Log.create "b1" in
   let log2 = Log.create "b2" in
-  let context1 = Obuilder.Context.v ~log:(Log.add log1) ~src_dir () in
-  let context2 = Obuilder.Context.v ~log:(Log.add log2) ~src_dir () in
+  let context1 = Obuilder.Context.v ~shell:(Mock_sandbox.shell sandbox) ~log:(Log.add log1) ~src_dir () in
+  let context2 = Obuilder.Context.v ~shell:(Mock_sandbox.shell sandbox) ~log:(Log.add log2) ~src_dir () in
   let spec1 = Obuilder.Spec.(stage ~from:"base" [ run "A"; run "B" ]) in
   let spec2 = Obuilder.Spec.(stage ~from:"base" [ run "A"; run "C" ]) in
   let a, a_done = Lwt.wait () in
@@ -244,7 +244,7 @@ let test_cancel _switch () =
   with_config @@ fun ~src_dir ~store:_ ~sandbox ~builder ->
   let log = Log.create "b" in
   let switch = Lwt_switch.create () in
-  let context = Context.v ~switch ~src_dir ~log:(Log.add log) () in
+  let context = Context.v ~shell:(Mock_sandbox.shell sandbox) ~switch ~src_dir ~log:(Log.add log) () in
   let spec = Spec.(stage ~from:"base" [ run "Wait" ]) in
   let r, set_r = Lwt.wait () in
   Mock_sandbox.expect sandbox (mock_op ~result:r ~cancel:set_r ());
@@ -271,8 +271,8 @@ let test_cancel_2 _switch () =
   let log2 = Log.create "b2" in
   let switch1 = Lwt_switch.create () in
   let switch2 = Lwt_switch.create () in
-  let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
-  let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
+  let context1 = Context.v ~switch:switch1 ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log1) () in
+  let context2 = Context.v ~switch:switch2 ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log2) () in
   let b1 = B.build builder context1 spec in
   Log.await log1 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   let b2 = B.build builder context2 spec in
@@ -308,8 +308,8 @@ let test_cancel_3 _switch () =
   let log2 = Log.create "b2" in
   let switch1 = Lwt_switch.create () in
   let switch2 = Lwt_switch.create () in
-  let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
-  let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
+  let context1 = Context.v ~switch:switch1 ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log1) () in
+  let context2 = Context.v ~switch:switch2 ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log2) () in
   let b1 = B.build builder context1 spec in
   Log.await log1 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   let b2 = B.build builder context2 spec in
@@ -347,8 +347,8 @@ let test_cancel_4 _switch () =
   let log2 = Log.create "b2" in
   let switch1 = Lwt_switch.create () in
   let switch2 = Lwt_switch.create () in
-  let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
-  let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
+  let context1 = Context.v ~switch:switch1 ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log1) () in
+  let context2 = Context.v ~switch:switch2 ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log2) () in
   let b1 = B.build builder context1 spec in
   Log.await log1 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   Lwt.wakeup set_r (Error (`Msg "Build failed"));
@@ -364,7 +364,7 @@ let test_cancel_4 _switch () =
   (* Start a third build. It should attach to the second build. *)
   let log3 = Log.create "b3" in
   let switch3 = Lwt_switch.create () in
-  let context3 = Context.v ~switch:switch3 ~src_dir ~log:(Log.add log3) () in
+  let context3 = Context.v ~switch:switch3 ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log3) () in
   let b3 = B.build builder context3 spec in
   Log.await log3 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   Lwt.wakeup set_r2 (Ok ());
@@ -383,7 +383,7 @@ let test_cancel_5 _switch () =
   Mock_sandbox.expect sandbox (mock_op ~result:r ~cancel:set_r ~delay_store ());
   let log1 = Log.create "b1" in
   let switch1 = Lwt_switch.create () in
-  let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
+  let context1 = Context.v ~switch:switch1 ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log1) () in
   let b1 = B.build builder context1 spec in
   Log.await log1 (sprintf "(from base)\n%s: (run (shell Wait))\nWait\n" root) >>= fun () ->
   Lwt_switch.turn_off switch1 >>= fun () ->
@@ -393,7 +393,7 @@ let test_cancel_5 _switch () =
   Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "ok") ());
   let log2 = Log.create "b2" in
   let switch2 = Lwt_switch.create () in
-  let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
+  let context2 = Context.v ~switch:switch2 ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log2) () in
   let b2 = B.build builder context2 spec in
   Log.await log2 (sprintf "(from base)\n%s: (run (shell Wait))\n" root) >>= fun () ->
   Lwt.wakeup set_delay ();
@@ -408,7 +408,7 @@ let test_delete _switch () =
   Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "B") ());
   let log1 = Log.create "b1" in
   let switch1 = Lwt_switch.create () in
-  let context1 = Context.v ~switch:switch1 ~src_dir ~log:(Log.add log1) () in
+  let context1 = Context.v ~switch:switch1 ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log1) () in
   let b1 = B.build builder context1 spec in
   b1 >>!= get store "output" >>= fun result1 ->
   Alcotest.(check build_result) "Build 1 result" (Ok "B") result1;
@@ -423,7 +423,7 @@ let test_delete _switch () =
   Mock_sandbox.expect sandbox (mock_op ~output:(`Constant "B") ());
   let log2 = Log.create "b2" in
   let switch2 = Lwt_switch.create () in
-  let context2 = Context.v ~switch:switch2 ~src_dir ~log:(Log.add log2) () in
+  let context2 = Context.v ~switch:switch2 ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log2) () in
   let b2 = B.build builder context2 spec in
   b2 >>!= get store "output" >>= fun result2 ->
   Alcotest.(check build_result) "Build 2 result" (Ok "B") result2;
@@ -766,7 +766,7 @@ let test_cache_id () =
 let test_secrets_not_provided _switch () =
   with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log = Log.create "b" in
-  let context = Context.v ~src_dir ~log:(Log.add log) () in
+  let context = Context.v ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log) () in
   let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/run/secrets/test" "test"] "Append" ]) in
   Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
   B.build builder context spec >>!= get store "output" >>= fun result ->
@@ -776,7 +776,7 @@ let test_secrets_not_provided _switch () =
 let test_secrets_simple _switch () =
   with_config @@ fun ~src_dir ~store ~sandbox ~builder ->
   let log = Log.create "b" in
-  let context = Context.v ~src_dir ~log:(Log.add log) ~secrets:["test", "top secret value"; "test2", ""] () in
+  let context = Context.v ~shell:(Mock_sandbox.shell sandbox) ~src_dir ~log:(Log.add log) ~secrets:["test", "top secret value"; "test2", ""] () in
   let spec = Spec.(stage ~from:"base" [ run ~secrets:[Secret.v ~target:"/testsecret" "test"; Secret.v "test2"] "Append" ]) in
   Mock_sandbox.expect sandbox (mock_op ~output:(`Append ("runner", "base-id")) ());
   B.build builder context spec >>!= get store "output" >>= fun result ->

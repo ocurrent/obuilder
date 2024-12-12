@@ -71,6 +71,13 @@ module type STORE = sig
       so that the free space is accurate. *)
 end
 
+module Sandbox_default =
+  struct
+    let tar _ = ["tar"; "-xf"; "-"]
+    let shell _ = if Sys.win32 then ["cmd"; "/S"; "/C"] else ["/usr/bin/env"; "bash"; "-c"]
+    let finished () = Lwt.return ()
+  end
+
 module type SANDBOX = sig
   type t
 
@@ -88,6 +95,12 @@ module type SANDBOX = sig
       @param stdin Passed to child as its standard input.
       @param log Used for child's stdout and stderr.
   *)
+
+  val shell : t -> string list
+  (** [shell t] Command line for the default shell. *)
+
+  val tar : t -> string list
+  (** [tar t] Command line to invoke tar for this sandbox. *)
 
   val finished : unit -> unit Lwt.t
 end
@@ -122,8 +135,14 @@ module type BUILDER = sig
   val count : t -> int64
   (** [count t] return number of items in the store. *)
 
+  val root : t -> string
+  (** [root t] returns the root of the store. *)
+
   val df : t -> float Lwt.t
   (** [df t] returns the percentage of free space in the store. *)
+
+  val shell : t -> string list
+  (** [shell t] returns the default shell. *)
 
   val cache_stats : t -> int * int
   (** [cache_stats t] returns the number of cache hits and the number of cache misses. *)
@@ -135,10 +154,10 @@ module type BUILDER = sig
 end
 
 module type FETCHER = sig
-  val fetch : log:Build_log.t -> rootfs:string -> string -> Config.env Lwt.t
-  (** [fetch ~log ~rootfs base] initialises the [rootfs] directory by
-      fetching and extracting the [base] image.
-      Returns the image's environment.
+  val fetch : log:Build_log.t -> root:string -> rootfs:string -> string -> Config.env Lwt.t
+  (** [fetch ~log ~root ~rootfs base] initialises the [rootfs]
+      directory by fetching and extracting the [base] image.  [root]
+      is the root of the store.  Returns the image's environment.
       @param log Used for outputting the progress of the fetch
       @param rootfs The directory in which to extract the base image *)
 end

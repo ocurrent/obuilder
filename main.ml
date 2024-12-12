@@ -4,9 +4,11 @@ let ( / ) = Filename.concat
 
 module Native_sandbox = Obuilder.Native_sandbox
 module Docker_sandbox = Obuilder.Docker_sandbox
+module Qemu_sandbox = Obuilder.Qemu_sandbox
 module Docker_store = Obuilder.Docker_store
 module Docker_extract = Obuilder.Docker_extract
 module Archive_extract = Obuilder.Archive_extract
+module Qemu_snapshot = Obuilder.Qemu_snapshot
 module Store_spec = Obuilder.Store_spec
 
 type builder = Builder : (module Obuilder.BUILDER with type t = 'a) * 'a -> builder
@@ -31,20 +33,28 @@ let create_docker_builder store_spec conf =
   let builder = Builder.v ~store ~sandbox in
   Builder ((module Builder), builder)
 
+let create_qemu_builder store_spec conf =
+  store_spec >>= fun (Store_spec.Store ((module Store), store)) ->
+  let module Builder = Obuilder.Builder (Store) (Qemu_sandbox) (Qemu_snapshot) in
+  Qemu_sandbox.create conf >|= fun sandbox ->
+  let builder = Builder.v ~store ~sandbox in
+  Builder ((module Builder), builder)
+
 let read_whole_file path =
   let ic = open_in_bin path in
   Fun.protect ~finally:(fun () -> close_in ic) @@ fun () ->
   let len = in_channel_length ic in
   really_input_string ic len
 
-let select_backend (sandbox, store_spec) native_conf docker_conf =
+let select_backend (sandbox, store_spec) native_conf docker_conf qemu_conf =
   match sandbox with
   | `Native -> create_builder store_spec native_conf
   | `Docker -> create_docker_builder store_spec docker_conf
+  | `Qemu -> create_qemu_builder store_spec qemu_conf
 
-let build () store spec native_conf docker_conf src_dir secrets =
+let build () store spec native_conf docker_conf qemu_conf src_dir secrets =
   Lwt_main.run begin
-    select_backend store native_conf docker_conf
+    select_backend store native_conf docker_conf qemu_conf
     >>= fun (Builder ((module Builder), builder)) ->
     Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     let spec =
@@ -54,7 +64,7 @@ let build () store spec native_conf docker_conf src_dir secrets =
         exit 1
     in
     let secrets = List.map (fun (id, path) -> id, read_whole_file path) secrets in
-    let context = Obuilder.Context.v ~log ~src_dir ~secrets () in
+    let context = Obuilder.Context.v ~log ~src_dir ~shell:(Builder.shell builder) ~secrets () in
     Builder.build builder context spec >>= function
     | Ok x ->
       Fmt.pr "Got: %S@." (x :> string);
@@ -67,9 +77,9 @@ let build () store spec native_conf docker_conf src_dir secrets =
       exit 1
   end
 
-let healthcheck () store native_conf docker_conf =
+let healthcheck () store native_conf docker_conf qemu_conf =
   Lwt_main.run begin
-    select_backend store native_conf docker_conf
+    select_backend store native_conf docker_conf qemu_conf
     >>= fun (Builder ((module Builder), builder)) ->
     Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     Builder.healthcheck builder >|= function
@@ -80,17 +90,17 @@ let healthcheck () store native_conf docker_conf =
       Fmt.pr "Healthcheck passed@."
   end
 
-let delete () store native_conf docker_conf id =
+let delete () store native_conf docker_conf qemu_conf id =
   Lwt_main.run begin
-    select_backend store native_conf docker_conf
+    select_backend store native_conf docker_conf qemu_conf
     >>= fun (Builder ((module Builder), builder)) ->
     Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
     Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
   end
 
-let clean () store native_conf docker_conf =
+let clean () store native_conf docker_conf qemu_conf =
   Lwt_main.run begin
-    select_backend store native_conf docker_conf
+    select_backend store native_conf docker_conf qemu_conf
     >>= fun (Builder ((module Builder), builder)) ->
     Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ begin fun () ->
       let now = Unix.(gmtime (gettimeofday ())) in
@@ -157,21 +167,21 @@ let build =
   let info = Cmd.info "build" ~doc in
   Cmd.v info
     Term.(const build $ setup_log $ store $ spec_file $ Native_sandbox.cmdliner
-          $ Docker_sandbox.cmdliner $ src_dir $ secrets)
+          $ Docker_sandbox.cmdliner $ Qemu_sandbox.cmdliner $ src_dir $ secrets)
 
 let delete =
   let doc = "Recursively delete a cached build result." in
   let info = Cmd.info "delete" ~doc in
   Cmd.v info
     Term.(const delete $ setup_log $ store $ Native_sandbox.cmdliner
-          $ Docker_sandbox.cmdliner $ id)
+          $ Docker_sandbox.cmdliner $ Qemu_sandbox.cmdliner $ id)
 
 let clean =
   let doc = "Clean all cached build results." in
   let info = Cmd.info "clean" ~doc in
   Cmd.v info
     Term.(const clean $ setup_log $ store $ Native_sandbox.cmdliner
-          $ Docker_sandbox.cmdliner)
+          $ Docker_sandbox.cmdliner $ Qemu_sandbox.cmdliner)
 
 let buildkit =
   Arg.value @@
@@ -200,7 +210,7 @@ let healthcheck =
   let info = Cmd.info "healthcheck" ~doc in
   Cmd.v info
     Term.(const healthcheck $ setup_log $ store $ Native_sandbox.cmdliner
-          $ Docker_sandbox.cmdliner)
+          $ Docker_sandbox.cmdliner $ Qemu_sandbox.cmdliner)
 
 let cmds = [build; delete; clean; dockerfile; healthcheck]
 

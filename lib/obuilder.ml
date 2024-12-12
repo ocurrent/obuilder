@@ -15,9 +15,11 @@ module Rsync_store = Rsync_store
 module Xfs_store = Xfs_store
 module Store_spec = Store_spec
 module Docker_store = Docker_store
+module Qemu_store = Qemu_store
 
 (** {2 Fetchers} *)
 module Zfs_clone = Zfs_clone
+module Qemu_snapshot = Qemu_snapshot
 module Docker_extract = Docker.Extract
 module Archive_extract = Archive_extract
 
@@ -26,6 +28,7 @@ module Archive_extract = Archive_extract
 module Config = Config
 module Native_sandbox = Sandbox
 module Docker_sandbox = Docker_sandbox
+module Qemu_sandbox = Qemu_sandbox
 
 (** {2 Builders} *)
 
