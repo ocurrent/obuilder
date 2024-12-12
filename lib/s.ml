@@ -142,7 +142,7 @@ module type BUILDER = sig
   (** [df t] returns the percentage of free space in the store. *)
 
   val shell : t -> string list
-  (** [shell] optional value to be used as the default shell. *)
+  (** [shell t] returns the default shell. *)
 
   val cache_stats : t -> int * int
   (** [cache_stats t] returns the number of cache hits and the number of cache misses. *)

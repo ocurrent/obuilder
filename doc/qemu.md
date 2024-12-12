@@ -32,16 +32,17 @@ and `autoinstall` on OpenBSD.
 # Operation
 
 A spec references the required base image using the `from` directive,
-then runs whatever commands are required.  An trivial to install the
-`tar` package from opam on Windows example is given below.
+then runs whatever commands are required.  A trivial example which runs
+`opam install tar` is given below. The `cache` directive maps an,
+initially empty, folder over the opam download folder so these files
+can be shared between jobs.
 
 ```
 (
  (from windows-server-2022-amd64-ocaml-4.14.2)
  (run
-  (run (cache (opam-archives (target "c:\\Users\\opam\\AppData\\local\\opam\\download-cache")))
-  (shell "opam install tar")
- )
+  (cache (opam-archives (target C:\Users\opam\AppData\Local\opam\download-cache)))
+  (shell "opam install tar"))
 )
 ```
 
