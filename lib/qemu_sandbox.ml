@@ -102,7 +102,7 @@ let run ~cancelled ?stdin ~log t config result_tmp =
       Os.exec (ssh @ ["doas"; "fsck"; "-y"; dev]) >>= fun () ->
       Os.exec (ssh @ ["doas"; "mount"; dev; dst])
     | Windows ->
-      Os.exec (ssh @ ["cmd"; "/c"; "rmdir /s /q '" ^ dst ^ "'"]) >>= fun () ->
+      Os.exec (ssh @ ["cmd"; "/c"; "if exist '" ^ dst ^ "' rmdir /s /q '" ^ dst ^ "'"]) >>= fun () ->
       let drive_letter = String.init 1 (fun _ -> Char.chr (Char.code 'd' + i)) in
       Os.exec (ssh @ ["cmd"; "/c"; "mklink /j '" ^ dst ^ "' '" ^ drive_letter ^ ":\\'"])
   ) config.Config.mounts >>= fun () ->
@@ -125,6 +125,16 @@ let run ~cancelled ?stdin ~log t config result_tmp =
   );
   Os.process_result ~pp proc2 >>= fun res ->
   copy_log >>= fun () ->
+
+  Lwt_list.iter_s (fun { Config.Mount.dst; _ } ->
+    match t.qemu_guest_os with
+    | Linux
+    | OpenBSD -> Lwt.return_unit
+    | Windows ->
+      (* if the junction isn't removed and the target drive is missing, then `mkdir -p <dst>/foo` fails *)
+      (* also note that `fsutil reparsepoint delete <dst>` only works if the target exists *)
+      Os.exec (ssh @ ["cmd"; "/c"; "rmdir '" ^ dst ^ "'"])
+  ) config.Config.mounts >>= fun () ->
 
   (match t.qemu_guest_arch with
     | Amd64 ->

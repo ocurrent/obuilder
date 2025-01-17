@@ -248,7 +248,7 @@
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
                     <Order>20</Order>
-                    <CommandLine>netsh advfirewall firewall set rule group="OpenSSH SSH Server Preview (sshd)" new profile=any enable=yes</CommandLine>
+                    <CommandLine>netsh advfirewall firewall set rule name="OpenSSH SSH Server Preview (sshd)" new profile=any enable=yes</CommandLine>
                     <Description>Configure OpenSSH</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
