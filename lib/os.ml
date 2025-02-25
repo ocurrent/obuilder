@@ -34,6 +34,12 @@ let pp_cmd f (cmd, argv) =
   let argv = if cmd = "" then argv else cmd :: argv in
   Fmt.hbox Fmt.(list ~sep:sp (quote string)) f argv
 
+let pp_exit_status f n =
+  if Sys.win32 && n < 0 then
+    Fmt.pf f "0x%08lx" (Int32.of_int n)
+  else
+    Fmt.int f n
+
 let redirection = function
   | `FD_move_safely x -> `FD_copy x.raw
   | `Dev_null -> `Dev_null
@@ -87,7 +93,7 @@ let process_result ~pp proc =
   | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp Fmt.Dump.signal x)
   >>= function
   | Ok 0 -> Lwt_result.return ()
-  | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
+  | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %a" pp pp_exit_status n
   | Error e -> Lwt_result.fail (e : [`Msg of string] :> [> `Msg of string])
 
 (* Overridden in unit-tests *)
@@ -97,7 +103,7 @@ let exec_result ?cwd ?stdin ?stdout ?stderr ~pp ?(is_success=((=) 0)) ?(cmd="") 
   Logs.info (fun f -> f "Exec %a" pp_cmd (cmd, argv));
   !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp (cmd, Array.of_list argv) >>= function
   | Ok n when is_success n -> Lwt_result.ok Lwt.return_unit
-  | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
+  | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %a" pp pp_exit_status n
   | Error e -> Lwt_result.fail (e : [`Msg of string] :> [> `Msg of string])
 
 let exec ?timeout ?cwd ?stdin ?stdout ?stderr ?(is_success=((=) 0)) ?(cmd="") argv =
@@ -105,7 +111,7 @@ let exec ?timeout ?cwd ?stdin ?stdout ?stderr ?(is_success=((=) 0)) ?(cmd="") ar
   let pp f = pp_cmd f (cmd, argv) in
   !lwt_process_exec ?timeout ?cwd ?stdin ?stdout ?stderr ~pp (cmd, Array.of_list argv) >>= function
   | Ok n when is_success n -> Lwt.return_unit
-  | Ok n -> Fmt.failwith "%t failed with exit status %d" pp n
+  | Ok n -> Fmt.failwith "%t failed with exit status %a" pp pp_exit_status n
   | Error (`Msg m) -> failwith m
 
 let running_as_root = not (Sys.unix) || Unix.getuid () = 0
