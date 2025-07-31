@@ -1,3 +1,5 @@
+define(`ORDER_NUM', `1')dnl
+define(`ORDER', `ORDER_NUM`'define(`ORDER_NUM', incr(ORDER_NUM))')dnl
 <?xml version="1.0" encoding="utf-8"?>
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
     <settings pass="windowsPE">
@@ -152,152 +154,157 @@
             </OOBE>
             <FirstLogonCommands>
                 <SynchronousCommand wcm:action="add">
-                    <Order>1</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Uninstall-WindowsFeature -Name Windows-Defender -Restart"</CommandLine>
                     <Description>Remove Windows-Defender</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>2</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>cmd /C wmic useraccount where "name='Administrator'" set PasswordExpires=FALSE</CommandLine>
                     <Description>PasswordExpires=FALSE</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>3</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Set-NetConnectionProfile -NetworkCategory Private -InputObject (Get-NetConnectionProfile)"</CommandLine>
                     <Description>NetworkLocation</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>4</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>winrm quickconfig -q</CommandLine>
                     <Description>Configure WinRM</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>5</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>winrm set winrm/config/service @{AllowUnencrypted="true"}</CommandLine>
                     <Description>Configure WinRM</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>6</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>winrm set winrm/config/service/auth @{Basic="true"}</CommandLine>
                     <Description>Configure WinRM</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>7</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>netsh advfirewall firewall set rule group="remote administration" new enable=yes</CommandLine>
                     <Description>Configure WinRM</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>8</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>net stop winrm</CommandLine>
                     <Description>Configure WinRM</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>9</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>net start winrm</CommandLine>
                     <Description>Configure WinRM</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>10</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>cmd /c "copy e:\setup-x86_64.exe c:\windows\setup-x86_64.exe"</CommandLine>
                     <Description>Copy cygwin executable</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>11</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>c:\windows\setup-x86_64.exe -q -O --site https://cygwin.mirror.constant.com --symlink-type native -P mingw64-x86_64-gcc-core,rsync,git,make,patch,unzip,pkgconf,pkg-config</CommandLine>
                     <Description>Install cygwin</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>12</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>setx /m PATH "c:\cygwin64\bin;c:\cygwin64\usr\x86_64-w64-mingw32\sys-root\mingw\bin;%PATH%"</CommandLine>
                     <Description>Set PATH environment variable</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>13</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>c:\cygwin64\bin\gawk.exe -i inplace "/(^#)|(^$)/{print;next}{$4=""noacl,""$4;print}" C:\cygwin64\etc\fstab</CommandLine>
                     <Description>Add opam-repository</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>14</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>setx /m OPAMCONFIRMLEVEL unsafe-yes</CommandLine>
                     <Description>Set PATH environment variable</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>15</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>setx /m OPAMYES 1</CommandLine>
                     <Description>Set PATH environment variable</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>16</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>reg add HKLM\SOFTWARE\OpenSSH /v DefaultShell /d c:\cygwin64\bin\bash.exe</CommandLine>
                     <Description>Configure WinRM</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>17</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>cmd /c "msiexec /q /norestart /i e:\openssh-win64.msi"</CommandLine>
                     <Description>Install OpenSSH</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>18</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>cmd /c "copy e:\id_ed25519.pub c:\programdata\ssh\administrators_authorized_keys"</CommandLine>
                     <Description>Install public key</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>19</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>cmd /c "echo AcceptENV * &gt;&gt; c:\programdata\ssh\sshd_config"</CommandLine>
                     <Description>Install public key</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>20</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>netsh advfirewall firewall set rule name="OpenSSH SSH Server Preview (sshd)" new profile=any enable=yes</CommandLine>
                     <Description>Configure OpenSSH</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>21</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>cmd /c "copy e:\opam-2.2.exe c:\cygwin64\bin\opam.exe"</CommandLine>
                     <Description>Copy opam executable</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>22</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>cmd /c "copy e:\opam-2.2.exe c:\cygwin64\bin\opam-2.2.exe"</CommandLine>
                     <Description>Copy opam executable</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>23</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>cmd /c "copy e:\opam-2.3.exe c:\cygwin64\bin\opam-2.3.exe"</CommandLine>
                     <Description>Copy opam executable</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>24</Order>
+                    <Order>ORDER</Order>
+                    <CommandLine>cmd /c "copy e:\opam-2.4.exe c:\cygwin64\bin\opam-2.4.exe"</CommandLine>
+                    <Description>Copy opam executable</Description>
+                </SynchronousCommand>
+                <SynchronousCommand wcm:action="add">
+                    <Order>ORDER</Order>
                     <CommandLine>cmd /c "copy e:\opam-dev.exe c:\cygwin64\bin\opam-dev.exe"</CommandLine>
                     <Description>Copy opam executable</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>25</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>c:\cygwin64\bin\bash.exe --login -c "cd /cygdrive/c/Users/opam &amp;&amp; git clone https://github.com/ocaml/opam-repository"</CommandLine>
                     <Description>Add opam-repository</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>26</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>c:\cygwin64\bin\opam init -y -k local -a c:\users\opam\opam-repository --bare --cygwin-location=c:\cygwin64</CommandLine>
                     <Description>Opam init</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>27</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>c:\cygwin64\bin\opam switch create VERSION --packages=ocaml-base-compiler.VERSION</CommandLine>
                     <Description>Opam switch</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>28</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>c:\cygwin64\bin\opam pin add -k version ocaml-base-compiler VERSION</CommandLine>
                     <Description>Opam switch</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>29</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>mkdir c:\users\opam\src</CommandLine>
                     <Description>Create a src directory</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
-                    <Order>30</Order>
+                    <Order>ORDER</Order>
                     <CommandLine>shutdown /s /t 10</CommandLine>
                     <Description>Shutdown</Description>
                 </SynchronousCommand>

@@ -1,12 +1,9 @@
 
-clean:
-	rm -f *.qcow2 *.iso
-
 # Windows
 
-windows: windows-server-2022-amd64-ocaml-4.14.qcow2 windows-server-2022-amd64-ocaml-5.2.qcow2 busybox.qcow2
+windows: windows-server-2022-amd64-ocaml-4.14.qcow2 windows-server-2022-amd64-ocaml-5.3.qcow2 busybox.qcow2
 
-windows-server-2022-amd64-ocaml-5.2.qcow2: windows-server-2022-amd64-ocaml-5.2.1.qcow2
+windows-server-2022-amd64-ocaml-5.3.qcow2: windows-server-2022-amd64-ocaml-5.3.0.qcow2
 	ln -sf $< $@
 
 windows-server-2022-amd64-ocaml-4.14.qcow2: windows-server-2022-amd64-ocaml-4.14.2.qcow2
@@ -19,19 +16,22 @@ windows-server-2022-amd64-ocaml-%.qcow2: unattend-%.iso virtio-win.ISO
 		-netdev user,id=net0,hostfwd=tcp::60022-:22 -device virtio-net,netdev=net0 \
 		-drive file=$@,if=virtio \
 		-drive file=cache-ntfs.qcow2,if=virtio \
-		-drive file=SW_DVD9_Win_Server_STD_CORE_2022_2108.6_64Bit_English_DC_STD_MLF_X23-03231.ISO,media=cdrom \
+		-drive file=SW_DVD9_Win_Server_STD_CORE_2022_2108.24_64Bit_English_DC_STD_MLF_X23-54269.ISO,media=cdrom \
 		-drive file=$<,media=cdrom \
 		-drive file=virtio-win.ISO,media=cdrom
 
-unattend-%.iso: autounattend.xml.m4 id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-2.3.exe opam-dev.exe setup-x86_64.exe
+unattend-%.iso: autounattend.xml.m4 id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-2.3.exe opam-2.4.exe opam-dev.exe setup-x86_64.exe
 	m4 -D VERSION=$* $< > autounattend.xml
-	mkisofs -o $@ -r -J autounattend.xml id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-2.3.exe opam-dev.exe setup-x86_64.exe
+	mkisofs -o $@ -r -J autounattend.xml id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-2.3.exe opam-2.4.exe opam-dev.exe setup-x86_64.exe
 
 opam-2.2.exe:
 	curl -L https://github.com/ocaml/opam/releases/download/2.2.1/opam-2.2.1-x86_64-windows.exe -o opam-2.2.exe
 
 opam-2.3.exe:
 	curl -L https://github.com/ocaml/opam/releases/download/2.3.0/opam-2.3.0-x86_64-windows.exe -o opam-2.3.exe
+
+opam-2.4.exe:
+	curl -L https://github.com/ocaml/opam/releases/download/2.4.1/opam-2.4.1-x86_64-windows.exe -o opam-2.4.exe
 
 opam-dev.exe:
 	curl -L https://github.com/ocaml/opam/releases/download/2.3.0/opam-2.3.0-x86_64-windows.exe -o opam-dev.exe
@@ -97,15 +97,18 @@ busybox.qcow2: noble-server-cloudimg-amd64.qcow2 seed.iso
 
 # OpenBSD
 
-openbsd: openbsd-76-amd64-ocaml-4.14.2.qcow2 openbsd-76-amd64-ocaml-5.2.1.qcow2
+openbsd: openbsd-77-amd64-ocaml-4.14.qcow2 openbsd-77-amd64-ocaml-5.2.qcow2 openbsd-77-amd64-ocaml-5.3.qcow2
 
-openbsd-76-amd64-ocaml-5.2.qcow2: openbsd-76-amd64-ocaml-5.2.1.qcow2
+openbsd-77-amd64-ocaml-5.3.qcow2: openbsd-77-amd64-ocaml-5.3.0.qcow2
 	ln -sf $< $@
 
-openbsd-76-amd64-ocaml-4.14.qcow2: openbsd-76-amd64-ocaml-4.14.2.qcow2
+openbsd-77-amd64-ocaml-5.2.qcow2: openbsd-77-amd64-ocaml-5.2.1.qcow2
 	ln -sf $< $@
 
-openbsd-76-amd64-ocaml-%.qcow2: tftp/auto_install tftp/bsd.rd tftp/etc/boot.conf mirror%
+openbsd-77-amd64-ocaml-4.14.qcow2: openbsd-77-amd64-ocaml-4.14.2.qcow2
+	ln -sf $< $@
+
+openbsd-77-amd64-ocaml-%.qcow2: tftp/auto_install tftp/bsd.rd tftp/etc/boot.conf mirror%
 	qemu-img create -f qcow2 $@ 24G
 	qemu-img create -f qcow2 cache-ffs.qcow2 20G
 	python3 -m http.server --directory mirror --bind 0.0.0.0 80 & pid=$$! && \
@@ -117,11 +120,11 @@ openbsd-76-amd64-ocaml-%.qcow2: tftp/auto_install tftp/bsd.rd tftp/etc/boot.conf
 
 tftp/auto_install:
 	mkdir -p tftp
-	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.6/amd64/pxeboot -o tftp/auto_install
+	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.7/amd64/pxeboot -o tftp/auto_install
 
 tftp/bsd.rd:
 	mkdir -p tftp
-	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.6/amd64/bsd.rd -o tftp/bsd.rd
+	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.7/amd64/bsd.rd -o tftp/bsd.rd
 
 tftp/etc/boot.conf:
 	mkdir -p tftp/etc
@@ -130,9 +133,16 @@ tftp/etc/boot.conf:
 mirror%: install.site.m4 install.conf disklabel
 	m4 -D VERSION=$* $< > install.site
 	chmod +x install.site
-	mkdir -p mirror/pub/OpenBSD/7.6/amd64
-	tar -czf mirror/pub/OpenBSD/7.6/amd64/site76.tgz install.site
-	for f in BUILDINFO SHA256.sig base76.tgz bsd bsd.mp bsd.rd comp76.tgz game76.tgz man76.tgz pxeboot xbase76.tgz xfont76.tgz xserv76.tgz xshare76.tgz ; do curl -C - -L https://cdn.openbsd.org/pub/OpenBSD/7.6/amd64/$$f -o mirror/pub/OpenBSD/7.6/amd64/$$f ; done
-	cd mirror/pub/OpenBSD/7.6/amd64 && ls -l > index.txt
+	mkdir -p mirror/pub/OpenBSD/7.7/amd64
+	tar -czf mirror/pub/OpenBSD/7.7/amd64/site77.tgz install.site
+	for f in BUILDINFO SHA256.sig base77.tgz bsd bsd.mp bsd.rd comp77.tgz game77.tgz man77.tgz pxeboot xbase77.tgz xfont77.tgz xserv77.tgz xshare77.tgz ; do curl -C - -L https://cdn.openbsd.org/pub/OpenBSD/7.7/amd64/$$f -o mirror/pub/OpenBSD/7.7/amd64/$$f ; done
+	cd mirror/pub/OpenBSD/7.7/amd64 && ls -l > index.txt
 	cp install.conf disklabel mirror
+
+deps:
+	apt install -y make m4 mkisofs cloud-image-utils
+
+clean:
+	rm -f *.qcow2 *.iso *.exe *.msi install.site autounattend.xml
+	rm -rf mirror tftp
 
