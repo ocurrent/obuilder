@@ -134,7 +134,7 @@ module Make (Raw : S.STORE) = struct
   let df t = Raw.df t.raw
   let root t = Raw.root t.raw
   let cache_stats t = t.cache_hit, t.cache_miss
-  let cache ~user t = Raw.cache ~user t.raw
+  let cache ?shared ~user t = Raw.cache ?shared ~user t.raw
 
   let delete ?(log=ignore) t id =
     let rec aux id =

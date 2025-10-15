@@ -82,8 +82,10 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
         let to_release = ref [] in
         Lwt.finalize
           (fun () ->
-             cache |> Lwt_list.map_s (fun { Obuilder_spec.Cache.id; target; buildkit_options = _ } ->
-                 Store.cache ~user t.store id >|= fun (src, release) ->
+             cache |> Lwt_list.map_s (fun { Obuilder_spec.Cache.id; target; buildkit_options } ->
+                 let shared = List.mem_assoc "sharing" buildkit_options
+                              && List.assoc "sharing" buildkit_options = "shared" in
+                 Store.cache ~shared ~user t.store id >|= fun (src, release) ->
                  to_release := release :: !to_release;
                  { Config.Mount.ty = `Bind; src; dst = target; readonly = false }
                )
@@ -367,8 +369,10 @@ module Make_Docker (Raw_store : S.STORE) = struct
         let to_release = ref [] in
         Lwt.finalize
           (fun () ->
-             cache |> Lwt_list.map_s (fun { Obuilder_spec.Cache.id; target; buildkit_options = _ } ->
-                 Store.cache ~user t.store id >|= fun (src, release) ->
+             cache |> Lwt_list.map_s (fun { Obuilder_spec.Cache.id; target; buildkit_options } ->
+                 let shared = List.mem_assoc "sharing" buildkit_options
+                              && List.assoc "sharing" buildkit_options = "shared" in
+                 Store.cache ~shared ~user t.store id >|= fun (src, release) ->
                  to_release := release :: !to_release;
                  { Config.Mount.ty = `Volume; src; dst = target; readonly = false }
                )
