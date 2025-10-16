@@ -29,7 +29,7 @@
   astring
   (fmt (>= 0.8.9))
   logs
-  (cmdliner (>= 1.3.0))
+  (cmdliner (>= 2.0.0))
   (tar-unix (and (>= 2.6.0) (< 3.0.0)))
   (yojson (>= 1.6.0))
   sexplib
