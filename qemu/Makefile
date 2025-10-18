@@ -1,7 +1,10 @@
 
 # Windows
 
-windows: windows-server-2022-amd64-ocaml-4.14.qcow2 windows-server-2022-amd64-ocaml-5.3.qcow2 busybox.qcow2
+windows: windows-server-2022-amd64-ocaml-4.14.qcow2 windows-server-2022-amd64-ocaml-5.3.qcow2 windows-server-2022-amd64-ocaml-5.4.qcow2 busybox.qcow2
+
+windows-server-2022-amd64-ocaml-5.4.qcow2: windows-server-2022-amd64-ocaml-5.4.0.qcow2
+	ln -sf $< $@
 
 windows-server-2022-amd64-ocaml-5.3.qcow2: windows-server-2022-amd64-ocaml-5.3.0.qcow2
 	ln -sf $< $@
@@ -97,7 +100,10 @@ busybox.qcow2: noble-server-cloudimg-amd64.qcow2 seed.iso
 
 # OpenBSD
 
-openbsd: openbsd-77-amd64-ocaml-4.14.qcow2 openbsd-77-amd64-ocaml-5.2.qcow2 openbsd-77-amd64-ocaml-5.3.qcow2
+openbsd: openbsd-77-amd64-ocaml-4.14.qcow2 openbsd-77-amd64-ocaml-5.2.qcow2 openbsd-77-amd64-ocaml-5.3.qcow2 openbsd-77-amd64-ocaml-5.4.qcow2
+
+openbsd-77-amd64-ocaml-5.4.qcow2: openbsd-77-amd64-ocaml-5.4.0.qcow2
+	ln -sf $< $@
 
 openbsd-77-amd64-ocaml-5.3.qcow2: openbsd-77-amd64-ocaml-5.3.0.qcow2
 	ln -sf $< $@
