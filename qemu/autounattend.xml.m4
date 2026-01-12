@@ -275,6 +275,11 @@ define(`ORDER', `ORDER_NUM`'define(`ORDER_NUM', incr(ORDER_NUM))')dnl
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
                     <Order>ORDER</Order>
+                    <CommandLine>cmd /c "copy e:\opam-2.5.exe c:\cygwin64\bin\opam-2.5.exe"</CommandLine>
+                    <Description>Copy opam executable</Description>
+                </SynchronousCommand>
+                <SynchronousCommand wcm:action="add">
+                    <Order>ORDER</Order>
                     <CommandLine>cmd /c "copy e:\opam-dev.exe c:\cygwin64\bin\opam-dev.exe"</CommandLine>
                     <Description>Copy opam executable</Description>
                 </SynchronousCommand>
