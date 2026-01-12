@@ -23,9 +23,9 @@ windows-server-2022-amd64-ocaml-%.qcow2: unattend-%.iso virtio-win.ISO
 		-drive file=$<,media=cdrom \
 		-drive file=virtio-win.ISO,media=cdrom
 
-unattend-%.iso: autounattend.xml.m4 id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-2.3.exe opam-2.4.exe opam-dev.exe setup-x86_64.exe
+unattend-%.iso: autounattend.xml.m4 id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-2.3.exe opam-2.4.exe opam-2.5.exe opam-dev.exe setup-x86_64.exe
 	m4 -D VERSION=$* $< > autounattend.xml
-	mkisofs -o $@ -r -J autounattend.xml id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-2.3.exe opam-2.4.exe opam-dev.exe setup-x86_64.exe
+	mkisofs -o $@ -r -J autounattend.xml id_ed25519.pub openssh-win64.msi opam-2.2.exe opam-2.3.exe opam-2.4.exe opam-2.5.exe opam-dev.exe setup-x86_64.exe
 
 opam-2.2.exe:
 	curl -L https://github.com/ocaml/opam/releases/download/2.2.1/opam-2.2.1-x86_64-windows.exe -o opam-2.2.exe
@@ -36,8 +36,11 @@ opam-2.3.exe:
 opam-2.4.exe:
 	curl -L https://github.com/ocaml/opam/releases/download/2.4.1/opam-2.4.1-x86_64-windows.exe -o opam-2.4.exe
 
+opam-2.5.exe:
+	curl -L https://github.com/ocaml/opam/releases/download/2.5.0/opam-2.5.0-x86_64-windows.exe -o opam-2.5.exe
+
 opam-dev.exe:
-	curl -L https://github.com/ocaml/opam/releases/download/2.3.0/opam-2.3.0-x86_64-windows.exe -o opam-dev.exe
+	curl -L https://github.com/ocaml/opam/releases/download/2.5.0/opam-2.5.0-x86_64-windows.exe -o opam-dev.exe
 
 openssh-win64.msi:
 	curl -L https://github.com/PowerShell/Win32-OpenSSH/releases/download/v9.2.2.0p1-Beta/OpenSSH-Win64-v9.2.2.0.msi -o openssh-win64.msi

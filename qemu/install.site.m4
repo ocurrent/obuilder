@@ -16,9 +16,11 @@ echo "PermitUserEnvironment=yes" >> /etc/ssh/sshd_config
 pkg_add curl-- gmake gtar-- gpatch unzip-- rsync-- git bash
 /usr/local/bin/curl -L https://github.com/ocaml/opam/releases/download/2.3.0/opam-2.3.0-x86_64-openbsd -o /usr/bin/opam-2.3
 /usr/local/bin/curl -L https://github.com/ocaml/opam/releases/download/2.4.1/opam-2.4.1-x86_64-openbsd -o /usr/bin/opam-2.4
+/usr/local/bin/curl -L https://github.com/ocaml/opam/releases/download/2.5.0/opam-2.5.0-x86_64-openbsd -o /usr/bin/opam-2.5
 chmod +x /usr/bin/opam-2.3
 chmod +x /usr/bin/opam-2.4
-ln -s /usr/bin/opam-2.4 /usr/bin/opam
+chmod +x /usr/bin/opam-2.5
+ln -s /usr/bin/opam-2.5 /usr/bin/opam
 su - opam -c "echo OPAMYES=1 >> .ssh/environment"
 su - opam -c "echo OPAMCONFIRMLEVEL=unsafe-yes >> .ssh/environment"
 su - opam -c "echo OPAMERRLOGLEN=0 >> .ssh/environment"
