@@ -307,23 +307,38 @@ let get_tmp_ds t name =
    - We might crash before making the main@snap tag. If main is missing this tag,
      it is safe to create it, since we must have been just about to do that.
 *)
-let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
+let cache ?(shared=false) ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
-  Log.debug (fun f -> f "zfs: get cache %S" (name :> string));
-  let gen = cache.gen in
   let main_ds = Dataset.cache name in
-  let tmp_ds = get_tmp_ds t name in
-  (* Create the cache as an empty directory if it doesn't exist. *)
-  Dataset.if_missing t main_ds (fun  () -> Zfs.create t main_ds) >>= fun () ->
-  (* Ensure we have the snapshot. This is needed on first creation, and
-     also to recover from crashes. *)
-  Dataset.if_missing t main_ds ~snapshot:default_snapshot (fun () ->
-      Zfs.chown ~user t main_ds >>= fun () ->
-      Zfs.snapshot t main_ds ~snapshot:default_snapshot
-    ) >>= fun () ->
-  cache.n_clones <- cache.n_clones + 1;
-  Zfs.clone t ~src:main_ds ~snapshot:default_snapshot tmp_ds >>= fun () ->
+  if shared then
+    (* Shared mode: return the actual cache directory, no copy-on-write *)
+    Lwt_mutex.with_lock cache.lock @@ fun () ->
+    Log.debug (fun f -> f "zfs: get cache %S (shared)" (name :> string));
+    (* Create the cache as an empty directory if it doesn't exist. *)
+    Dataset.if_missing t main_ds (fun () -> Zfs.create t main_ds) >>= fun () ->
+    (* Ensure we have the snapshot. This is needed on first creation. *)
+    Dataset.if_missing t main_ds ~snapshot:default_snapshot (fun () ->
+        Zfs.chown ~user t main_ds >>= fun () ->
+        Zfs.snapshot t main_ds ~snapshot:default_snapshot
+      ) >>= fun () ->
+    let release () = Lwt.return_unit in  (* No-op for shared caches *)
+    Lwt.return (Dataset.path t main_ds, release)
+  else
+    (* Non-shared mode: existing clone behavior *)
+    Lwt_mutex.with_lock cache.lock @@ fun () ->
+    Log.debug (fun f -> f "zfs: get cache %S" (name :> string));
+    let gen = cache.gen in
+    let tmp_ds = get_tmp_ds t name in
+    (* Create the cache as an empty directory if it doesn't exist. *)
+    Dataset.if_missing t main_ds (fun  () -> Zfs.create t main_ds) >>= fun () ->
+    (* Ensure we have the snapshot. This is needed on first creation, and
+       also to recover from crashes. *)
+    Dataset.if_missing t main_ds ~snapshot:default_snapshot (fun () ->
+        Zfs.chown ~user t main_ds >>= fun () ->
+        Zfs.snapshot t main_ds ~snapshot:default_snapshot
+      ) >>= fun () ->
+    cache.n_clones <- cache.n_clones + 1;
+    Zfs.clone t ~src:main_ds ~snapshot:default_snapshot tmp_ds >>= fun () ->
   let release () =
     Lwt_mutex.with_lock cache.lock @@ fun () ->
     Log.debug (fun f -> f "zfs: release cache %S" (name :> string));

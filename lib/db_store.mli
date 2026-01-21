@@ -29,6 +29,7 @@ module Make (Raw : S.STORE) : sig
   val cache_stats : t -> int * int
 
   val cache :
+    ?shared:bool ->
     user : Obuilder_spec.user ->
     t ->
     string ->

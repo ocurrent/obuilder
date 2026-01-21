@@ -243,29 +243,41 @@ let get_cache t name =
       Hashtbl.add t.caches name c;
       c
 
-let cache ~user t name =
+let cache ?(shared=false) ~user t name =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
-  let result, work, merged = Path.cache_result t t.next name in
-  t.next <- t.next + 1;
   let master = Path.cache t name in
-  (* Create cache if it doesn't already exist. *)
-  (match Os.check_dir master with
-  | `Missing -> Overlayfs.create ~mode:"1777" ~user [ master ]
-  | `Present -> Lwt.return_unit)
-  >>= fun () ->
-  cache.children <- cache.children + 1;
-  Overlayfs.create ~mode:"1777" ~user [ result; work; merged ] >>= fun () ->
-  let lower = String.split_on_char ':' master |> String.concat "\\:" in
-  Overlayfs.overlay ~lower ~upper:result ~work ~merged >>= fun () ->
-  let release () =
+  if shared then
+    (* Shared mode: return the actual cache directory, no copy-on-write *)
     Lwt_mutex.with_lock cache.lock @@ fun () ->
-       cache.children <- cache.children - 1;
-       Overlayfs.umount ~merged >>= fun () ->
-       Overlayfs.cp ~src:result ~dst:master >>= fun () ->
-       Overlayfs.delete [ result; work; merged ]
-  in
-  Lwt.return (merged, release)
+    (* Create cache if it doesn't already exist. *)
+    (match Os.check_dir master with
+    | `Missing -> Overlayfs.create ~mode:"1777" ~user [ master ]
+    | `Present -> Lwt.return_unit)
+    >>= fun () ->
+    let release () = Lwt.return_unit in  (* No-op for shared caches *)
+    Lwt.return (master, release)
+  else
+    (* Non-shared mode: existing overlay behavior *)
+    Lwt_mutex.with_lock cache.lock @@ fun () ->
+    let result, work, merged = Path.cache_result t t.next name in
+    t.next <- t.next + 1;
+    (* Create cache if it doesn't already exist. *)
+    (match Os.check_dir master with
+    | `Missing -> Overlayfs.create ~mode:"1777" ~user [ master ]
+    | `Present -> Lwt.return_unit)
+    >>= fun () ->
+    cache.children <- cache.children + 1;
+    Overlayfs.create ~mode:"1777" ~user [ result; work; merged ] >>= fun () ->
+    let lower = String.split_on_char ':' master |> String.concat "\\:" in
+    Overlayfs.overlay ~lower ~upper:result ~work ~merged >>= fun () ->
+    let release () =
+      Lwt_mutex.with_lock cache.lock @@ fun () ->
+         cache.children <- cache.children - 1;
+         Overlayfs.umount ~merged >>= fun () ->
+         Overlayfs.cp ~src:result ~dst:master >>= fun () ->
+         Overlayfs.delete [ result; work; merged ]
+    in
+    Lwt.return (merged, release)
 
 let delete_cache t name =
   let () = Printf.printf "0\n" in

@@ -173,39 +173,56 @@ let get_cache t name =
     Hashtbl.add t.caches name c;
     c
 
-let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
+let cache ?(shared=false) ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
-  let tmp = Path.cache_tmp t t.next name in
-  t.next <- t.next + 1;
   let snapshot = Path.cache t name in
-  (* Create cache if it doesn't already exist. *)
-  begin match Os.check_dir snapshot with
-    | `Missing -> Btrfs.subvolume_create snapshot
-    | `Present -> Lwt.return_unit
-  end >>= fun () ->
-  (* Create writeable clone. *)
-  let gen = cache.gen in
-  Btrfs.subvolume_snapshot `RW ~src:snapshot tmp >>= fun () ->
-  begin match user with
-    | `Unix { Obuilder_spec.uid; gid } ->
-      Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; tmp]
-    | `Windows _ -> assert false (* btrfs not supported on Windows*)
-  end >>= fun () ->
-  let release () =
+  if shared then
+    (* Shared mode: return the actual cache directory, no copy-on-write *)
     Lwt_mutex.with_lock cache.lock @@ fun () ->
-    begin
-      if cache.gen = gen then (
-        (* The cache hasn't changed since we cloned it. Update it. *)
-        (* todo: check if it has actually changed. *)
-        cache.gen <- cache.gen + 1;
-        Btrfs.subvolume_delete snapshot >>= fun () ->
-        Btrfs.subvolume_snapshot `RO ~src:tmp snapshot
-      ) else Lwt.return_unit
+    (* Create cache if it doesn't already exist. *)
+    begin match Os.check_dir snapshot with
+      | `Missing -> Btrfs.subvolume_create snapshot
+      | `Present -> Lwt.return_unit
     end >>= fun () ->
-    Btrfs.subvolume_delete tmp
-  in
-  Lwt.return (tmp, release)
+    begin match user with
+      | `Unix { Obuilder_spec.uid; gid } ->
+        Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; snapshot]
+      | `Windows _ -> assert false (* btrfs not supported on Windows*)
+    end >>= fun () ->
+    let release () = Lwt.return_unit in  (* No-op for shared caches *)
+    Lwt.return (snapshot, release)
+  else
+    (* Non-shared mode: existing copy-on-write behavior *)
+    Lwt_mutex.with_lock cache.lock @@ fun () ->
+    let tmp = Path.cache_tmp t t.next name in
+    t.next <- t.next + 1;
+    (* Create cache if it doesn't already exist. *)
+    begin match Os.check_dir snapshot with
+      | `Missing -> Btrfs.subvolume_create snapshot
+      | `Present -> Lwt.return_unit
+    end >>= fun () ->
+    (* Create writeable clone. *)
+    let gen = cache.gen in
+    Btrfs.subvolume_snapshot `RW ~src:snapshot tmp >>= fun () ->
+    begin match user with
+      | `Unix { Obuilder_spec.uid; gid } ->
+        Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; tmp]
+      | `Windows _ -> assert false (* btrfs not supported on Windows*)
+    end >>= fun () ->
+    let release () =
+      Lwt_mutex.with_lock cache.lock @@ fun () ->
+      begin
+        if cache.gen = gen then (
+          (* The cache hasn't changed since we cloned it. Update it. *)
+          (* todo: check if it has actually changed. *)
+          cache.gen <- cache.gen + 1;
+          Btrfs.subvolume_delete snapshot >>= fun () ->
+          Btrfs.subvolume_snapshot `RO ~src:tmp snapshot
+        ) else Lwt.return_unit
+      end >>= fun () ->
+      Btrfs.subvolume_delete tmp
+    in
+    Lwt.return (tmp, release)
 
 let delete_cache t name =
   let cache = get_cache t name in
