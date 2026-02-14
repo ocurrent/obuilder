@@ -78,7 +78,7 @@ let create path =
 
 let finish t =
   match t.state with
-  | `Finished -> invalid_arg "Log is already finished!"
+  | `Finished -> Lwt.return_unit
   | `Open (fd, cond) ->
     t.state <- `Finished;
     Lwt_unix.close fd >|= fun () ->

@@ -67,7 +67,8 @@ module Make (Raw : S.STORE) = struct
           if Sys.file_exists log_file then Unix.unlink log_file;
           Build_log.create log_file >>= fun log ->
           Lwt.wakeup set_log log;
-          fn ~cancelled ~log dir
+          fn ~cancelled ~log dir >>= fun r ->
+          Build_log.finish log >|= fun () -> r
         )
       >>!= fun () ->
       let now = Unix.(gmtime (gettimeofday () )) in

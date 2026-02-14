@@ -9,8 +9,18 @@ let hostname = "builder"
 
 let healthcheck_base () =
   if Sys.win32 then
-    Docker_sandbox.servercore () >>= fun (`Docker_image servercore) ->
-    Lwt.return servercore
+    let keyname = {|HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion|} in
+    let valuename = "CurrentBuild" in
+    Os.pread ["reg"; "query"; keyname; "/v"; valuename] >>= fun value ->
+    let line = String.(value |> trim |> split_on_char '\n') |> Fun.flip List.nth 1 in
+    Scanf.sscanf line " CurrentBuild REG_SZ %i" @@ fun version ->
+    let tag = match version with
+      | 17763 -> "ltsc2019"
+      | 20348 -> "ltsc2022"
+      | 26100 -> "ltsc2025"
+      | _ -> "ltsc2025"
+    in
+    Lwt.return ("mcr.microsoft.com/windows/nanoserver:" ^ tag)
   else Lwt.return "busybox"
 
 let healthcheck_ops =
@@ -149,11 +159,12 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
       Store.build t.store ?switch ~base ~id ~log (fun ~cancelled ~log result_tmp ->
           let argv = Sandbox.tar t.sandbox in
           let config = Config.v
-              ~cwd:"/"
+              ~cwd:(if Sys.win32 then "C:/" else "/")
               ~argv
               ~hostname
               ~user:Obuilder_spec.root
-              ~env:["PATH", "/bin:/usr/bin"]
+              ~env:(if Sys.win32 then ["PATH", {|C:\Windows\System32;C:\Windows|}]
+                    else ["PATH", "/bin:/usr/bin"])
               ~mount_secrets:[]
               ~mounts:[]
               ~network:[]
@@ -183,9 +194,18 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     Fmt.pf f "@[<v2>%s: %a@]" context.workdir Obuilder_spec.pp_op op
 
   let update_workdir ~(context:Context.t) path =
+    let is_absolute =
+      Astring.String.is_prefix ~affix:"/" path ||
+      (* Windows absolute paths: C:\ or C:/ *)
+      (String.length path >= 3 &&
+       Char.uppercase_ascii path.[0] >= 'A' &&
+       Char.uppercase_ascii path.[0] <= 'Z' &&
+       path.[1] = ':' &&
+       (path.[2] = '/' || path.[2] = '\\'))
+    in
     let workdir =
-      if Astring.String.is_prefix ~affix:"/" path then path
-      else context.workdir ^ "/" ^ path
+      if is_absolute then path
+      else context.workdir // path
     in
     { context with workdir }
 
@@ -236,7 +256,8 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     Store.build t.store ~id ~log (fun ~cancelled:_ ~log tmp ->
         Log.info (fun f -> f "Base image not present; importing %S…" base);
         let rootfs = tmp / "rootfs" in
-        Os.sudo ["mkdir"; "-m"; "755"; "--"; rootfs] >>= fun () ->
+        (if Sys.win32 then (Os.ensure_dir rootfs; Lwt.return_unit)
+         else Os.sudo ["mkdir"; "-m"; "755"; "--"; rootfs]) >>= fun () ->
         Fetch.fetch ~log ~root ~rootfs base >>= fun env ->
         Os.write_file ~path:(tmp / "env")
           (Sexplib.Sexp.to_string_hum Saved_context.(sexp_of_t {env})) >>= fun () ->
@@ -293,19 +314,12 @@ module Make (Raw_store : S.STORE) (Sandbox : S.SANDBOX) (Fetch : S.FETCHER) = st
     | `Output -> Buffer.add_string buffer x
 
   let healthcheck ?(timeout=300.0) t =
-    Os.with_pipe_from_child (fun ~r ~w ->
-        let result = Docker.Cmd.version ~stderr:(`FD_move_safely w) () in
-        let r = Lwt_io.(of_fd ~mode:input) r ~close:Lwt.return in
-        Lwt_io.read r >>= fun err ->
-        result >>= function
-        | Ok _desc -> Lwt_result.return ()
-        | Error (`Msg m) -> Lwt_result.fail (`Msg (Fmt.str "%s@.%s" m (String.trim err)))
-      ) >>!= fun () ->
     let buffer = Buffer.create 1024 in
     let log = log_to buffer in
     (* Get the base image first, before starting the timer. *)
     let switch = Lwt_switch.create () in
-    let context = Context.v ~shell:(Sandbox.shell t.sandbox) ~switch ~log ~src_dir:"/tmp" () in
+    let src_dir = if Sys.win32 then {|C:\TEMP|} else "/tmp" in
+    let context = Context.v ~shell:(Sandbox.shell t.sandbox) ~switch ~log ~src_dir () in
     healthcheck_base () >>= function healthcheck_base ->
     get_base t ~log healthcheck_base >>= function
     | Error (`Msg _) as x -> Lwt.return x

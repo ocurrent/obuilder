@@ -10,6 +10,7 @@ type t = [
   | `Overlayfs of string (* Path *)
   | `Docker of string (* Path *)
   | `Qemu of string   (* Path *)
+  | `Hcs of string    (* Path *)
 ]
 
 let is_absolute path = not (Filename.is_relative path)
@@ -23,7 +24,8 @@ let of_string s =
   | Some ("overlayfs", path) when is_absolute path -> Ok (`Overlayfs path)
   | Some ("docker", path) -> Ok (`Docker path)
   | Some ("qemu", path) -> Ok (`Qemu path)
-  | _ -> Error (`Msg "Store must start with zfs:, btrfs:/, rsync:/, xfs:/, qemu:/ or overlayfs:")
+  | Some ("hcs", path) -> Ok (`Hcs path)
+  | _ -> Error (`Msg "Store must start with zfs:, btrfs:/, rsync:/, xfs:/, qemu:/, hcs: or overlayfs:")
 
 let pp f = function
   | `Zfs path -> Fmt.pf f "zfs:%s" path
@@ -33,6 +35,7 @@ let pp f = function
   | `Overlayfs path -> Fmt.pf f "overlayfs:%s" path
   | `Docker path -> Fmt.pf f "docker:%s" path
   | `Qemu path -> Fmt.pf f "qemu:%s" path
+  | `Hcs path -> Fmt.pf f "hcs:%s" path
 
 type store = Store : (module S.STORE with type t = 'a) * 'a -> store
 
@@ -58,6 +61,9 @@ let to_store = function
   | `Qemu root ->
     `Qemu, Qemu_store.create ~root >|= fun store ->
     Store ((module Qemu_store), store)
+  | `Hcs root ->
+    `Hcs, Hcs_store.create ~root >|= fun store ->
+    Store ((module Hcs_store), store)
 
 open Cmdliner
 
@@ -66,7 +72,7 @@ let store_t = Arg.conv (of_string, pp)
 let store ?docs names =
   Arg.opt Arg.(some store_t) None @@
   Arg.info
-    ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path), $(b,xfs:/path), $(b,overlayfs:/path), $(b,zfs:pool), $(b,qemu:/path) or $(b,docker:path) for the OBuilder cache."
+    ~doc:"$(docv) must be one of $(b,btrfs:/path), $(b,rsync:/path), $(b,xfs:/path), $(b,overlayfs:/path), $(b,zfs:pool), $(b,qemu:/path), $(b,hcs:path) or $(b,docker:path) for the OBuilder cache."
     ~docv:"STORE"
     ?docs
     names
@@ -102,7 +108,8 @@ let of_t store rsync_mode =
   | Some (`Overlayfs path), None -> (`Overlayfs path)
   | Some (`Docker path), None -> (`Docker path)
   | Some (`Qemu path), None -> (`Qemu path)
-  | _, _ -> failwith "Store type required must be one of btrfs:/path, rsync:/path, xfs:/path, zfs:pool, qemu:/path or docker:path for the OBuilder cache."
+  | Some (`Hcs path), None -> (`Hcs path)
+  | _, _ -> failwith "Store type required must be one of btrfs:/path, rsync:/path, xfs:/path, zfs:pool, qemu:/path, hcs:path or docker:path for the OBuilder cache."
 
 (** Parse cli arguments for t *)
 let v =

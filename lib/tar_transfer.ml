@@ -29,7 +29,8 @@ module Tar_lwt_unix = struct
   module Writer = struct
     type out_channel = Lwt_unix.file_descr
     type 'a t = 'a Lwt.t
-    let really_write fd = Lwt_cstruct.(complete (write fd))
+    let really_write fd cs =
+      Os.write_all fd (Cstruct.to_bytes cs) 0 (Cstruct.length cs)
   end
 
   module HW = Tar.HeaderWriter(Lwt)(Writer)
@@ -64,18 +65,51 @@ let get_ids = function
   | `Windows _ -> None, None, None, None
 
 let copy_file ~src ~dst ~to_untar ~user =
-  Lwt_unix.LargeFile.lstat src >>= fun stat ->
-  let user_id, group_id, uname, gname = get_ids user in
-  let hdr = Tar.Header.make
-      ~file_mode:(if stat.Lwt_unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
-      ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
-      ?user_id ?group_id ?uname ?gname
-      dst stat.Lwt_unix.LargeFile.st_size
-  in
-  Tar_lwt_unix.write_block ~level hdr (fun ofd ->
-      let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
-      Lwt_io.(with_file ~mode:input ~flags) src (copy_to ~dst:ofd)
-    ) to_untar
+  if Sys.win32 then begin
+    (* On Windows, Lwt I/O hangs. Use synchronous stat and file reads. *)
+    let stat = Unix.LargeFile.stat src in
+    let user_id, group_id, uname, gname = get_ids user in
+    let hdr = Tar.Header.make
+        ~file_mode:(if stat.Unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
+        ~mod_time:(Int64.of_float stat.Unix.LargeFile.st_mtime)
+        ?user_id ?group_id ?uname ?gname
+        dst stat.Unix.LargeFile.st_size
+    in
+    Tar_lwt_unix.write_block ~level hdr (fun ofd ->
+        let unix_fd = Lwt_unix.unix_file_descr ofd in
+        let ic = open_in_bin src in
+        Fun.protect ~finally:(fun () -> close_in ic) @@ fun () ->
+        let buf = Bytes.create 4096 in
+        let rec loop () =
+          let n = input ic buf 0 4096 in
+          if n = 0 then ()
+          else begin
+            let rec write_all ofs len =
+              if len > 0 then
+                let w = Unix.write unix_fd buf ofs len in
+                write_all (ofs + w) (len - w)
+            in
+            write_all 0 n;
+            loop ()
+          end
+        in
+        loop ();
+        Lwt.return_unit
+      ) to_untar
+  end else begin
+    Lwt_unix.LargeFile.lstat src >>= fun stat ->
+    let user_id, group_id, uname, gname = get_ids user in
+    let hdr = Tar.Header.make
+        ~file_mode:(if stat.Lwt_unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
+        ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
+        ?user_id ?group_id ?uname ?gname
+        dst stat.Lwt_unix.LargeFile.st_size
+    in
+    Tar_lwt_unix.write_block ~level hdr (fun ofd ->
+        let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
+        Lwt_io.(with_file ~mode:input ~flags) src (copy_to ~dst:ofd)
+      ) to_untar
+  end
 
 let copy_symlink ~src ~target ~dst ~to_untar ~user =
   Lwt_unix.LargeFile.lstat src >>= fun stat ->
@@ -119,10 +153,37 @@ and send_dir ~src_dir ~dst ~to_untar ~user items =
         copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
     )
 
-let remove_leading_slashes = Astring.String.drop ~sat:((=) '/')
+let remove_leading_slashes s =
+  (* Strip Windows drive letter prefix (e.g. "C:/") *)
+  let s =
+    if String.length s >= 2 && Char.uppercase_ascii s.[0] >= 'A' &&
+       Char.uppercase_ascii s.[0] <= 'Z' && s.[1] = ':' then
+      String.sub s 2 (String.length s - 2)
+    else s
+  in
+  Astring.String.drop ~sat:((=) '/') s
+
+let ensure_dir_entries ~to_untar ~user path =
+  (* Emit tar directory entries for each component of path so that
+     extractors that don't auto-create intermediate directories work. *)
+  let user_id, group_id, uname, gname = get_ids user in
+  let parts = String.split_on_char '/' path in
+  let rec loop acc = function
+    | [] -> Lwt.return_unit
+    | "" :: rest | "." :: rest -> loop acc rest
+    | p :: rest ->
+      let dir = match acc with "" -> p | _ -> acc ^ "/" ^ p in
+      let hdr = Tar.Header.make ~file_mode:0o755
+          ?user_id ?group_id ?uname ?gname
+          (dir ^ "/") 0L in
+      Tar_lwt_unix.write_block ~level hdr (fun _ -> Lwt.return_unit) to_untar >>= fun () ->
+      loop dir rest
+  in
+  loop "" parts
 
 let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
   let dst = remove_leading_slashes dst_dir in
+  ensure_dir_entries ~to_untar ~user dst >>= fun () ->
   send_dir ~src_dir ~dst ~to_untar ~user src_manifest >>= fun () ->
   Tar_lwt_unix.write_end to_untar
 
