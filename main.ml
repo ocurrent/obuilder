@@ -1,5 +1,3 @@
-open Lwt.Infix
-
 let ( / ) = Filename.concat
 
 module Native_sandbox = Obuilder.Native_sandbox
@@ -19,25 +17,25 @@ let log tag msg =
   | `Note -> Fmt.pr "%a@." Fmt.(styled (`Fg `Yellow) string) msg
   | `Output -> output_string stdout msg; flush stdout
 
-let create_builder store_spec conf =
-  store_spec >>= fun (Store_spec.Store ((module Store), store)) ->
+let create_builder ~sw store_spec conf =
+  let (Store_spec.Store ((module Store), store)) = store_spec in
   let module Builder = Obuilder.Builder (Store) (Native_sandbox) (Docker_extract) in
-  Native_sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
-  let builder = Builder.v ~store ~sandbox in
+  let sandbox = Native_sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf in
+  let builder = Builder.v ~sw ~store ~sandbox in
   Builder ((module Builder), builder)
 
-let create_docker_builder store_spec conf =
-  store_spec >>= fun (Store_spec.Store ((module Store), store)) ->
+let create_docker_builder ~sw store_spec conf =
+  let (Store_spec.Store ((module Store), store)) = store_spec in
   let module Builder = Obuilder.Docker_builder (Store) in
-  Docker_sandbox.create conf >|= fun sandbox ->
-  let builder = Builder.v ~store ~sandbox in
+  let sandbox = Docker_sandbox.create conf in
+  let builder = Builder.v ~sw ~store ~sandbox in
   Builder ((module Builder), builder)
 
-let create_qemu_builder store_spec conf =
-  store_spec >>= fun (Store_spec.Store ((module Store), store)) ->
+let create_qemu_builder ~sw store_spec conf =
+  let (Store_spec.Store ((module Store), store)) = store_spec in
   let module Builder = Obuilder.Builder (Store) (Qemu_sandbox) (Qemu_snapshot) in
-  Qemu_sandbox.create conf >|= fun sandbox ->
-  let builder = Builder.v ~store ~sandbox in
+  let sandbox = Qemu_sandbox.create conf in
+  let builder = Builder.v ~sw ~store ~sandbox in
   Builder ((module Builder), builder)
 
 let read_whole_file path =
@@ -46,68 +44,74 @@ let read_whole_file path =
   let len = in_channel_length ic in
   really_input_string ic len
 
-let select_backend (sandbox, store_spec) native_conf docker_conf qemu_conf =
+let select_backend ~sw (sandbox, store_spec) native_conf docker_conf qemu_conf =
   match sandbox with
-  | `Native -> create_builder store_spec native_conf
-  | `Docker -> create_docker_builder store_spec docker_conf
-  | `Qemu -> create_qemu_builder store_spec qemu_conf
+  | `Native -> create_builder ~sw store_spec native_conf
+  | `Docker -> create_docker_builder ~sw store_spec docker_conf
+  | `Qemu -> create_qemu_builder ~sw store_spec qemu_conf
 
 let build () store spec native_conf docker_conf qemu_conf src_dir secrets =
-  Lwt_main.run begin
-    select_backend store native_conf docker_conf qemu_conf
-    >>= fun (Builder ((module Builder), builder)) ->
-    Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
-    let spec =
-      try Obuilder.Spec.t_of_sexp (Sexplib.Sexp.load_sexp spec)
-      with Failure msg ->
-        print_endline msg;
-        exit 1
-    in
-    let secrets = List.map (fun (id, path) -> id, read_whole_file path) secrets in
-    let context = Obuilder.Context.v ~log ~src_dir ~shell:(Builder.shell builder) ~secrets () in
-    Builder.build builder context spec >>= function
-    | Ok x ->
-      Fmt.pr "Got: %S@." (x :> string);
-      Lwt.return_unit
-    | Error `Cancelled ->
-      Fmt.epr "Cancelled at user's request@.";
+  Eio_main.run @@ fun env ->
+  Lwt_eio.with_event_loop ~clock:(Eio.Stdenv.clock env) @@ fun () ->
+  Eio.Switch.run @@ fun sw ->
+  let (Builder ((module Builder), builder)) =
+    select_backend ~sw store native_conf docker_conf qemu_conf
+  in
+  Fun.protect ~finally:(fun () -> Builder.finish builder) @@ fun () ->
+  let spec =
+    try Obuilder.Spec.t_of_sexp (Sexplib.Sexp.load_sexp spec)
+    with Failure msg ->
+      print_endline msg;
       exit 1
-    | Error (`Msg m) ->
-      Fmt.epr "Build step failed: %s@." m;
-      exit 1
-  end
+  in
+  let secrets = List.map (fun (id, path) -> id, read_whole_file path) secrets in
+  let context = Obuilder.Context.v ~log ~src_dir ~shell:(Builder.shell builder) ~secrets () in
+  match Builder.build builder context spec with
+  | Ok x ->
+    Fmt.pr "Got: %S@." (x :> string)
+  | Error `Cancelled ->
+    Fmt.epr "Cancelled at user's request@.";
+    exit 1
+  | Error (`Msg m) ->
+    Fmt.epr "Build step failed: %s@." m;
+    exit 1
 
 let healthcheck () store native_conf docker_conf qemu_conf =
-  Lwt_main.run begin
-    select_backend store native_conf docker_conf qemu_conf
-    >>= fun (Builder ((module Builder), builder)) ->
-    Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
-    Builder.healthcheck builder >|= function
-    | Error (`Msg m) ->
-      Fmt.epr "Healthcheck failed: %s@." m;
-      exit 1
-    | Ok () ->
-      Fmt.pr "Healthcheck passed@."
-  end
+  Eio_main.run @@ fun env ->
+  Lwt_eio.with_event_loop ~clock:(Eio.Stdenv.clock env) @@ fun () ->
+  Eio.Switch.run @@ fun sw ->
+  let (Builder ((module Builder), builder)) =
+    select_backend ~sw store native_conf docker_conf qemu_conf
+  in
+  Fun.protect ~finally:(fun () -> Builder.finish builder) @@ fun () ->
+  match Builder.healthcheck builder with
+  | Error (`Msg m) ->
+    Fmt.epr "Healthcheck failed: %s@." m;
+    exit 1
+  | Ok () ->
+    Fmt.pr "Healthcheck passed@."
 
 let delete () store native_conf docker_conf qemu_conf id =
-  Lwt_main.run begin
-    select_backend store native_conf docker_conf qemu_conf
-    >>= fun (Builder ((module Builder), builder)) ->
-    Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ fun () ->
-    Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
-  end
+  Eio_main.run @@ fun env ->
+  Lwt_eio.with_event_loop ~clock:(Eio.Stdenv.clock env) @@ fun () ->
+  Eio.Switch.run @@ fun sw ->
+  let (Builder ((module Builder), builder)) =
+    select_backend ~sw store native_conf docker_conf qemu_conf
+  in
+  Fun.protect ~finally:(fun () -> Builder.finish builder) @@ fun () ->
+  Builder.delete builder id ~log:(fun id -> Fmt.pr "Removing %s@." id)
 
 let clean () store native_conf docker_conf qemu_conf =
-  Lwt_main.run begin
-    select_backend store native_conf docker_conf qemu_conf
-    >>= fun (Builder ((module Builder), builder)) ->
-    Fun.flip Lwt.finalize (fun () -> Builder.finish builder) @@ begin fun () ->
-      let now = Unix.(gmtime (gettimeofday ())) in
-      Builder.prune builder ~before:now max_int ~log:(fun id -> Fmt.pr "Removing %s@." id)
-    end >|= fun n ->
-    Fmt.pr "Removed %d items@." n
-  end
+  Eio_main.run @@ fun env ->
+  Lwt_eio.with_event_loop ~clock:(Eio.Stdenv.clock env) @@ fun () ->
+  Eio.Switch.run @@ fun sw ->
+  let (Builder ((module Builder), builder)) =
+    select_backend ~sw store native_conf docker_conf qemu_conf
+  in
+  Fun.protect ~finally:(fun () -> Builder.finish builder) @@ fun () ->
+  let now = Unix.(gmtime (gettimeofday ())) in
+  let n = Builder.prune builder ~before:now max_int ~log:(fun id -> Fmt.pr "Removing %s@." id) in
+  Fmt.pr "Removed %d items@." n
 
 let dockerfile () buildkit escape spec =
   Sexplib.Sexp.load_sexp spec

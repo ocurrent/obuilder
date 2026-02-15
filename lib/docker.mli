@@ -50,7 +50,7 @@ val setup_command : entp:string list -> cmd:string list -> string * string list
 val cp_between_volumes :
   base:[< `Docker_image of string ] ->
   src:[< `Docker_volume of string] -> dst:[`Docker_volume of string] ->
-  (unit, [> `Msg of string]) Lwt_result.t
+  (unit, [> `Msg of string]) result
 
 (** Wrappers for various Docker client commands, exposing file descriptors. *)
 module Cmd : S.DOCKER_CMD

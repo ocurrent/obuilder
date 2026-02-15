@@ -1,14 +1,13 @@
-open Lwt.Infix
 open Obuilder
 
 let ( / ) = Filename.concat
 let strf = Printf.sprintf
 
 let read path =
-  Lwt_io.(with_file ~mode:input) path Lwt_io.read
+  In_channel.with_open_bin path In_channel.input_all
 
 let write ~path data =
-  Lwt_io.(with_file ~mode:output) path (fun ch -> Lwt_io.write ch data)
+  Out_channel.with_open_bin path (fun ch -> Out_channel.output_string ch data)
 
 let assert_str expected got =
   if expected <> got then (
@@ -18,40 +17,38 @@ let assert_str expected got =
 
 module Test(Store : S.STORE) = struct
   let assert_output expected t id =
-    Store.result t id >>= function
+    match Store.result t id with
     | None -> Fmt.failwith "%S not in store!" id
     | Some path ->
       let ch = open_in (path / "output") in
       let data = really_input_string ch (in_channel_length ch) in
       close_in ch;
-      assert_str expected data;
-      Lwt.return_unit
+      assert_str expected data
 
   let test_store t =
-    Store.result t "unknown" >>= fun r -> assert (r = None);
+    let r = Store.result t "unknown" in assert (r = None);
     (* Build without a base *)
-    Store.delete t "base" >>= fun () ->
-    Store.build t ~id:"base" (fun tmpdir -> write ~path:(tmpdir / "output") "ok" >|= Result.ok) >>= fun r ->
+    Store.delete t "base";
+    let r = Store.build t ~id:"base" (fun tmpdir -> write ~path:(tmpdir / "output") "ok"; Ok ()) in
     assert (r = Ok ());
-    assert_output "ok" t "base" >>= fun () ->
+    assert_output "ok" t "base";
     (* Build with a base *)
-    Store.delete t "sub" >>= fun () ->
-    Store.build t ~base:"base" ~id:"sub" (fun tmpdir ->
-        read (tmpdir / "output") >>= fun orig ->
-        write ~path:(tmpdir / "output") (orig ^ "+") >|= Result.ok
-      ) >>= fun r ->
+    Store.delete t "sub";
+    let r = Store.build t ~base:"base" ~id:"sub" (fun tmpdir ->
+        let orig = read (tmpdir / "output") in
+        write ~path:(tmpdir / "output") (orig ^ "+"); Ok ()
+      ) in
     assert (r = Ok ());
-    assert_output "ok+" t "sub" >>= fun () ->
+    assert_output "ok+" t "sub";
     (* Test deletion *)
-    Store.result t "sub" >>= fun r -> assert (r <> None);
-    Store.delete t "sub" >>= fun () ->
-    Store.result t "sub" >>= fun r -> assert (r = None);
+    let r = Store.result t "sub" in assert (r <> None);
+    Store.delete t "sub";
+    let r = Store.result t "sub" in assert (r = None);
     (* A failing build isn't saved *)
-    Store.delete t "fail" >>= fun () ->
-    Store.build t ~id:"fail" (fun _tmpdir -> Lwt_result.fail `Failed) >>= fun r ->
+    Store.delete t "fail";
+    let r = Store.build t ~id:"fail" (fun _tmpdir -> Error `Failed) in
     assert (r = Error `Failed);
-    Store.result t "fail" >>= fun r -> assert (r = None);
-    Lwt.return_unit
+    let r = Store.result t "fail" in assert (r = None)
 
   let test_cache t =
     let uid = Unix.getuid () in
@@ -59,56 +56,54 @@ module Test(Store : S.STORE) = struct
     let user = `Unix { Spec.uid = 123; gid = 456 } in
     let id = "c1" in
     (* Create a new cache *)
-    Store.delete_cache t id >>= fun x ->
+    let x = Store.delete_cache t id in
     assert (x = Ok ());
-    Store.cache ~user t id >>= fun (c, r) ->
+    let (c, r) = Store.cache ~user t id in
     assert ((Unix.lstat c).Unix.st_uid = 123);
     assert ((Unix.lstat c).Unix.st_gid = 456);
     let user = `Unix { Spec.uid; gid } in
-    Os.exec ["sudo"; "chown"; Printf.sprintf "%d:%d" uid gid; "--"; c] >>= fun () ->
+    Os.exec ["sudo"; "chown"; Printf.sprintf "%d:%d" uid gid; "--"; c];
     assert (Sys.readdir c = [| |]);
-    write ~path:(c / "data") "v1" >>= fun () ->
-    r () >>= fun () ->
+    write ~path:(c / "data") "v1";
+    r ();
     (* Check it worked *)
-    Store.cache ~user t id >>= fun (c, r) ->
-    read (c / "data") >>= fun data ->
+    let (c, r) = Store.cache ~user t id in
+    let data = read (c / "data") in
     assert_str "v1" data;
-    r () >>= fun () ->
+    r ();
     (* Concurrent updates *)
-    Store.cache ~user t id >>= fun (c1, r1) ->
-    Store.cache ~user t id >>= fun (c2, r2) ->
-    write ~path:(c1 / "data") "v2a" >>= fun () ->
-    write ~path:(c2 / "data") "v2b" >>= fun () ->
-    r2 () >>= fun () -> (* v2b wins *)
-    r1 () >>= fun () ->
+    let (c1, r1) = Store.cache ~user t id in
+    let (c2, r2) = Store.cache ~user t id in
+    write ~path:(c1 / "data") "v2a";
+    write ~path:(c2 / "data") "v2b";
+    r2 (); (* v2b wins *)
+    r1 ();
     (* Check it worked *)
-    Store.cache ~user t id >>= fun (c, r) ->
-    read (c / "data") >>= fun data ->
+    let (c, r) = Store.cache ~user t id in
+    let data = read (c / "data") in
     assert_str "v2b" data;
-    r () >>= fun () ->
+    r ();
     (* Concurrent delete *)
-    Store.cache ~user t id >>= fun (c, r) ->
-    write ~path:(c / "data") "v3" >>= fun () ->
-    Store.delete_cache t id >>= function
+    let (c, r) = Store.cache ~user t id in
+    write ~path:(c / "data") "v3";
+    match Store.delete_cache t id with
     | Ok () -> (* Btrfs allows deletion here *)
-      r () >>= fun () -> (* (not saved) *)
-      Store.cache ~user t id >>= fun (c, r) ->
+      r (); (* (not saved) *)
+      let (c, r) = Store.cache ~user t id in
       assert (not (Sys.file_exists (c / "data")));
-      r () >>= fun () ->
-      Lwt.return_unit
+      r ()
     | Error `Busy -> (* Zfs does not *)
-      r () >>= fun () ->
+      r ();
       (* Now it can be deleted. *)
-      Store.delete_cache t id >>= fun x ->
-      assert (x = Ok ());
-      Lwt.return_unit
+      let x = Store.delete_cache t id in
+      assert (x = Ok ())
 
   type builder = Builder : (module Obuilder.BUILDER with type t = 'a) * 'a -> builder
 
-  let create_builder store conf =
+  let create_builder ~sw store conf =
     let module Builder = Obuilder.Builder(Store)(Native_sandbox)(Obuilder.Docker_extract) in
-    Native_sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf >|= fun sandbox ->
-    let builder = Builder.v ~store ~sandbox in
+    let sandbox = Native_sandbox.create ~state_dir:(Store.state_dir store / "sandbox") conf in
+    let builder = Builder.v ~sw ~store ~sandbox in
     Builder ((module Builder), builder)
 
   let n_steps = 4
@@ -153,60 +148,61 @@ module Test(Store : S.STORE) = struct
     in
     let ctx = Context.v ~shell:["/bin/sh"; "-c"] ~log ~src_dir () in
     let check_log, spec = random_build () in
-    Builder.build builder ctx spec >>= function
+    match Builder.build builder ctx spec with
     | Ok _ ->
-      check_log (Buffer.contents buf);
-      Lwt.return_unit
+      check_log (Buffer.contents buf)
     | Error (`Msg m) -> failwith m
     | Error `Cancelled -> assert false
 
-  let stress_builds store conf =
-    create_builder store conf >>= fun builder ->
+  let stress_builds ~sw store conf =
+    let builder = create_builder ~sw store conf in
     let (Builder ((module Builder), _)) = builder in
     let pending = ref n_jobs in
     let running = ref 0 in
-    let cond = Lwt_condition.create () in
+    let cond = Eio.Condition.create () in
+    let mutex = Eio.Mutex.create () in
     let failures = ref 0 in
+    Eio.Switch.run @@ fun sw ->
     let rec aux () =
-      if !running = 0 && !pending = 0 then Lwt.return_unit
+      if !running = 0 && !pending = 0 then ()
       else if !running < max_running && !pending > 0 then (
         if !pending mod 10 = 0 then Fmt.pr "%d pending: starting new build@." !pending;
         incr running;
         decr pending;
-        let th = do_build builder in
-        Lwt.on_any th
-          (fun () ->
-             decr running;
-             Lwt_condition.broadcast cond ()
-          )
-          (fun ex ->
-             Logs.warn (fun f -> f "Build failed: %a" Fmt.exn ex);
-             decr running;
-             incr failures;
-             Lwt_condition.broadcast cond ()
-          );
+        Eio.Fiber.fork ~sw (fun () ->
+          begin
+            try do_build builder
+            with ex ->
+              Logs.warn (fun f -> f "Build failed: %a" Fmt.exn ex);
+              incr failures
+          end;
+          decr running;
+          Eio.Condition.broadcast cond
+        );
         aux ()
       ) else (
-        Lwt_condition.wait cond >>= aux
+        Eio.Mutex.lock mutex;
+        Eio.Condition.await cond mutex;
+        Eio.Mutex.unlock mutex;
+        aux ()
       )
     in
     let t0 = Unix.gettimeofday () in
-    aux () >>= fun () ->
+    aux ();
     let time = Unix.gettimeofday () -. t0 in
     Fmt.pr "Ran %d jobs (max %d at once). %d failures. Took %.1f s (%.1f jobs/s)@."
       n_jobs max_running !failures
       time (float n_jobs /. time);
     if !failures > 0 then Fmt.failwith "%d failures!" !failures
-    else Lwt.return_unit
 
-  let prune store conf =
-    create_builder store conf >>= fun (Builder ((module Builder), builder)) ->
+  let prune ~sw store conf =
+    let (Builder ((module Builder), builder)) = create_builder ~sw store conf in
     let log id = Logs.info (fun f -> f "Deleting %S" id) in
     let end_time = Unix.(gettimeofday () +. 60.0 |> gmtime) in
     let rec aux () =
-      Fmt.pr "Pruning…@.";
-      Builder.prune ~log builder ~before:end_time 1000 >>= function
-      | 0 -> Lwt.return_unit
+      Fmt.pr "Pruning...@.";
+      match Builder.prune ~log builder ~before:end_time 1000 with
+      | 0 -> ()
       | _ -> aux ()
     in
     aux ()
@@ -217,14 +213,15 @@ let stress (sandbox, spec) conf =
     prerr_endline "Cannot stress-test the Docker backend";
     exit 1
   end;
-  Lwt_main.run begin
-    spec >>= fun (Store_spec.Store ((module Store), store)) ->
-    let module T = Test(Store) in
-    T.test_store store >>= fun () ->
-    T.test_cache store >>= fun () ->
-    T.stress_builds store conf >>= fun () ->
-    T.prune store conf
-  end
+  Eio_main.run @@ fun env ->
+  Lwt_eio.with_event_loop ~clock:(Eio.Stdenv.clock env) @@ fun () ->
+  Eio.Switch.run @@ fun sw ->
+  let (Store_spec.Store ((module Store), store)) = spec in
+  let module T = Test(Store) in
+  T.test_store store;
+  T.test_cache store;
+  T.stress_builds ~sw store conf;
+  T.prune ~sw store conf
 
 open Cmdliner
 

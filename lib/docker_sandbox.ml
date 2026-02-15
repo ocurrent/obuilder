@@ -1,5 +1,3 @@
-open Lwt.Syntax
-let ( >>!= ) = Lwt_result.bind
 open Sexplib.Conv
 
 include S.Sandbox_default
@@ -85,7 +83,7 @@ let secrets_layer ~log mount_secrets base_image container docker_argv =
       (0, []) mount_secrets
   in
   if mount_secrets = [] then
-    Lwt_result.ok Lwt.return_unit
+    Ok ()
   else
     let docker_argv, argv =
       if Sys.win32 then
@@ -95,67 +93,54 @@ let secrets_layer ~log mount_secrets base_image container docker_argv =
         docker_argv @ ["--entrypoint"; {|/bin/sh|}],
         ["-c"; String.concat " " argv]
     in
-
-    Lwt_result.bind_lwt
-      (Docker.Cmd_log.run_result ~log ~name:container docker_argv base_image argv)
-      (fun () ->
-         let* () = Docker.Cmd_log.commit ~log base_image container base_image in
-         Docker.Cmd_log.rm ~log [container])
+    match Docker.Cmd_log.run_result ~log ~name:container docker_argv base_image argv with
+    | Error _ as e -> e
+    | Ok () ->
+      Docker.Cmd_log.commit ~log base_image container base_image;
+      Docker.Cmd_log.rm ~log [container];
+      Ok ()
 
 let teardown ~log ~commit id =
   let container = Docker.docker_container id in
   let base_image = Docker.docker_image ~tmp:true id in
   let target_image = Docker.docker_image id in
-  let* () =
-    if commit then Docker.Cmd_log.commit ~log base_image container target_image
-    else Lwt.return_unit
-  in
+  if commit then Docker.Cmd_log.commit ~log base_image container target_image;
   Docker.Cmd_log.rm ~log [container]
 
 let run ~cancelled ?stdin ~log t config (id:S.id) =
-  Lwt_io.with_temp_dir ~perm:0o700 ~prefix:"obuilder-docker-" @@ fun tmp ->
+  let tmp = Filename.temp_dir ~temp_dir:(Filename.get_temp_dir_name ()) "obuilder-docker-" "" in
+  Fun.protect ~finally:(fun () -> Os.rm ~directory:tmp) @@ fun () ->
+  Unix.chmod tmp 0o700;
   let docker_argv, argv = Docker_config.make config ~config_dir:tmp t in
-  let* _ = Lwt_list.fold_left_s
+  let _ = List.fold_left
       (fun id Config.Secret.{value; _} ->
          Os.ensure_dir (tmp / "secrets");
          Os.ensure_dir (tmp / secret_dir id);
-         let+ () = Os.write_file ~path:(tmp / secret_dir id / "secret") value in
+         Os.write_file ~path:(tmp / secret_dir id / "secret") value;
          id + 1
       ) 0 config.mount_secrets
   in
   let container = Docker.docker_container id in
   let base_image = Docker.docker_image ~tmp:true id in
-  let proc =
-    Lwt_result.bind
-      (secrets_layer ~log config.Config.mount_secrets base_image container docker_argv)
-      (fun () ->
-         let* r = Docker.Cmd.exists container in
-         let* () =
-           if Result.is_ok r then begin
-             let `Docker_container name = container in
-             Log.warn (fun f -> f "Removing left over container %s." name);
-             Docker.Cmd.rm [ container ]
-           end else
-             Lwt.return_unit
-         in
-         let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
-         Docker.Cmd_log.run_result ~log ?stdin ~name:container docker_argv base_image argv)
+  let r =
+    match secrets_layer ~log config.Config.mount_secrets base_image container docker_argv with
+    | Error _ as e -> e
+    | Ok () ->
+      let r = Docker.Cmd.exists container in
+      if Result.is_ok r then begin
+        let `Docker_container name = container in
+        Log.warn (fun f -> f "Removing left over container %s." name);
+        Docker.Cmd.rm [ container ]
+      end;
+      let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
+      Docker.Cmd_log.run_result ~log ?stdin ~name:container docker_argv base_image argv
   in
-  Lwt.on_termination cancelled (fun () ->
-      let aux () =
-        if Lwt.is_sleeping proc then (
-          Docker.Cmd_log.rm ~log [container]
-        ) else Lwt.return_unit  (* Process has already finished *)
-      in
-      Lwt.async aux
-    );
-  let* r = proc in
-  let+ () = match r with
-    | Ok () -> Lwt.return_unit
-    | _ -> Docker.Cmd_log.rm ~log [container]
-  in
-  if Lwt.is_sleeping cancelled then (r :> (unit, [`Msg of string | `Cancelled]) result)
-  else Error `Cancelled
+  (* Check cancellation after process completes *)
+  (match r with
+   | Ok () -> ()
+   | _ -> Docker.Cmd_log.rm ~log [container]);
+  if Eio.Promise.is_resolved cancelled then Error `Cancelled
+  else (r :> (unit, [`Msg of string | `Cancelled]) result)
 
 (* Duplicate of Build.hostname. *)
 let hostname = "builder"
@@ -187,10 +172,12 @@ let manifest_from_build t ~base ~exclude src workdir user =
       ()
   in
   let docker_args, args = Docker_config.make config t in
-  Docker.Cmd.run_pread_result ~rm:true docker_args (Docker.docker_image base) args >>!= fun manifests ->
-  match Parsexp.Many.parse_string manifests with
-  | Ok ts -> List.rev_map Manifest.t_of_sexp ts |> Lwt_result.return
-  | Error e -> Lwt_result.fail (`Msg (Parsexp.Parse_error.message e))
+  match Docker.Cmd.run_pread_result ~rm:true docker_args (Docker.docker_image base) args with
+  | Error _ as e -> e
+  | Ok manifests ->
+    match Parsexp.Many.parse_string manifests with
+    | Ok ts -> Ok (List.rev_map Manifest.t_of_sexp ts)
+    | Error e -> Error (`Msg (Parsexp.Parse_error.message e))
 
 let manifest_files_from op fd =
   let copy_root manifest =
@@ -198,7 +185,7 @@ let manifest_files_from op fd =
     Os.write_all_string fd list 0 (String.length list)
   in
   match op with
-  | `Copy_items (src_manifest, _) -> Lwt_list.iter_s copy_root src_manifest
+  | `Copy_items (src_manifest, _) -> List.iter copy_root src_manifest
   | `Copy_item (src_manifest, _) -> copy_root src_manifest
 
 let tarball_from_build t ~log ~files_from ~tar workdir user id =
@@ -268,70 +255,50 @@ let untar t ~cancelled ~stdin ~log ?dst_dir id =
       ~entrypoint
       ()
   in
-  Lwt_result.bind_lwt
-    (run ~cancelled ~stdin ~log t config id)
-    (fun () -> teardown ~log ~commit:true id)
+  match run ~cancelled ~stdin ~log t config id with
+  | Error _ as e -> e
+  | Ok () ->
+    teardown ~log ~commit:true id;
+    Ok ()
 
 let copy_from_context t ~cancelled ~log op ~user ~src_dir ?dst_dir id =
   (* If the sending thread finishes (or fails), close the writing end
      of the pipe immediately so that the untar process finishes too. *)
   Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
   let proc = untar t ~cancelled ~stdin:from_us ~log ?dst_dir id in
-  let send =
-    Lwt.finalize
-      (fun () ->
-         match op with
-         | `Copy_items (src_manifest, dst_dir) ->
-           Tar_transfer.send_files ~src_dir ~src_manifest ~dst_dir ~to_untar ~user
-         | `Copy_item (src_manifest, dst) ->
-           Tar_transfer.send_file ~src_dir ~src_manifest ~dst ~to_untar ~user
-      )
-      (fun () -> Lwt_unix.close to_untar) in
-  let* result = proc in
-  let+ () = send in
-  result
+  Fun.protect
+    (fun () ->
+       match op with
+       | `Copy_items (src_manifest, dst_dir) ->
+         Tar_transfer.send_files ~src_dir ~src_manifest ~dst_dir ~to_untar ~user
+       | `Copy_item (src_manifest, dst) ->
+         Tar_transfer.send_file ~src_dir ~src_manifest ~dst ~to_untar ~user
+    )
+    ~finally:(fun () -> (try Unix.close to_untar with Unix.Unix_error _ -> ()));
+  proc
 
 let copy_from_build t ~cancelled ~log op ~user ~workdir ?dst_dir ~from_id id =
   (* If a sending thread finishes (or fails), close the writing end of
      the pipes immediately so that the receiving processes may finish
      too. *)
-  Lwt_switch.with_switch @@ fun switch ->
-  let kill () = Lwt_switch.turn_off switch in
-  let kill_exn exn = let+ () = kill () in raise exn in
-  let tarball ~tar () =
-    Os.with_pipe_to_child @@ fun ~r:files_from ~w:files_from_out ->
-    let proc = tarball_from_build ~log t ~files_from ~tar workdir user from_id in
-    let f () = Os.ensure_closed_lwt files_from_out in
-    let send = Lwt.try_bind (fun () ->
-        let* () = manifest_files_from op files_from_out in
-        f ())
-        f kill_exn in
-    let* () = Lwt_switch.add_hook_or_exec (Some switch) f in
-    let* result = proc in
-    let+ () = send in
-    result
-  in
-  let transform ~to_untar () =
-    Os.with_pipe_from_child @@ fun ~r:from_tar ~w:tar ->
-    let f () = Os.ensure_closed_lwt from_tar in
-    let proc =
-      let* () = transform op ~user ~from_tar ~to_untar in
-      f ()
-    in
-    let send = Lwt.try_bind (tarball ~tar) f kill_exn in
-    let* () = Lwt_switch.add_hook_or_exec (Some switch) f in
-    let* result = proc in
-    let+ () = send in
-    result
-  in
   Os.with_pipe_to_child @@ fun ~r:from_us ~w:to_untar ->
   let proc = untar t ~cancelled ~stdin:from_us ~log ?dst_dir id in
-  let f () = Os.ensure_closed_lwt to_untar in
-  let send = Lwt.try_bind (transform ~to_untar) f kill_exn in
-  let* () = Lwt_switch.add_hook_or_exec (Some switch) f in
-  let* result = proc in
-  let+ () = send in
-  result
+  Fun.protect
+    (fun () ->
+       Os.with_pipe_from_child @@ fun ~r:from_tar ~w:tar ->
+       Fun.protect
+         (fun () ->
+            Os.with_pipe_to_child @@ fun ~r:files_from ~w:files_from_out ->
+            Fun.protect
+              (fun () ->
+                 manifest_files_from op files_from_out;
+                 (try Unix.close files_from_out with Unix.Unix_error _ -> ()))
+              ~finally:(fun () -> (try Unix.close files_from_out with Unix.Unix_error _ -> ()));
+            tarball_from_build ~log t ~files_from ~tar workdir user from_id)
+         ~finally:(fun () -> (try Unix.close from_tar with Unix.Unix_error _ -> ()));
+       transform op ~user ~from_tar ~to_untar)
+    ~finally:(fun () -> (try Unix.close to_untar with Unix.Unix_error _ -> ()));
+  proc
 
 (* The container must be based on the same version as the host. *)
 let servercore =
@@ -341,7 +308,7 @@ let servercore =
   | None ->
     let keyname = {|HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion|} in
     let valuename = "CurrentBuild" in
-    let* value = Os.pread ["reg"; "query"; keyname; "/v"; valuename] in
+    let value = Os.pread ["reg"; "query"; keyname; "/v"; valuename] in
     let line = String.(value |> trim |> split_on_char '\n') |> Fun.flip List.nth 1 in
     Scanf.sscanf line " CurrentBuild REG_SZ %i" @@ fun version ->
     let version' = match version with
@@ -359,7 +326,7 @@ let servercore =
     in
     let img' = "mcr.microsoft.com/windows/servercore:" ^ version' in
     Log.info (fun f -> f "Windows host is build %i, will use tag %s." version img');
-    img := Some (Lwt.return (`Docker_image img'));
+    img := Some (`Docker_image img');
     Option.get !img
   | Some img -> img
 
@@ -374,15 +341,15 @@ let servercore =
    We use `manifest.bash', an implementation of {!Manifest} in Bash, to
    extract the tar manifest from the Docker image. *)
 let create_tar_volume (t:t) =
-  Log.info (fun f -> f "Preparing tar volume…");
+  Log.info (fun f -> f "Preparing tar volume...");
   let name = Docker.obuilder_libexec () in
   let vol = `Docker_volume name and img = `Docker_image name in
-  let* _ = Docker.Cmd.volume (`Create vol) in
+  let _ = Docker.Cmd.volume (`Create vol) in
 
-  let* (`Docker_image base) = if Sys.win32 then servercore () else Lwt.return (`Docker_image "busybox") in
+  let (`Docker_image base) = if Sys.win32 then servercore () else (`Docker_image "busybox") in
 
-  let* config =
-    if Sys.win32 then
+  let config =
+    if Sys.win32 then begin
       let destination = Docker.(mount_point_inside_native // obuilder_libexec ()) in
       let dockerfile =
         "# escape=`\n" ^ (strf "FROM %s\n" base) ^ {|
@@ -400,19 +367,23 @@ let create_tar_volume (t:t) =
        COPY [ "manifest.bash", "C:/manifest.bash" ]
       |} in
 
-      let+ () = Lwt_io.with_temp_dir ~perm:0o700 @@ fun temp_dir ->
+      let temp_dir = Filename.temp_dir ~temp_dir:(Filename.get_temp_dir_name ()) "obuilder-tar-" "" in
+      Fun.protect ~finally:(fun () -> Os.rm ~directory:temp_dir) (fun () ->
+        Unix.chmod temp_dir 0o700;
         let write_file dst ?(perm=0o400) contents =
-          Lwt_io.(with_file ~perm ~mode:Output (temp_dir / dst)) @@ fun ch ->
-          Lwt_io.fprint ch contents in
-        let* () = write_file "Dockerfile" dockerfile in
-        let* () = write_file "extract.cmd" ~perm:0o500 (Option.get (Static_files.read "extract.cmd")) in
-        let* () = write_file "manifest.bash" ~perm:0o500 (Option.get (Static_files.read "manifest.bash")) in
+          let path = temp_dir / dst in
+          let fd = Unix.openfile path [Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC; Unix.O_CLOEXEC] perm in
+          Fun.protect ~finally:(fun () -> Unix.close fd) (fun () ->
+            Os.write_all_string fd contents 0 (String.length contents))
+        in
+        write_file "Dockerfile" dockerfile;
+        write_file "extract.cmd" ~perm:0o500 (Option.get (Static_files.read "extract.cmd"));
+        write_file "manifest.bash" ~perm:0o500 (Option.get (Static_files.read "manifest.bash"));
         let docker_argv = [
           "--isolation"; List.assoc t.docker_isolation isolations;
           "--network"; t.docker_network;
         ] in
-        Docker.Cmd.build docker_argv img temp_dir
-      in
+        Docker.Cmd.build docker_argv img temp_dir);
 
       let entrypoint, argv = {|C:\Windows\System32\cmd.exe|}, ["/S"; "/C"; {|C:\extract.cmd|}] in
       Config.v ~cwd:{|C:/|} ~argv ~hostname:""
@@ -424,21 +395,26 @@ let create_tar_volume (t:t) =
         ~entrypoint
         ()
 
-    else
+    end else begin
       let destination = Docker.(mount_point_inside_native / obuilder_libexec ()) in
       let dockerfile = strf "FROM %s\n" base ^ strf {|COPY [ "manifest.bash", "%s/manifest.bash" ]|} destination in
-      let+ () = Lwt_io.with_temp_dir ~perm:0o700 @@ fun temp_dir ->
+
+      let temp_dir = Filename.temp_dir ~temp_dir:(Filename.get_temp_dir_name ()) "obuilder-tar-" "" in
+      Fun.protect ~finally:(fun () -> Os.rm ~directory:temp_dir) (fun () ->
+        Unix.chmod temp_dir 0o700;
         let write_file dst ?(perm=0o400) contents =
-          Lwt_io.(with_file ~perm ~mode:Output (temp_dir / dst)) @@ fun ch ->
-          Lwt_io.fprint ch contents in
-        let* () = write_file "Dockerfile" dockerfile in
-        let* () = write_file "manifest.bash" ~perm:0o500 (Option.get (Static_files.read "manifest.bash")) in
+          let path = temp_dir / dst in
+          let fd = Unix.openfile path [Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC; Unix.O_CLOEXEC] perm in
+          Fun.protect ~finally:(fun () -> Unix.close fd) (fun () ->
+            Os.write_all_string fd contents 0 (String.length contents))
+        in
+        write_file "Dockerfile" dockerfile;
+        write_file "manifest.bash" ~perm:0o500 (Option.get (Static_files.read "manifest.bash"));
         let docker_argv = [
             "--isolation"; List.assoc t.docker_isolation isolations;
             "--network"; t.docker_network;
         ] in
-        Docker.Cmd.build docker_argv img temp_dir
-      in
+        Docker.Cmd.build docker_argv img temp_dir);
 
       let entrypoint, argv = "/bin/sh", ["-c"; ":"] in
       Config.v ~cwd:"/" ~argv ~hostname:""
@@ -449,16 +425,17 @@ let create_tar_volume (t:t) =
         ~network:[]
         ~entrypoint
         ()
+    end
   in
   let docker_args, args = Docker_config.make config t in
-  let* () = Docker.Cmd.run ~rm:true docker_args img args in
+  Docker.Cmd.run ~rm:true docker_args img args;
   Docker.Cmd.image (`Remove img)
 
 let create (c : config) =
   let t = { docker_cpus = c.cpus; docker_isolation = c.isolation;
             docker_memory = c.memory; docker_network = c.network; } in
-  let* volume_exists = Docker.Cmd.exists (`Docker_volume (Docker.obuilder_libexec ())) in
-  let+ () = if Result.is_error volume_exists then create_tar_volume t else Lwt.return_unit in
+  let volume_exists = Docker.Cmd.exists (`Docker_volume (Docker.obuilder_libexec ())) in
+  if Result.is_error volume_exists then create_tar_volume t;
   t
 
 open Cmdliner

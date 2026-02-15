@@ -1,7 +1,5 @@
 (** Configuration information to set up a store. *)
 
-open Lwt.Infix
-
 type t = [
   | `Btrfs of string  (* Path *)
   | `Zfs of string    (* Path with pool at end *)
@@ -38,26 +36,26 @@ type store = Store : (module S.STORE with type t = 'a) * 'a -> store
 
 let to_store = function
   | `Btrfs path ->
-    `Native, Btrfs_store.create path >|= fun store ->
-    Store ((module Btrfs_store), store)
+    let store = Btrfs_store.create path in
+    `Native, Store ((module Btrfs_store), store)
   | `Zfs path ->
-    `Native, Zfs_store.create ~path >|= fun store ->
-    Store ((module Zfs_store), store)
+    let store = Zfs_store.create ~path in
+    `Native, Store ((module Zfs_store), store)
   | `Rsync (path, rsync_mode) ->
-    `Native, Rsync_store.create ~path ~mode:rsync_mode () >|= fun store ->
-    Store ((module Rsync_store), store)
+    let store = Rsync_store.create ~path ~mode:rsync_mode () in
+    `Native, Store ((module Rsync_store), store)
   | `Xfs path ->
-    `Native, Xfs_store.create ~path >|= fun store ->
-    Store ((module Xfs_store), store)
+    let store = Xfs_store.create ~path in
+    `Native, Store ((module Xfs_store), store)
   | `Overlayfs path ->
-    `Native, Overlayfs_store.create ~path >|= fun store ->
-    Store ((module Overlayfs_store), store)
+    let store = Overlayfs_store.create ~path in
+    `Native, Store ((module Overlayfs_store), store)
   | `Docker path ->
-    `Docker, Docker_store.create path >|= fun store ->
-    Store ((module Docker_store), store)
+    let store = Docker_store.create path in
+    `Docker, Store ((module Docker_store), store)
   | `Qemu root ->
-    `Qemu, Qemu_store.create ~root >|= fun store ->
-    Store ((module Qemu_store), store)
+    let store = Qemu_store.create ~root in
+    `Qemu, Store ((module Qemu_store), store)
 
 open Cmdliner
 

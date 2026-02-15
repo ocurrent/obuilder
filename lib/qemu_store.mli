@@ -2,6 +2,6 @@
 
 include S.STORE
 
-val create : root:string -> t Lwt.t
+val create : root:string -> t
 (** [create ~root] creates a new QEMU store directory where everything will
     be stored under [root]. *)

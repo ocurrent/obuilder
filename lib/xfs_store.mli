@@ -6,6 +6,6 @@
 
 include S.STORE
 
-val create : path:string -> t Lwt.t
+val create : path:string -> t
 (** [create ~path] creates a new XFS store where everything will
     be stored under [path]. *)

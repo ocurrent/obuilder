@@ -25,12 +25,15 @@ doc: "https://ocurrent.github.io/obuilder/"
 bug-reports: "https://github.com/ocurrent/obuilder/issues"
 depends: [
   "dune" {>= "3.16"}
+  "eio" {>= "1.3"}
+  "eio_main"
   "lwt" {>= "5.7.0"}
+  "lwt_eio"
   "astring"
   "fmt" {>= "0.8.9"}
   "logs"
   "cmdliner" {>= "1.3.0"}
-  "tar-unix" {>= "2.6.0" & < "3.0.0"}
+  "tar-unix" {>= "2.6.0"}
   "yojson" {>= "1.6.0"}
   "sexplib"
   "ppx_deriving"
@@ -41,8 +44,8 @@ depends: [
   "obuilder-spec" {= version}
   "fpath"
   "extunix" {>= "0.4.2"}
-  "ocaml" {>= "4.14.2"}
-  "alcotest-lwt" {>= "1.7.0" & with-test}
+  "ocaml" {>= "5.2.0"}
+  "alcotest" {>= "1.7.0" & with-test}
   "odoc" {with-doc}
 ]
 build: [

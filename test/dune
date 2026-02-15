@@ -10,7 +10,7 @@
  (name test)
  (package obuilder)
  (deps base.tar manifest.bash %{bin:dummy})
- (libraries alcotest-lwt obuilder str logs.fmt)
+ (libraries alcotest eio_main obuilder str logs.fmt)
  (modules log mock_exec mock_sandbox mock_store test))
 
 (dirs :standard \ test1)
