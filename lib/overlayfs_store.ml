@@ -26,10 +26,8 @@
   ocluster-worker ... --obuilder-store=overlayfs:/var/cache/obuilder
  *)
 
-open Lwt.Infix
-
 type cache = {
-  lock : Lwt_mutex.t;
+  lock : Mutex.t;
   mutable children : int;
 }
 
@@ -45,9 +43,9 @@ module Overlayfs = struct
   let create ?mode ?user dirs =
     match mode with
     | None -> Os.exec ([ "mkdir"; "-p" ] @ dirs)
-    | Some mode -> Os.exec ([ "mkdir"; "-p"; "-m"; mode ] @ dirs) >>= fun () ->
+    | Some mode -> Os.exec ([ "mkdir"; "-p"; "-m"; mode ] @ dirs);
       match user with
-      | None -> Lwt.return_unit
+      | None -> ()
       | Some `Unix user ->
         let { Obuilder_spec.uid; gid } = user in
         Os.sudo ([ "chown"; Printf.sprintf "%d:%d" uid gid; ] @ dirs)
@@ -55,7 +53,7 @@ module Overlayfs = struct
 
   let delete dirs =
     match dirs with
-    | [] -> Lwt.return_unit
+    | [] -> ()
     | d -> Os.sudo ([ "rm"; "-rf" ] @ d)
 
   let rename ~src ~dst =
@@ -115,8 +113,7 @@ end
 let root t = t.path
 
 let df t =
-  Lwt_process.pread ("", [| "df"; "-k"; "--output=used,size"; t.path |])
-  >>= fun output ->
+  let output = Os.pread ["df"; "-k"; "--output=used,size"; t.path] in
   let used, blocks =
     String.split_on_char '\n' output
     |> List.filter_map (fun s ->
@@ -125,10 +122,10 @@ let df t =
        | (exception Scanf.Scan_failure _) | (exception End_of_file) -> None)
     |> List.fold_left (fun (used, blocks) (u, b) -> (used +. u, blocks +. b)) (0., 0.)
   in
-  Lwt.return (100. -. (100. *. (used /. blocks)))
+  100. -. (100. *. (used /. blocks))
 
 let create ~path =
-  Overlayfs.create (Path.dirs path) >>= fun () ->
+  Overlayfs.create (Path.dirs path);
   let parse_mtab s =
     match Scanf.sscanf s "%s %s %s %s %s %s" (fun _ mp _ _ _ _ -> mp) with
     | x -> Some x
@@ -144,13 +141,12 @@ let create ~path =
          else None
       | None -> None)
   in
-  Lwt_list.iter_s
+  List.iter
     (fun merged ->
       Log.warn (fun f -> f "Unmounting left-over folder %S" merged);
       Overlayfs.umount ~merged)
-    mounts
-  >>= fun () ->
-  Lwt_list.iter_s
+    mounts;
+  List.iter
     (fun path ->
       Sys.readdir path |> Array.to_list
       |> List.map (Filename.concat path)
@@ -160,8 +156,8 @@ let create ~path =
       path / Path.cache_result_dirname;
       path / Path.cache_work_dirname;
       path / Path.cache_merged_dirname;
-      path / Path.work_dirname; ]
-  >|= fun () -> { path; caches = Hashtbl.create 10; next = 0 }
+      path / Path.work_dirname; ];
+  { path; caches = Hashtbl.create 10; next = 0 }
 
 let build t ?base ~id fn =
   Log.debug (fun f -> f "overlayfs: build %S" id);
@@ -169,11 +165,11 @@ let build t ?base ~id fn =
   let in_progress = Path.in_progress t id in
   let merged = Path.merged t id in
   let work = Path.work t id in
-  Overlayfs.create [ in_progress; work; merged ] >>= fun () ->
+  Overlayfs.create [ in_progress; work; merged ];
   let _ = Option.map (Path.in_progress t) base in
   (match base with
   | None ->
-      Lwt.return_unit
+      ()
   | Some src ->
       let src = Path.result t src in
       Unix.symlink src (in_progress / "parent");
@@ -183,27 +179,24 @@ let build t ?base ~id fn =
           | None -> [])
       in
       let lower = ancestors src |> String.concat ":" in
-      Overlayfs.overlay ~lower ~upper:in_progress ~work ~merged)
-  >>= fun () ->
-  Lwt.try_bind
-    (fun () -> match base with
-      | None -> fn in_progress
-      | Some _ -> fn merged)
-    (fun r ->
-      (match base with
-      | None -> Lwt.return_unit
-      | Some _ -> Overlayfs.umount ~merged)
-      >>= fun () ->
-      (match r with
-      | Ok () ->
-        Overlayfs.rename ~src:in_progress ~dst:result >>= fun () ->
-        Overlayfs.delete [ merged; work ]
-      | Error _ -> Overlayfs.delete [ merged; work; in_progress ])
-      >>= fun () -> Lwt.return r)
-    (fun ex ->
-      Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
-      Overlayfs.delete [ merged; work; in_progress ] >>= fun () ->
-      Lwt.reraise ex)
+      Overlayfs.overlay ~lower ~upper:in_progress ~work ~merged);
+  match (try Ok (match base with
+    | None -> fn in_progress
+    | Some _ -> fn merged) with ex -> Error ex) with
+  | Ok r ->
+    (match base with
+    | None -> ()
+    | Some _ -> Overlayfs.umount ~merged);
+    (match r with
+    | Ok () ->
+      Overlayfs.rename ~src:in_progress ~dst:result;
+      Overlayfs.delete [ merged; work ]
+    | Error _ -> Overlayfs.delete [ merged; work; in_progress ]);
+    r
+  | Error ex ->
+    Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
+    Overlayfs.delete [ merged; work; in_progress ];
+    raise ex
 
 let delete t id =
   let path = Path.result t id in
@@ -225,11 +218,11 @@ let delete t id =
 let result t id =
   let dir = Path.result t id in
   match Os.check_dir dir with
-  | `Present -> Lwt.return_some dir
-  | `Missing -> Lwt.return_none
+  | `Present -> Some dir
+  | `Missing -> None
 
 let log_file t id =
-  result t id >|= function
+  match result t id with
   | Some dir -> dir / "log"
   | None -> Path.in_progress t id / "log"
 
@@ -239,46 +232,48 @@ let get_cache t name =
   match Hashtbl.find_opt t.caches name with
   | Some c -> c
   | None ->
-    let c = { lock = Lwt_mutex.create (); children = 0 } in
+    let c = { lock = Mutex.create (); children = 0 } in
       Hashtbl.add t.caches name c;
       c
 
 let cache ~user t name =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
+  Mutex.lock cache.lock;
+  Fun.protect ~finally:(fun () -> Mutex.unlock cache.lock) (fun () ->
   let result, work, merged = Path.cache_result t t.next name in
   t.next <- t.next + 1;
   let master = Path.cache t name in
   (* Create cache if it doesn't already exist. *)
   (match Os.check_dir master with
   | `Missing -> Overlayfs.create ~mode:"1777" ~user [ master ]
-  | `Present -> Lwt.return_unit)
-  >>= fun () ->
+  | `Present -> ());
   cache.children <- cache.children + 1;
-  Overlayfs.create ~mode:"1777" ~user [ result; work; merged ] >>= fun () ->
+  Overlayfs.create ~mode:"1777" ~user [ result; work; merged ];
   let lower = String.split_on_char ':' master |> String.concat "\\:" in
-  Overlayfs.overlay ~lower ~upper:result ~work ~merged >>= fun () ->
+  Overlayfs.overlay ~lower ~upper:result ~work ~merged;
   let release () =
-    Lwt_mutex.with_lock cache.lock @@ fun () ->
+    Mutex.lock cache.lock;
+    Fun.protect ~finally:(fun () -> Mutex.unlock cache.lock) (fun () ->
        cache.children <- cache.children - 1;
-       Overlayfs.umount ~merged >>= fun () ->
-       Overlayfs.cp ~src:result ~dst:master >>= fun () ->
-       Overlayfs.delete [ result; work; merged ]
+       Overlayfs.umount ~merged;
+       Overlayfs.cp ~src:result ~dst:master;
+       Overlayfs.delete [ result; work; merged ])
   in
-  Lwt.return (merged, release)
+  (merged, release))
 
 let delete_cache t name =
   let () = Printf.printf "0\n" in
   let cache = get_cache t name in
   let () = Printf.printf "1\n" in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
+  Mutex.lock cache.lock;
+  Fun.protect ~finally:(fun () -> Mutex.unlock cache.lock) (fun () ->
   let () = Printf.printf "2\n" in
   (* Ensures in-progress writes will be discarded *)
   if cache.children > 0
-  then Lwt_result.fail `Busy
-  else
-    Overlayfs.delete [ Path.cache t name ] >>= fun () ->
+  then Error `Busy
+  else (
+    Overlayfs.delete [ Path.cache t name ];
     let () = Printf.printf "3\n" in
-    Lwt.return (Ok ())
+    Ok ()))
 
-let complete_deletes _t = Lwt.return_unit
+let complete_deletes _t = ()

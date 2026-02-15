@@ -1,11 +1,12 @@
-open Lwt.Infix
-
-let ( >>!= ) = Lwt_result.bind
-
 type unix_fd = {
   raw : Unix.file_descr;
   mutable needs_close : bool;
   }
+
+let rec waitpid_non_intr pid =
+  match Unix.waitpid [] pid with
+  | v -> v
+  | exception Unix.Unix_error (Unix.EINTR, _, _) -> waitpid_non_intr pid
 
 let stdout = {
   raw = Unix.stdout;
@@ -19,16 +20,12 @@ let stderr = {
 
 let close fd =
   assert (fd.needs_close);
-  Unix.close fd.raw;
+  (try Unix.close fd.raw with Unix.Unix_error _ -> ());
   fd.needs_close <- false
 
 let ensure_closed_unix fd =
   if fd.needs_close then
     close fd
-
-let ensure_closed_lwt fd =
-  if Lwt_unix.state fd = Lwt_unix.Closed then Lwt.return_unit
-  else Lwt_unix.close fd
 
 let pp_cmd f (cmd, argv) =
   let argv = if cmd = "" then argv else cmd :: argv in
@@ -49,68 +46,121 @@ let close_redirection (x : [`FD_move_safely of unix_fd | `Dev_null]) =
   | `FD_move_safely x -> ensure_closed_unix x
   | `Dev_null -> ()
 
+let dev_null_fd = lazy (Unix.openfile "/dev/null" [Unix.O_RDWR] 0)
+
+let setup_fd = function
+  | Some (`FD_copy fd) -> fd
+  | Some `Dev_null -> Lazy.force dev_null_fd
+  | None -> Unix.stdin  (* placeholder, won't be used if not set *)
+
 (* stdin, stdout and stderr are copied to the child and then closed on the host.
    They are closed at most once, so duplicates are OK. *)
-let default_exec ?timeout ?cwd ?stdin ?stdout ?stderr ~pp argv =
-  let proc =
-    let stdin  = Option.map redirection stdin in
-    let stdout = Option.map redirection stdout in
-    let stderr = Option.map redirection stderr in
-    try Lwt_result.ok (Lwt_process.exec ?timeout ?cwd ?stdin ?stdout ?stderr argv)
-    with e -> Lwt_result.fail e
+let default_exec ?timeout:(_:float option) ?cwd ?stdin ?stdout ?stderr ~pp argv =
+  let stdin_r  = Option.map redirection stdin in
+  let stdout_r = Option.map redirection stdout in
+  let stderr_r = Option.map redirection stderr in
+  let result =
+    try
+      let cmd = fst argv in
+      let args = snd argv in
+      let env = Unix.environment () in
+      let stdin_fd = match stdin_r with
+        | Some (`FD_copy fd) -> fd
+        | Some `Dev_null -> Lazy.force dev_null_fd
+        | None -> Unix.stdin
+      in
+      let stdout_fd = match stdout_r with
+        | Some (`FD_copy fd) -> fd
+        | Some `Dev_null -> Lazy.force dev_null_fd
+        | None -> Unix.stdout
+      in
+      let stderr_fd = match stderr_r with
+        | Some (`FD_copy fd) -> fd
+        | Some `Dev_null -> Lazy.force dev_null_fd
+        | None -> Unix.stderr
+      in
+      let prog = if cmd = "" then args.(0) else cmd in
+      let cwd_args = match cwd with
+        | None -> []
+        | Some _ -> []  (* handled below *)
+      in
+      ignore cwd_args;
+      (* Save/restore cwd if needed *)
+      let old_cwd = match cwd with Some _ -> Some (Unix.getcwd ()) | None -> None in
+      (match cwd with Some d -> Unix.chdir d | None -> ());
+      let pid = Unix.create_process_env prog args env stdin_fd stdout_fd stderr_fd in
+      (match old_cwd with Some d -> Unix.chdir d | None -> ());
+      let _, status = waitpid_non_intr pid in
+      match status with
+      | Unix.WEXITED n -> Ok n
+      | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %a" pp Fmt.Dump.signal x
+      | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp Fmt.Dump.signal x
+    with e ->
+      Fmt.error_msg "%t raised %s\n%s" pp (Printexc.to_string e) (Printexc.get_backtrace ())
   in
   Option.iter close_redirection stdin;
   Option.iter close_redirection stdout;
   Option.iter close_redirection stderr;
-  proc >|= fun proc ->
-  Result.fold ~ok:(function
-      | Unix.WEXITED n -> Ok n
-      | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %a" pp Fmt.Dump.signal x
-      | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp Fmt.Dump.signal x)
-    ~error:(fun e ->
-        Fmt.error_msg "%t raised %s\n%s" pp (Printexc.to_string e) (Printexc.get_backtrace ())) proc
+  result
 
-(* Similar to default_exec except using open_process_none in order to get the
+(* Similar to default_exec except using Unix.create_process in order to get the
    pid of the forked process. On macOS this allows for cleaner job cancellations *)
 let open_process ?cwd ?env ?stdin ?stdout ?stderr ?pp:_ argv =
   Logs.info (fun f -> f "Fork exec %a" pp_cmd ("", argv));
-  let proc =
-    let stdin  = Option.map redirection stdin in
-    let stdout = Option.map redirection stdout in
-    let stderr = Option.map redirection stderr in
-    let process = Lwt_process.open_process_none ?cwd ?env ?stdin ?stdout ?stderr ("", (Array.of_list argv)) in
-  (process#pid, process#status)
+  let stdin_fd = match stdin with
+    | Some (`FD_move_safely fd) -> fd.raw
+    | Some `Dev_null -> Lazy.force dev_null_fd
+    | None -> Unix.stdin
   in
-    Option.iter close_redirection stdin;
-    Option.iter close_redirection stdout;
-    Option.iter close_redirection stderr;
-    proc
+  let stdout_fd = match stdout with
+    | Some (`FD_move_safely fd) -> fd.raw
+    | Some `Dev_null -> Lazy.force dev_null_fd
+    | None -> Unix.stdout
+  in
+  let stderr_fd = match stderr with
+    | Some (`FD_move_safely fd) -> fd.raw
+    | Some `Dev_null -> Lazy.force dev_null_fd
+    | None -> Unix.stderr
+  in
+  let old_cwd = match cwd with Some _ -> Some (Unix.getcwd ()) | None -> None in
+  (match cwd with Some d -> Unix.chdir d | None -> ());
+  let env_arr = match env with Some e -> e | None -> Unix.environment () in
+  let prog = List.hd argv in
+  let args = Array.of_list argv in
+  let pid = Unix.create_process_env prog args env_arr stdin_fd stdout_fd stderr_fd in
+  (match old_cwd with Some d -> Unix.chdir d | None -> ());
+  Option.iter close_redirection (Option.map (fun x -> (x : [`FD_move_safely of unix_fd | `Dev_null])) stdin);
+  Option.iter close_redirection (Option.map (fun x -> (x : [`FD_move_safely of unix_fd | `Dev_null])) stdout);
+  Option.iter close_redirection (Option.map (fun x -> (x : [`FD_move_safely of unix_fd | `Dev_null])) stderr);
+  let wait_for_result () =
+    let _, status = waitpid_non_intr pid in
+    status
+  in
+  (pid, wait_for_result)
 
 let process_result ~pp proc =
-  proc >|= (function
-  | Unix.WEXITED n -> Ok n
+  let status = proc () in
+  match status with
+  | Unix.WEXITED 0 -> Ok ()
+  | Unix.WEXITED n -> Fmt.error_msg "%t failed with exit status %a" pp pp_exit_status n
   | Unix.WSIGNALED x -> Fmt.error_msg "%t failed with signal %a" pp Fmt.Dump.signal x
-  | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp Fmt.Dump.signal x)
-  >>= function
-  | Ok 0 -> Lwt_result.return ()
-  | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %a" pp pp_exit_status n
-  | Error e -> Lwt_result.fail (e : [`Msg of string] :> [> `Msg of string])
+  | Unix.WSTOPPED x -> Fmt.error_msg "%t stopped with signal %a" pp Fmt.Dump.signal x
 
 (* Overridden in unit-tests *)
-let lwt_process_exec = ref default_exec
+let process_exec = ref default_exec
 
 let exec_result ?cwd ?stdin ?stdout ?stderr ~pp ?(is_success=((=) 0)) ?(cmd="") argv =
   Logs.info (fun f -> f "Exec %a" pp_cmd (cmd, argv));
-  !lwt_process_exec ?cwd ?stdin ?stdout ?stderr ~pp (cmd, Array.of_list argv) >>= function
-  | Ok n when is_success n -> Lwt_result.ok Lwt.return_unit
-  | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %a" pp pp_exit_status n
-  | Error e -> Lwt_result.fail (e : [`Msg of string] :> [> `Msg of string])
+  match !process_exec ?cwd ?stdin ?stdout ?stderr ~pp (cmd, Array.of_list argv) with
+  | Ok n when is_success n -> Ok ()
+  | Ok n -> Fmt.error_msg "%t failed with exit status %a" pp pp_exit_status n
+  | Error e -> Error (e : [`Msg of string] :> [> `Msg of string])
 
 let exec ?timeout ?cwd ?stdin ?stdout ?stderr ?(is_success=((=) 0)) ?(cmd="") argv =
   Logs.info (fun f -> f "Exec %a" pp_cmd (cmd, argv));
   let pp f = pp_cmd f (cmd, argv) in
-  !lwt_process_exec ?timeout ?cwd ?stdin ?stdout ?stderr ~pp (cmd, Array.of_list argv) >>= function
-  | Ok n when is_success n -> Lwt.return_unit
+  match !process_exec ?timeout ?cwd ?stdin ?stdout ?stderr ~pp (cmd, Array.of_list argv) with
+  | Ok n when is_success n -> ()
   | Ok n -> Fmt.failwith "%t failed with exit status %a" pp pp_exit_status n
   | Error (`Msg m) -> failwith m
 
@@ -126,91 +176,114 @@ let sudo_result ?cwd ?stdin ?stdout ?stderr ?is_success ~pp args =
 
 let rec write_all fd buf ofs len =
   assert (len >= 0);
-  if len = 0 then Lwt.return_unit
+  if len = 0 then ()
   else (
-    Lwt_unix.write fd buf ofs len >>= fun n ->
+    let n = Unix.write fd buf ofs len in
     write_all fd buf (ofs + n) (len - n)
   )
 
 let rec write_all_string fd buf ofs len =
   assert (len >= 0);
-  if len = 0 then Lwt.return_unit
+  if len = 0 then ()
   else (
-    Lwt_unix.write_string fd buf ofs len >>= fun n ->
+    let n = Unix.write_substring fd buf ofs len in
     write_all_string fd buf (ofs + n) (len - n)
   )
 
 let write_file ~path contents =
-  let flags = [Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
-  Lwt_io.(with_file ~mode:output ~flags) path @@ fun ch ->
-  Lwt_io.write ch contents
+  let fd = Unix.openfile path [Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC; Unix.O_CLOEXEC] 0o666 in
+  Fun.protect ~finally:(fun () -> (try Unix.close fd with Unix.Unix_error _ -> ())) @@ fun () ->
+  write_all_string fd contents 0 (String.length contents)
 
 let with_pipe_from_child fn =
-  let r, w = Lwt_unix.pipe_in ~cloexec:true () in
+  let r, w = Unix.pipe ~cloexec:true () in
   let w = { raw = w; needs_close = true } in
-  Lwt.finalize
-    (fun () -> fn ~r ~w)
-    (fun () ->
+  let r_fd = r in
+  Fun.protect
+    (fun () -> fn ~r:r_fd ~w)
+    ~finally:(fun () ->
        ensure_closed_unix w;
-       ensure_closed_lwt r
+       (try Unix.close r_fd with Unix.Unix_error _ -> ())
     )
 
 let with_pipe_to_child fn =
-  let r, w = Lwt_unix.pipe_out ~cloexec:true () in
+  let r, w = Unix.pipe ~cloexec:true () in
   let r = { raw = r; needs_close = true } in
-  Lwt.finalize
-    (fun () -> fn ~r ~w)
-    (fun () ->
+  let w_fd = w in
+  Fun.protect
+    (fun () -> fn ~r ~w:w_fd)
+    ~finally:(fun () ->
        ensure_closed_unix r;
-       ensure_closed_lwt w
+       (try Unix.close w_fd with Unix.Unix_error _ -> ())
     )
 
 let with_pipe_between_children fn =
   let r, w = Unix.pipe ~cloexec:true () in
   let r = { raw = r; needs_close = true } in
   let w = { raw = w; needs_close = true } in
-  Lwt.finalize
+  Fun.protect
     (fun () -> fn ~r ~w)
-    (fun () ->
+    ~finally:(fun () ->
        ensure_closed_unix r;
-       ensure_closed_unix w;
-       Lwt.return_unit
+       ensure_closed_unix w
     )
 
 let pread ?timeout ?stderr argv =
   with_pipe_from_child @@ fun ~r ~w ->
-  let child = exec ?timeout ~stdout:(`FD_move_safely w) ?stderr argv in
-  let r = Lwt_io.(of_fd ~mode:input) r in
-  Lwt.finalize
-    (fun () -> Lwt_io.read r)
-    (fun () -> Lwt_io.close r)
-  >>= fun data -> child >|= fun () -> data
+  let child_result = ref (Ok ()) in
+  let () = child_result := (try exec ?timeout ~stdout:(`FD_move_safely w) ?stderr argv; Ok () with Failure m -> Error (`Msg m)) in
+  (* Read all data from the pipe *)
+  let buf = Buffer.create 1024 in
+  let tmp = Bytes.create 4096 in
+  let rec read_all () =
+    match Unix.read r tmp 0 (Bytes.length tmp) with
+    | 0 -> ()
+    | n -> Buffer.add_subbytes buf tmp 0 n; read_all ()
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> read_all ()
+  in
+  read_all ();
+  (match !child_result with Ok () -> () | Error (`Msg m) -> failwith m);
+  Buffer.contents buf
 
 let pread_result ?cwd ?stdin ?stderr ~pp ?is_success ?cmd argv =
   with_pipe_from_child @@ fun ~r ~w ->
   let child = exec_result ?cwd ?stdin ~stdout:(`FD_move_safely w) ?stderr ~pp ?is_success ?cmd argv in
-  let r = Lwt_io.(of_fd ~mode:input) r in
-  Lwt.finalize
-    (fun () -> Lwt_io.read r)
-    (fun () -> Lwt_io.close r)
-  >>= fun data -> child >|= fun r -> Result.map (fun () -> data) r
+  let buf = Buffer.create 1024 in
+  let tmp = Bytes.create 4096 in
+  let rec read_all () =
+    match Unix.read r tmp 0 (Bytes.length tmp) with
+    | 0 -> ()
+    | n -> Buffer.add_subbytes buf tmp 0 n; read_all ()
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> read_all ()
+  in
+  read_all ();
+  let data = Buffer.contents buf in
+  Result.map (fun () -> data) child
 
 let pread_all ?stdin ~pp ?(cmd="") argv =
   with_pipe_from_child @@ fun ~r:r1 ~w:w1 ->
   with_pipe_from_child @@ fun ~r:r2 ~w:w2 ->
+  Logs.info (fun f -> f "Exec %a" pp_cmd (cmd, argv));
   let child =
-    Logs.info (fun f -> f "Exec %a" pp_cmd (cmd, argv));
-    !lwt_process_exec ?stdin ~stdout:(`FD_move_safely w1) ~stderr:(`FD_move_safely w2) ~pp
+    !process_exec ?stdin ~stdout:(`FD_move_safely w1) ~stderr:(`FD_move_safely w2) ~pp
       (cmd, Array.of_list argv)
   in
-  let r1 = Lwt_io.(of_fd ~mode:input) r1 in
-  let r2 = Lwt_io.(of_fd ~mode:input) r2 in
-  Lwt.finalize
-    (fun () -> Lwt.both (Lwt_io.read r1) (Lwt_io.read r2))
-    (fun () -> Lwt.both (Lwt_io.close r1) (Lwt_io.close r2) >>= fun _ -> Lwt.return_unit)
-  >>= fun (stdin, stdout) ->
-  child >>= function
-  | Ok i -> Lwt.return (i, stdin, stdout)
+  let read_fd fd =
+    let buf = Buffer.create 1024 in
+    let tmp = Bytes.create 4096 in
+    let rec read_all () =
+      match Unix.read fd tmp 0 (Bytes.length tmp) with
+      | 0 -> ()
+      | n -> Buffer.add_subbytes buf tmp 0 n; read_all ()
+      | exception Unix.Unix_error (Unix.EINTR, _, _) -> read_all ()
+    in
+    read_all ();
+    Buffer.contents buf
+  in
+  let stdout_data = read_fd r1 in
+  let stderr_data = read_fd r2 in
+  match child with
+  | Ok i -> (i, stdout_data, stderr_data)
   | Error (`Msg m) -> failwith m
 
 let check_dir x =
@@ -231,30 +304,24 @@ let read_link x =
 
 let rm ~directory =
   let pp _ ppf = Fmt.pf ppf "[ RM ]" in
-  sudo_result ~pp:(pp "RM") ["rm"; "-r"; directory ] >>= fun t ->
-  match t with
-  | Ok () -> Lwt.return_unit
+  match sudo_result ~pp:(pp "RM") ["rm"; "-r"; directory ] with
+  | Ok () -> ()
   | Error (`Msg m) ->
-    Log.warn (fun f -> f "Failed to remove %s because %s" directory m);
-    Lwt.return_unit
+    Log.warn (fun f -> f "Failed to remove %s because %s" directory m)
 
 let mv ~src dst =
   let pp _ ppf = Fmt.pf ppf "[ MV ]" in
-  sudo_result ~pp:(pp "MV") ["mv"; src; dst ] >>= fun t ->
-  match t with
-  | Ok () -> Lwt.return_unit
+  match sudo_result ~pp:(pp "MV") ["mv"; src; dst ] with
+  | Ok () -> ()
   | Error (`Msg m) ->
-    Log.warn (fun f -> f "Failed to move %s to %s because %s" src dst m);
-    Lwt.return_unit
+    Log.warn (fun f -> f "Failed to move %s to %s because %s" src dst m)
 
 let cp ~src dst =
   let pp _ ppf = Fmt.pf ppf "[ CP ]" in
-  sudo_result ~pp:(pp "CP") ["cp"; "-pRduT"; "--reflink=auto"; src; dst ] >>= fun t ->
-  match t with
-  | Ok () -> Lwt.return_unit
+  match sudo_result ~pp:(pp "CP") ["cp"; "-pRduT"; "--reflink=auto"; src; dst ] with
+  | Ok () -> ()
   | Error (`Msg m) ->
-    Log.warn (fun f -> f "Failed to copy from %s to %s because %s" src dst m);
-    Lwt.return_unit
+    Log.warn (fun f -> f "Failed to copy from %s to %s because %s" src dst m)
 
 let normalise_path root_dir =
   if Sys.win32 then

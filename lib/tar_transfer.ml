@@ -1,59 +1,22 @@
-open Lwt.Infix
-
 let ( / ) = Filename.concat
 
 let level = Tar.Header.GNU
 
-module Tar_lwt_unix = struct
-  include Tar_lwt_unix
+(* Helper to unwrap tar write operation results *)
+let unwrap_write_result = function
+  | Ok () -> Lwt.return_unit
+  | Error (`Msg m) -> failwith m
+  | Error (`Unix (e, fn, arg)) ->
+    Fmt.failwith "%s(%s): %s" fn arg (Unix.error_message e)
 
-  (* Copied from tar_lwt_unix.ml (ISC license). Not sure why this isn't exposed.
+let rec lwt_write_all fd buf ofs len =
+  if len = 0 then Lwt.return_unit
+  else
+    Lwt.bind (Lwt_unix.write fd buf ofs len) (fun n ->
+      lwt_write_all fd buf (ofs + n) (len - n))
 
-     ## ISC License
-
-     Copyright (c) 2012-2018 The ocaml-tar contributors
-
-     Permission to use, copy, modify, and/or distribute this software for any
-     purpose with or without fee is hereby granted, provided that the above
-     copyright notice and this permission notice appear in all copies.
-
-     THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-     WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-     MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-     ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-     WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-     ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-     OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-  *)
-
-  module Writer = struct
-    type out_channel = Lwt_unix.file_descr
-    type 'a t = 'a Lwt.t
-    let really_write fd = Lwt_cstruct.(complete (write fd))
-  end
-
-  module HW = Tar.HeaderWriter(Lwt)(Writer)
-
-  let write_block ?level (header: Tar.Header.t) (body: Lwt_unix.file_descr -> unit Lwt.t) (fd : Lwt_unix.file_descr) =
-    HW.write ?level header fd
-    >>= fun () ->
-    body fd >>= fun () ->
-    Writer.really_write fd (Tar.Header.zero_padding header)
-
-  let write_end (fd: Lwt_unix.file_descr) =
-    Writer.really_write fd Tar.Header.zero_block >>= fun () ->
-    Writer.really_write fd Tar.Header.zero_block
-end
-
-let copy_to ~dst src =
-  let len = 4096 in
-  let buf = Bytes.create len in
-  let rec aux () =
-    Lwt_io.read_into src buf 0 len >>= function
-    | 0 -> Lwt.return_unit
-    | n -> Os.write_all dst buf 0 n >>= aux
-  in
-  aux ()
+let lwt_write_all_string fd s ofs len =
+  lwt_write_all fd (Bytes.unsafe_of_string s) ofs len
 
 let get_ids = function
   | `Unix user -> Some user.Obuilder_spec.uid, Some user.gid, None, None
@@ -63,37 +26,33 @@ let get_ids = function
     Some (0x1000 * x + rid), Some (0x1000 * x + rid), Some user.name, Some user.name
   | `Windows _ -> None, None, None, None
 
-let copy_file ~src ~dst ~to_untar ~user =
-  Lwt_unix.LargeFile.lstat src >>= fun stat ->
-  let user_id, group_id, uname, gname = get_ids user in
-  let hdr = Tar.Header.make
-      ~file_mode:(if stat.Lwt_unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
-      ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
-      ?user_id ?group_id ?uname ?gname
-      dst stat.Lwt_unix.LargeFile.st_size
-  in
-  Tar_lwt_unix.write_block ~level hdr (fun ofd ->
-      let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
-      Lwt_io.(with_file ~mode:input ~flags) src (copy_to ~dst:ofd)
-    ) to_untar
+let copy_file_lwt ~src ~dst ~to_untar ~user =
+  Lwt.bind (Lwt_unix.LargeFile.lstat src) (fun stat ->
+    let user_id, group_id, uname, gname = get_ids user in
+    let hdr = Tar.Header.make
+        ~file_mode:(if stat.Lwt_unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
+        ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
+        ?user_id ?group_id ?uname ?gname
+        dst stat.Lwt_unix.LargeFile.st_size
+    in
+    Lwt.bind (Tar_lwt_unix.append_file ~level ~header:hdr src to_untar) unwrap_write_result)
 
-let copy_symlink ~src ~target ~dst ~to_untar ~user =
-  Lwt_unix.LargeFile.lstat src >>= fun stat ->
-  let user_id, group_id, uname, gname = get_ids user in
-  let hdr = Tar.Header.make
-      ~file_mode:0o777
-      ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
-      ~link_indicator:Tar.Header.Link.Symbolic
-      ~link_name:target
-      ?user_id ?group_id ?uname ?gname
-      dst 0L
-  in
-  Tar_lwt_unix.write_block ~level hdr (fun _ -> Lwt.return_unit) to_untar
+let copy_symlink_lwt ~src ~target ~dst ~to_untar ~user =
+  Lwt.bind (Lwt_unix.LargeFile.lstat src) (fun stat ->
+    let user_id, group_id, uname, gname = get_ids user in
+    let hdr = Tar.Header.make
+        ~file_mode:0o777
+        ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
+        ~link_indicator:Tar.Header.Link.Symbolic
+        ~link_name:target
+        ?user_id ?group_id ?uname ?gname
+        dst 0L
+    in
+    Lwt.bind (Tar_lwt_unix.write_header ~level hdr to_untar) unwrap_write_result)
 
-let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
+let rec copy_dir_lwt ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
   Log.debug(fun f -> f "Copy dir %S -> %S" src dst);
-  Lwt_unix.LargeFile.lstat (src_dir / src) >>= fun stat ->
-  begin
+  Lwt.bind (Lwt_unix.LargeFile.lstat (src_dir / src)) (fun stat ->
     let user_id, group_id, uname, gname = get_ids user in
     let hdr = Tar.Header.make
         ~file_mode:0o755
@@ -101,45 +60,63 @@ let rec copy_dir ~src_dir ~src ~dst ~(items:(Manifest.t list)) ~to_untar ~user =
         ?user_id ?group_id ?uname ?gname
         (dst ^ "/") 0L
     in
-    Tar_lwt_unix.write_block ~level hdr (fun _ -> Lwt.return_unit) to_untar
-  end >>= fun () -> send_dir ~src_dir ~dst ~to_untar ~user items
+    Lwt.bind (Tar_lwt_unix.write_header ~level hdr to_untar) (fun r ->
+      Lwt.bind (unwrap_write_result r) (fun () ->
+        send_dir_lwt ~src_dir ~dst ~to_untar ~user items)))
 
-and send_dir ~src_dir ~dst ~to_untar ~user items =
-  items |> Lwt_list.iter_s (function
+and send_dir_lwt ~src_dir ~dst ~to_untar ~user items =
+  Lwt_list.iter_s (function
       | `File (src, _) ->
         let src = src_dir / src in
         let dst = dst / Filename.basename src in
-        copy_file ~src ~dst ~to_untar ~user
+        copy_file_lwt ~src ~dst ~to_untar ~user
       | `Symlink (src, target) ->
         let src = src_dir / src in
         let dst = dst / Filename.basename src in
-        copy_symlink ~src ~target ~dst ~to_untar ~user
+        copy_symlink_lwt ~src ~target ~dst ~to_untar ~user
       | `Dir (src, items) ->
         let dst = dst / Filename.basename src in
-        copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
-    )
+        copy_dir_lwt ~src_dir ~src ~dst ~items ~to_untar ~user
+    ) items
 
 let remove_leading_slashes = Astring.String.drop ~sat:((=) '/')
 
-let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
-  let dst = remove_leading_slashes dst_dir in
-  send_dir ~src_dir ~dst ~to_untar ~user src_manifest >>= fun () ->
-  Tar_lwt_unix.write_end to_untar
+let write_end_lwt to_untar =
+  Lwt.bind (Tar_lwt_unix.write_end to_untar) (function
+    | Ok () -> Lwt.return_unit
+    | Error (`Msg m) -> failwith m)
 
-let send_file ~src_dir ~src_manifest ~dst ~user ~to_untar =
+let send_files_lwt ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
+  let dst = remove_leading_slashes dst_dir in
+  Lwt.bind (send_dir_lwt ~src_dir ~dst ~to_untar ~user src_manifest) (fun () ->
+    write_end_lwt to_untar)
+
+let send_file_lwt ~src_dir ~src_manifest ~dst ~user ~to_untar =
   let dst = remove_leading_slashes dst in
-  begin
+  Lwt.bind begin
     match src_manifest with
     | `File (path, _) ->
       let src = src_dir / path in
-      copy_file ~src ~dst ~to_untar ~user
+      copy_file_lwt ~src ~dst ~to_untar ~user
     | `Symlink (src, target) ->
       let src = src_dir / src in
-      copy_symlink ~src ~target ~dst ~to_untar ~user
+      copy_symlink_lwt ~src ~target ~dst ~to_untar ~user
     | `Dir (src, items) ->
-      copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
-  end >>= fun () ->
-  Tar_lwt_unix.write_end to_untar
+      copy_dir_lwt ~src_dir ~src ~dst ~items ~to_untar ~user
+  end (fun () ->
+    write_end_lwt to_untar)
+
+(* Public direct-style wrappers *)
+
+let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
+  let lwt_fd = Lwt_unix.of_unix_file_descr ~blocking:true to_untar in
+  Lwt_eio.run_lwt (fun () ->
+    send_files_lwt ~src_dir ~src_manifest ~dst_dir ~user ~to_untar:lwt_fd)
+
+let send_file ~src_dir ~src_manifest ~dst ~user ~to_untar =
+  let lwt_fd = Lwt_unix.of_unix_file_descr ~blocking:true to_untar in
+  Lwt_eio.run_lwt (fun () ->
+    send_file_lwt ~src_dir ~src_manifest ~dst ~user ~to_untar:lwt_fd)
 
 let transform ~user fname hdr =
   (* Make a copy to erase unneeded data from the tar headers. *)
@@ -183,6 +160,46 @@ let rec map_transform ~dst transformations = function
     Log.debug(fun f -> f "Copy dir %S -> %S" src dst);
     List.iter (map_transform ~dst transformations) items
 
+(* Transform a tar archive: read from source, transform headers, write to dest.
+   Uses Tar.fold on the source fd with Tar.High to lift writes to the dest fd. *)
+let rec transform_archive_lwt ~transform_hdr ~from_tar ~to_untar =
+  let open Tar.Syntax in
+  let f ?global:_ hdr () =
+    let file_size = Int64.to_int hdr.Tar.Header.file_size in
+    let hdr' = transform_hdr hdr in
+    if file_size > 0 then begin
+      (* Read the file content from source (fold handles padding) *)
+      let* data = Tar.really_read file_size in
+      (* Write transformed entry to dest *)
+      Tar_lwt_unix.value (
+        Lwt.bind (Tar_lwt_unix.write_header ~level hdr' to_untar) (function
+          | Error (`Msg m) -> Lwt.return_error (`Msg m)
+          | Error (`Unix (e, fn, arg)) ->
+            Lwt.return_error (`Msg (Fmt.str "%s(%s): %s" fn arg (Unix.error_message e)))
+          | Ok () ->
+            Lwt.bind (lwt_write_all_string to_untar data 0 file_size) (fun () ->
+              let padding = Tar.Header.zero_padding hdr' in
+              let plen = String.length padding in
+              if plen > 0 then
+                Lwt.bind (lwt_write_all_string to_untar padding 0 plen) (fun () ->
+                  Lwt.return_ok ())
+              else
+                Lwt.return_ok ())))
+    end else begin
+      (* Directory, symlink, or empty file: just write header *)
+      Tar_lwt_unix.value (
+        Lwt.bind (Tar_lwt_unix.write_header ~level hdr' to_untar) (function
+          | Error (`Msg m) -> Lwt.return_error (`Msg m)
+          | Error (`Unix (e, fn, arg)) ->
+            Lwt.return_error (`Msg (Fmt.str "%s(%s): %s" fn arg (Unix.error_message e)))
+          | Ok () -> Lwt.return_ok ()))
+    end
+  in
+  Lwt.bind (Tar_lwt_unix.run (Tar.fold f ()) from_tar) (function
+    | Error err ->
+      Fmt.failwith "Tar transform error: %a" Tar_lwt_unix.pp_decode_error err
+    | Ok () -> write_end_lwt to_untar)
+
 and transform_files ~from_tar ~src_manifest ~dst_dir ~user ~to_untar =
   let dst = remove_leading_slashes dst_dir in
   let transformations = Hashtbl.create ~random:true 64 in
@@ -192,7 +209,10 @@ and transform_files ~from_tar ~src_manifest ~dst_dir ~user ~to_untar =
     | exception Not_found -> Fmt.failwith "Could not find mapping for %s" file_name
     | file_name -> file_name
   in
-  Tar_lwt_unix.Archive.transform ~level (transform ~user fname) from_tar to_untar
+  let lwt_from = Lwt_unix.of_unix_file_descr ~blocking:true from_tar in
+  let lwt_to = Lwt_unix.of_unix_file_descr ~blocking:true to_untar in
+  Lwt_eio.run_lwt (fun () ->
+    transform_archive_lwt ~transform_hdr:(transform ~user fname) ~from_tar:lwt_from ~to_untar:lwt_to)
 
 let transform_file ~from_tar ~src_manifest ~dst ~user ~to_untar =
   let dst = remove_leading_slashes dst in
@@ -211,8 +231,11 @@ let transform_file ~from_tar ~src_manifest ~dst ~user ~to_untar =
     | exception Not_found -> Fmt.failwith "Could not find mapping for %s" file_name
     | file_name -> file_name
   in
-  Tar_lwt_unix.Archive.transform ~level (fun hdr ->
-      let hdr' = transform ~user fname hdr in
-      Log.debug (fun f -> f "Copying %s -> %s" hdr.Tar.Header.file_name hdr'.Tar.Header.file_name);
-      hdr')
-    from_tar to_untar
+  let lwt_from = Lwt_unix.of_unix_file_descr ~blocking:true from_tar in
+  let lwt_to = Lwt_unix.of_unix_file_descr ~blocking:true to_untar in
+  Lwt_eio.run_lwt (fun () ->
+    transform_archive_lwt ~transform_hdr:(fun hdr ->
+        let hdr' = transform ~user fname hdr in
+        Log.debug (fun f -> f "Copying %s -> %s" hdr.Tar.Header.file_name hdr'.Tar.Header.file_name);
+        hdr')
+      ~from_tar:lwt_from ~to_untar:lwt_to)

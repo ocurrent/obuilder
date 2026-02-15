@@ -1,5 +1,3 @@
-open Lwt.Infix
-
 let strf = Printf.sprintf
 
 let running_as_root = Unix.getuid () = 0
@@ -11,7 +9,7 @@ let running_as_root = Unix.getuid () = 0
    since being cloned. The counter starts from zero when the in-memory cache
    value is created (i.e. you cannot compare across restarts). *)
 type cache = {
-  lock : Lwt_mutex.t;
+  lock : Mutex.t;
   mutable gen : int;
 }
 
@@ -51,7 +49,7 @@ end
 
 let delete_snapshot_if_exists path =
   match Os.check_dir path with
-  | `Missing -> Lwt.return_unit
+  | `Missing -> ()
   | `Present -> Btrfs.subvolume_delete path
 
 module Path = struct
@@ -76,19 +74,19 @@ let delete t id =
   delete_snapshot_if_exists (Path.result t id)
 
 let purge path =
-  Sys.readdir path |> Array.to_list |> Lwt_list.iter_s (fun item ->
+  Sys.readdir path |> Array.to_list |> List.iter (fun item ->
       let item = path / item in
       Log.warn (fun f -> f "Removing left-over temporary item %S" item);
       Btrfs.subvolume_delete item
     )
 
 let check_kernel_version () =
-  Os.pread ["uname"; "-r"] >>= fun kver ->
+  let kver = Os.pread ["uname"; "-r"] in
   match String.split_on_char '.' kver with
   | maj :: min :: _ ->
       begin match int_of_string_opt maj, int_of_string_opt min with
       | Some maj, Some min when (maj, min) >= (5, 8) ->
-          Lwt.return_unit
+          ()
       | Some maj, Some min ->
           Fmt.failwith "You need at least linux 5.8 to use the btrfs backend, \
                         but current kernel version is '%d.%d'" maj min
@@ -103,7 +101,7 @@ let root t = t.root
 module Stats = Map.Make (String)
 
 let df t =
-  Lwt_process.pread ("", [| "btrfs"; "filesystem"; "usage"; "-b"; t.root |]) >>= fun output ->
+  let output = Os.pread ["btrfs"; "filesystem"; "usage"; "-b"; t.root] in
   let stats =
     String.split_on_char '\n' output
     |> List.filter_map (fun s ->
@@ -116,52 +114,46 @@ let df t =
            | _ -> None)
     |> List.fold_left (fun acc (k, v) -> Stats.add k v acc) Stats.empty
   in
-  Lwt.return (100. -. (100. *. (Stats.find "Used" stats /. Stats.find "Device size" stats)))
+  100. -. (100. *. (Stats.find "Used" stats /. Stats.find "Device size" stats))
 
 let create root =
-  check_kernel_version () >>= fun () ->
+  check_kernel_version ();
   Os.ensure_dir (root / "result");
   Os.ensure_dir (root / "result-tmp");
   Os.ensure_dir (root / "state");
   Os.ensure_dir (root / "cache");
   Os.ensure_dir (root / "cache-tmp");
-  purge (root / "result-tmp") >>= fun () ->
-  purge (root / "cache-tmp") >>= fun () ->
-  Lwt.return { root; caches = Hashtbl.create 10; next = 0 }
+  purge (root / "result-tmp");
+  purge (root / "cache-tmp");
+  { root; caches = Hashtbl.create 10; next = 0 }
 
 let build t ?base ~id fn =
   let result = Path.result t id in
   let result_tmp = Path.result_tmp t id in
   assert (not (Sys.file_exists result));        (* Builder should have checked first *)
-  begin match base with
+  (match base with
     | None -> Btrfs.subvolume_create result_tmp
-    | Some base -> Btrfs.subvolume_snapshot `RW ~src:(Path.result t base) result_tmp
-  end
-  >>= fun () ->
-  Lwt.try_bind
-    (fun () -> fn result_tmp)
-    (fun r ->
-       begin match r with
-         | Ok () -> Btrfs.subvolume_snapshot `RO ~src:result_tmp result
-         | Error _ -> Lwt.return_unit
-       end >>= fun () ->
-       Btrfs.subvolume_delete result_tmp >>= fun () ->
-       Lwt.return r
-    )
-  (fun ex ->
-      Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
-      Btrfs.subvolume_delete result_tmp >>= fun () ->
-      Lwt.reraise ex
-  )
+    | Some base -> Btrfs.subvolume_snapshot `RW ~src:(Path.result t base) result_tmp);
+  match (try Ok (fn result_tmp) with ex -> Error ex) with
+  | Ok r ->
+    (match r with
+      | Ok () -> Btrfs.subvolume_snapshot `RO ~src:result_tmp result
+      | Error _ -> ());
+    Btrfs.subvolume_delete result_tmp;
+    r
+  | Error ex ->
+    Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
+    Btrfs.subvolume_delete result_tmp;
+    raise ex
 
 let result t id =
   let dir = Path.result t id in
   match Os.check_dir dir with
-  | `Present -> Lwt.return_some dir
-  | `Missing -> Lwt.return_none
+  | `Present -> Some dir
+  | `Missing -> None
 
 let log_file t id =
-  result t id >|= function
+  match result t id with
   | Some dir -> dir / "log"
   | None -> (Path.result_tmp t id) / "log"
 
@@ -169,53 +161,52 @@ let get_cache t name =
   match Hashtbl.find_opt t.caches name with
   | Some c -> c
   | None ->
-    let c = { lock = Lwt_mutex.create (); gen = 0 } in
+    let c = { lock = Mutex.create (); gen = 0 } in
     Hashtbl.add t.caches name c;
     c
 
-let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
+let cache ~user t name =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
+  Mutex.lock cache.lock;
+  Fun.protect ~finally:(fun () -> Mutex.unlock cache.lock) (fun () ->
   let tmp = Path.cache_tmp t t.next name in
   t.next <- t.next + 1;
   let snapshot = Path.cache t name in
   (* Create cache if it doesn't already exist. *)
-  begin match Os.check_dir snapshot with
+  (match Os.check_dir snapshot with
     | `Missing -> Btrfs.subvolume_create snapshot
-    | `Present -> Lwt.return_unit
-  end >>= fun () ->
+    | `Present -> ());
   (* Create writeable clone. *)
   let gen = cache.gen in
-  Btrfs.subvolume_snapshot `RW ~src:snapshot tmp >>= fun () ->
-  begin match user with
+  Btrfs.subvolume_snapshot `RW ~src:snapshot tmp;
+  (match user with
     | `Unix { Obuilder_spec.uid; gid } ->
       Os.sudo ["chown"; Printf.sprintf "%d:%d" uid gid; tmp]
-    | `Windows _ -> assert false (* btrfs not supported on Windows*)
-  end >>= fun () ->
+    | `Windows _ -> assert false (* btrfs not supported on Windows*));
   let release () =
-    Lwt_mutex.with_lock cache.lock @@ fun () ->
-    begin
-      if cache.gen = gen then (
+    Mutex.lock cache.lock;
+    Fun.protect ~finally:(fun () -> Mutex.unlock cache.lock) (fun () ->
+    (if cache.gen = gen then (
         (* The cache hasn't changed since we cloned it. Update it. *)
         (* todo: check if it has actually changed. *)
         cache.gen <- cache.gen + 1;
-        Btrfs.subvolume_delete snapshot >>= fun () ->
+        Btrfs.subvolume_delete snapshot;
         Btrfs.subvolume_snapshot `RO ~src:tmp snapshot
-      ) else Lwt.return_unit
-    end >>= fun () ->
-    Btrfs.subvolume_delete tmp
+      ));
+    Btrfs.subvolume_delete tmp)
   in
-  Lwt.return (tmp, release)
+  (tmp, release))
 
 let delete_cache t name =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
+  Mutex.lock cache.lock;
+  Fun.protect ~finally:(fun () -> Mutex.unlock cache.lock) (fun () ->
   cache.gen <- cache.gen + 1;   (* Ensures in-progress writes will be discarded *)
   let snapshot = Path.cache t name in
   if Sys.file_exists snapshot then (
-    Btrfs.subvolume_delete snapshot >>= fun () ->
-    Lwt_result.return ()
-  ) else Lwt_result.return ()
+    Btrfs.subvolume_delete snapshot;
+    Ok ()
+  ) else Ok ())
 
 let state_dir = Path.state
 

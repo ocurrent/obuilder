@@ -1,8 +1,7 @@
 (* This store will work with any file system which supports reflinks. *)
-open Lwt.Infix
 
 type cache = {
-  lock : Lwt_mutex.t;
+  lock : Mutex.t;
   mutable gen : int;
 }
 
@@ -15,7 +14,7 @@ type t = {
 let ( / ) = Filename.concat
 
 module Xfs = struct
-  let create dir = Lwt.return @@ Os.ensure_dir dir
+  let create dir = Os.ensure_dir dir
 
   let delete dir =
     Os.sudo [ "rm"; "-r"; dir ]
@@ -49,11 +48,11 @@ end
 
 let root t = t.path
 
-let df t = Lwt.return (Os.free_space_percent t.path)
+let df t = Os.free_space_percent t.path
 
 let create ~path =
-  Xfs.create path >>= fun () ->
-  Lwt_list.iter_s Xfs.create (Path.dirs path) >|= fun () ->
+  Xfs.create path;
+  List.iter Xfs.create (Path.dirs path);
   { path; caches = Hashtbl.create 10; next = 0 }
 
 let build t ?base ~id fn =
@@ -61,40 +60,34 @@ let build t ?base ~id fn =
   let result = Path.result t id in
   let result_tmp = Path.result_tmp t id in
   let base = Option.map (Path.result t) base in
-  begin match base with
+  (match base with
   | None -> Xfs.create result_tmp
-  | Some src -> Xfs.cp ~src ~dst:result_tmp
-  end
-  >>= fun () ->
-  Lwt.try_bind
-    (fun () -> fn result_tmp)
-    (fun r ->
-      begin match r with
-      | Ok () -> Xfs.rename ~src:result_tmp ~dst:result
-      | Error _ -> Xfs.delete result_tmp
-      end >>= fun () ->
-      Lwt.return r
-    )
-    (fun ex ->
-      Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
-      Xfs.delete result_tmp >>= fun () ->
-      Lwt.reraise ex
-    )
+  | Some src -> Xfs.cp ~src ~dst:result_tmp);
+  match (try Ok (fn result_tmp) with ex -> Error ex) with
+  | Ok r ->
+    (match r with
+    | Ok () -> Xfs.rename ~src:result_tmp ~dst:result
+    | Error _ -> Xfs.delete result_tmp);
+    r
+  | Error ex ->
+    Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
+    Xfs.delete result_tmp;
+    raise ex
 
 let delete t id =
   let path = Path.result t id in
   match Os.check_dir path with
   | `Present -> Xfs.delete path
-  | `Missing -> Lwt.return_unit
+  | `Missing -> ()
 
 let result t id =
   let dir = Path.result t id in
   match Os.check_dir dir with
-  | `Present -> Lwt.return_some dir
-  | `Missing -> Lwt.return_none
+  | `Present -> Some dir
+  | `Missing -> None
 
 let log_file t id =
-  result t id >|= function
+  match result t id with
   | Some dir -> dir / "log"
   | None -> (Path.result_tmp t id) / "log"
 
@@ -104,52 +97,52 @@ let get_cache t name =
   match Hashtbl.find_opt t.caches name with
   | Some c -> c
   | None ->
-    let c = { lock = Lwt_mutex.create (); gen = 0 } in
+    let c = { lock = Mutex.create (); gen = 0 } in
     Hashtbl.add t.caches name c;
     c
 
 let cache ~user t name =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
+  Mutex.lock cache.lock;
+  Fun.protect ~finally:(fun () -> Mutex.unlock cache.lock) (fun () ->
   let tmp = Path.cache_tmp t t.next name in
   t.next <- t.next + 1;
   let snapshot = Path.cache t name in
   (* Create cache if it doesn't already exist. *)
-  begin match Os.check_dir snapshot with
-    | `Missing -> Xfs.create snapshot >>= fun () ->
+  (match Os.check_dir snapshot with
+    | `Missing -> Xfs.create snapshot;
       let { Obuilder_spec.uid; gid } = match user with
         | `Unix user -> user
         | `Windows _ -> assert false (* xfs not supported on Windows *)
       in
       Os.sudo [ "chown"; Printf.sprintf "%d:%d" uid gid; snapshot ]
-    | `Present -> Lwt.return_unit
-  end >>= fun () ->
+    | `Present -> ());
   (* Create writeable clone. *)
   let gen = cache.gen in
-  Xfs.cp ~src:snapshot ~dst:tmp >>= fun () ->
+  Xfs.cp ~src:snapshot ~dst:tmp;
   let release () =
-    Lwt_mutex.with_lock cache.lock @@ fun () ->
-    begin
-      if cache.gen = gen then (
-        (* The cache hasn't changed since we cloned it. Update it. *)
-        (* todo: check if it has actually changed. *)
-        cache.gen <- cache.gen + 1;
-        Xfs.delete snapshot >>= fun () ->
-        Xfs.rename ~src:tmp ~dst:snapshot
-      ) else
-        Xfs.delete tmp
-    end
+    Mutex.lock cache.lock;
+    Fun.protect ~finally:(fun () -> Mutex.unlock cache.lock) (fun () ->
+    if cache.gen = gen then (
+      (* The cache hasn't changed since we cloned it. Update it. *)
+      (* todo: check if it has actually changed. *)
+      cache.gen <- cache.gen + 1;
+      Xfs.delete snapshot;
+      Xfs.rename ~src:tmp ~dst:snapshot
+    ) else
+      Xfs.delete tmp)
   in
-  Lwt.return (tmp, release)
+  (tmp, release))
 
 let delete_cache t name =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
+  Mutex.lock cache.lock;
+  Fun.protect ~finally:(fun () -> Mutex.unlock cache.lock) (fun () ->
   cache.gen <- cache.gen + 1;   (* Ensures in-progress writes will be discarded *)
   let snapshot = Path.cache t name in
   if Sys.file_exists snapshot then (
-    Xfs.delete snapshot >>= fun () ->
-    Lwt_result.return ()
-  ) else Lwt_result.return ()
+    Xfs.delete snapshot;
+    Ok ()
+  ) else Ok ())
 
-let complete_deletes _t = Lwt.return_unit
+let complete_deletes _t = ()

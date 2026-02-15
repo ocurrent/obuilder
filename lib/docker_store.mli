@@ -2,7 +2,7 @@
 
 include S.STORE
 
-val create : string -> t Lwt.t
+val create : string -> t
 (** [create root] is a new store using Docker images and [root] to store
     ancillary state. *)
 

@@ -16,14 +16,14 @@ module type STORE = sig
   val root : t -> string
   (** [root t] returns the root of the store. *)
 
-  val df : t -> float Lwt.t
+  val df : t -> float
   (** [df t] returns the percentage of free space in the store. *)
 
   val build :
     t -> ?base:id ->
     id:id ->
-    (string -> (unit, 'e) Lwt_result.t) ->
-    (unit, 'e) Lwt_result.t
+    (string -> (unit, 'e) result) ->
+    (unit, 'e) result
   (** [build t ~id fn] runs [fn tmpdir] to add a new item to the store under
       key [id]. On success, [tmpdir] is saved as [id], which can be used
       as the [base] for further builds, until it is expired from the cache.
@@ -34,13 +34,13 @@ module type STORE = sig
       exists (i.e. for which [result] returns a path).
       @param base Initialise [tmpdir] as a clone of [base]. *)
 
-  val delete : t -> id -> unit Lwt.t
+  val delete : t -> id -> unit
   (** [delete t id] removes [id] from the store, if present. *)
 
-  val result : t -> id -> string option Lwt.t
+  val result : t -> id -> string option
   (** [result t id] is the path of the build result for [id], if present. *)
 
-  val log_file : t -> id -> string Lwt.t
+  val log_file : t -> id -> string
   (** [log_file t id] is the path of the build logs for [id]. The file may
       not exist if the build has never been run, or failed. *)
 
@@ -52,7 +52,7 @@ module type STORE = sig
     user:Obuilder_spec.user ->
     t ->
     string ->
-    (string * (unit -> unit Lwt.t)) Lwt.t
+    (string * (unit -> unit))
   (** [cache ~user t name] creates a writeable copy of the latest snapshot of the
       cache [name]. It returns the path of this fresh copy and a function which
       must be called to free it when done.
@@ -62,11 +62,11 @@ module type STORE = sig
       version of the cache, unless the cache has already been updated since
       it was snapshotted, in which case this writeable copy is simply discarded. *)
 
-  val delete_cache : t -> string -> (unit, [> `Busy]) Lwt_result.t
+  val delete_cache : t -> string -> (unit, [> `Busy]) result
   (** [delete_cache t name] removes the cache [name], if present.
       If the cache is currently in use, the store may instead return [Error `Busy]. *)
 
-  val complete_deletes : t -> unit Lwt.t
+  val complete_deletes : t -> unit
   (** [complete_deletes t] attempts to wait for previously executed deletes to finish,
       so that the free space is accurate. *)
 end
@@ -75,20 +75,20 @@ module Sandbox_default =
   struct
     let tar _ = ["tar"; "-xf"; "-"]
     let shell _ = if Sys.win32 then ["cmd"; "/S"; "/C"] else ["/usr/bin/env"; "bash"; "-c"]
-    let finished () = Lwt.return ()
+    let finished () = ()
   end
 
 module type SANDBOX = sig
   type t
 
   val run :
-    cancelled:unit Lwt.t ->
+    cancelled:unit Eio.Promise.t ->
     ?stdin:Os.unix_fd ->
     log:Build_log.t ->
     t ->
     Config.t ->
     string ->
-    (unit, [`Cancelled | `Msg of string]) Lwt_result.t
+    (unit, [`Cancelled | `Msg of string]) result
   (** [run ~cancelled t config dir] runs the operation [config] in a sandbox with root
       filesystem [dir].
       @param cancelled Resolving this kills the process (and returns [`Cancelled]).
@@ -102,7 +102,7 @@ module type SANDBOX = sig
   val tar : t -> string list
   (** [tar t] Command line to invoke tar for this sandbox. *)
 
-  val finished : unit -> unit Lwt.t
+  val finished : unit -> unit
 end
 
 module type BUILDER = sig
@@ -113,20 +113,20 @@ module type BUILDER = sig
     t ->
     context ->
     Obuilder_spec.t ->
-    (id, [> `Cancelled | `Msg of string]) Lwt_result.t
+    (id, [> `Cancelled | `Msg of string]) result
 
-  val finish : t -> unit Lwt.t
+  val finish : t -> unit
   (** [finish builder] close allocated resources and store state (e.g., sqlite3
       databases). *)
 
-  val delete : ?log:(id -> unit) -> t -> id -> unit Lwt.t
+  val delete : ?log:(id -> unit) -> t -> id -> unit
   (** [delete ?log t id] removes [id] from the store, along with all of its dependencies.
       This is for testing. Note that is not safe to perform builds while deleting:
       the delete might fail because an item got a new child during the delete, or
       we might delete something that the build is using.
       @param log Called just before deleting each item, so it can be displayed. *)
 
-  val prune : ?log:(id -> unit) -> t -> before:Unix.tm -> int -> int Lwt.t
+  val prune : ?log:(id -> unit) -> t -> before:Unix.tm -> int -> int
   (** [prune t ~before n] attempts to remove up to [n] items from the store,
       all of which were last used before [before].
       Returns the number of items removed.
@@ -138,7 +138,7 @@ module type BUILDER = sig
   val root : t -> string
   (** [root t] returns the root of the store. *)
 
-  val df : t -> float Lwt.t
+  val df : t -> float
   (** [df t] returns the percentage of free space in the store. *)
 
   val shell : t -> string list
@@ -147,14 +147,14 @@ module type BUILDER = sig
   val cache_stats : t -> int * int
   (** [cache_stats t] returns the number of cache hits and the number of cache misses. *)
 
-  val healthcheck : ?timeout:float -> t -> (unit, [> `Msg of string]) Lwt_result.t
+  val healthcheck : ?timeout:float -> t -> (unit, [> `Msg of string]) result
   (** [healthcheck t] performs a check that [t] is working correctly.
       @param timeout Cancel and report failure after this many seconds.
                      This excludes the time to fetch the base image. *)
 end
 
 module type FETCHER = sig
-  val fetch : log:Build_log.t -> root:string -> rootfs:string -> string -> Config.env Lwt.t
+  val fetch : log:Build_log.t -> root:string -> rootfs:string -> string -> Config.env
   (** [fetch ~log ~root ~rootfs base] initialises the [rootfs]
       directory by fetching and extracting the [base] image.  [root]
       is the root of the store.  Returns the image's environment.
@@ -170,31 +170,31 @@ module type DOCKER_CMD = sig
   type 'a logerr
   (** Log only standard error of the sub-process. *)
 
-  val version : (unit -> (string, [> `Msg of string ]) result Lwt.t) logerr
+  val version : (unit -> (string, [> `Msg of string ]) result) logerr
 
   val pull :
-    ([< `Docker_image of string ] -> unit Lwt.t) log
+    ([< `Docker_image of string ] -> unit) log
   (** Pulls a Docker image. *)
   val export :
-    ([< `Docker_container of string ] -> unit Lwt.t) log
+    ([< `Docker_container of string ] -> unit) log
   (** Exports a Docker container. *)
   val image :
-    ([< `Remove of [< `Docker_image of string ] ] -> unit Lwt.t) log
+    ([< `Remove of [< `Docker_image of string ] ] -> unit) log
   (** Operates on a Docker image. *)
   val rm :
-    ([ `Docker_container of string ] list -> unit Lwt.t) log
+    ([ `Docker_container of string ] list -> unit) log
   (** Removes a Docker container.  *)
   val rmi :
-    ([ `Docker_image of string ] list -> unit Lwt.t) log
+    ([ `Docker_image of string ] list -> unit) log
   (** Removes a list of Docker images. *)
   val tag :
     ([< `Docker_image of string ] ->
-     [< `Docker_image of string ] -> unit Lwt.t) log
+     [< `Docker_image of string ] -> unit) log
   (** [tag source_image target_image] creates a new tag for a Docker iamge. *)
   val commit :
     ([< `Docker_image of string ] ->
      [< `Docker_container of string ] ->
-     [< `Docker_image of string ] -> unit Lwt.t) log
+     [< `Docker_image of string ] -> unit) log
   (** [commit base_image container target_image] commits the
       [container] to the [target_image] using [base_image] (typically
       the container's base image) entrypoint and cmd. *)
@@ -204,16 +204,16 @@ module type DOCKER_CMD = sig
      | `Inspect of [< `Docker_volume of string ] list * [< `Mountpoint ]
      | `List of string option
      | `Remove of [< `Docker_volume of string ] list ] ->
-     string Lwt.t) logerr
+     string) logerr
   (** Operates on Docker volumes. *)
   val volume_containers :
-    ([< `Docker_volume of string ] -> [> `Docker_container of string ] list Lwt.t) logerr
+    ([< `Docker_volume of string ] -> [> `Docker_container of string ] list) logerr
   (** [volume_containers vol] returns the list of containers using [vol].  *)
   val mount_point :
-    ([< `Docker_volume of string ] -> string Lwt.t) logerr
+    ([< `Docker_volume of string ] -> string) logerr
   (** [mount_point vol] returns the mount point in the host filesystem of [vol]. *)
   val build :
-    (string list -> [< `Docker_image of string ] -> string -> unit Lwt.t) log
+    (string list -> [< `Docker_image of string ] -> string -> unit) log
   (** [build docker_args image context_path] builds the Docker [image]
       using the context located in [context_path]. *)
 
@@ -222,7 +222,7 @@ module type DOCKER_CMD = sig
     (?is_success:(int -> bool) ->
      ?name:[< `Docker_container of string ] ->
      ?rm:bool ->
-     string list -> [< `Docker_image of string ] -> string list -> unit Lwt.t) log
+     string list -> [< `Docker_image of string ] -> string list -> unit) log
   (** [run ?stdin ?stdout ?stderr ?is_success ?name ?rm docker_argv image argv] *)
   val run' :
     ?stdin:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
@@ -230,7 +230,7 @@ module type DOCKER_CMD = sig
     (?is_success:(int -> bool) ->
      ?name:[< `Docker_container of string ] ->
      ?rm:bool ->
-     string list -> [< `Docker_image of string ] -> string list -> unit Lwt.t) logerr
+     string list -> [< `Docker_image of string ] -> string list -> unit) logerr
   (** [run' ?stdin ?stdout ?stderr ?is_success ?name ?rm docker_argv image argv] *)
   val run_result :
     ?stdin:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
@@ -238,7 +238,7 @@ module type DOCKER_CMD = sig
      ?rm:bool ->
      string list ->
      [< `Docker_image of string ] ->
-     string list -> (unit, [> `Msg of string ]) result Lwt.t) log
+     string list -> (unit, [> `Msg of string ]) result) log
   (** [run_result ?stdin ?stdout ?stderr ?is_success ?name ?rm docker_argv image argv] *)
   val run_result' :
     ?stdin:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
@@ -247,7 +247,7 @@ module type DOCKER_CMD = sig
      ?rm:bool ->
      string list ->
      [< `Docker_image of string ] ->
-     string list -> (unit, [> `Msg of string ]) result Lwt.t) logerr
+     string list -> (unit, [> `Msg of string ]) result) logerr
   (** [run_result ?stdin ?stdout ?stderr ?is_success ?name ?rm docker_argv image argv] *)
   val run_pread_result :
     ?stdin:[ `Dev_null | `FD_move_safely of Os.unix_fd ] ->
@@ -255,12 +255,12 @@ module type DOCKER_CMD = sig
      ?rm:bool ->
      string list ->
      [< `Docker_image of string ] ->
-     string list -> (string, [> `Msg of string ]) result Lwt.t) logerr
+     string list -> (string, [> `Msg of string ]) result) logerr
   (** [run_pread_result ?stdin ?stdout ?stderr ?is_success ?name ?rm docker_argv image argv] *)
 
   val stop :
     ([< `Docker_container of string ] ->
-     (unit, [> `Msg of string ]) result Lwt.t) log
+     (unit, [> `Msg of string ]) result) log
   (** Stop a Docker container. *)
 
   val manifest :
@@ -268,26 +268,26 @@ module type DOCKER_CMD = sig
           [< `Docker_image of string ] * [< `Docker_image of string ] list
      | `Inspect of [< `Docker_image of string ]
      | `Remove of [< `Docker_image of string ] list ] ->
-     (unit, [> `Msg of string ]) result Lwt.t) log
+     (unit, [> `Msg of string ]) result) log
   (** Operates on a Docker manifest. *)
 
   val exists :
     ([< `Docker_container of string
      | `Docker_image of string
      | `Docker_volume of string ] ->
-     (unit, [> `Msg of string ]) result Lwt.t) log
+     (unit, [> `Msg of string ]) result) log
   (** Tests if an object exists. *)
 
   val obuilder_images :
-    (?tmp:bool -> unit -> [ `Docker_image of string ] list Lwt.t) logerr
+    (?tmp:bool -> unit -> [ `Docker_image of string ] list) logerr
   (** Returns the list of this OBuilder instance images. *)
   val obuilder_containers :
-    (unit -> [ `Docker_container of string ] list Lwt.t) logerr
+    (unit -> [ `Docker_container of string ] list) logerr
   (** Returns the list of this OBuilder instance containers. *)
   val obuilder_volumes :
-    (?prefix:string -> unit -> [ `Docker_volume of string ] list Lwt.t) logerr
+    (?prefix:string -> unit -> [ `Docker_volume of string ] list) logerr
   (** Returns the list of this OBuilder instance volumes. *)
   val obuilder_caches_tmp :
-    (unit -> [ `Docker_volume of string ] list Lwt.t) logerr
+    (unit -> [ `Docker_volume of string ] list) logerr
   (** Returns the list of this OBuilder instance temporary caches. *)
 end

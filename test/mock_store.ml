@@ -1,22 +1,26 @@
-open Lwt.Infix
-
 module Os = Obuilder.Os
 
 let ( / ) = Filename.concat
 
 type t = {
   dir : string;
-  cond : unit Lwt_condition.t;
+  cond : Eio.Condition.t;
+  mutex : Eio.Mutex.t;
   mutable builds : int;
 }
 
 let unix_path path =
   if Sys.win32 then
-    Lwt_process.pread ("", [| "cygpath"; "-u"; path|]) >|= fun str -> String.trim str
+    String.trim (Os.pread ["cygpath"; "-u"; path])
   else
-    Lwt.return path
+    path
 
-let delay_store = ref Lwt.return_unit
+let already_resolved =
+  let p, r = Eio.Promise.create () in
+  Eio.Promise.resolve r ();
+  p
+
+let delay_store : unit Eio.Promise.t ref = ref already_resolved
 
 let rec waitpid_non_intr pid =
   try Unix.waitpid [] pid
@@ -30,7 +34,7 @@ let rm_r path =
 
 let build t ?base ~id fn =
   t.builds <- t.builds + 1;
-  Lwt.finalize
+  Fun.protect
     (fun () ->
        base |> Option.iter (fun base -> assert (not (String.contains base '/')));
        let dir = t.dir / id in
@@ -38,28 +42,30 @@ let build t ?base ~id fn =
        let tmp_dir = dir ^ "-tmp" in
        assert (not (Sys.file_exists tmp_dir));
        begin match base with
-         | None -> Os.ensure_dir tmp_dir; Lwt.return_unit
+         | None -> Os.ensure_dir tmp_dir
          | Some base ->
-           Lwt.both (unix_path (t.dir / base)) (unix_path tmp_dir) >>= fun (src, dst) ->
-           Lwt_process.exec ("", [| "cp"; "-r"; src; dst |]) >>= function
-           | Unix.WEXITED 0 -> Lwt.return_unit
-           | _ -> failwith "cp failed!"
-       end >>= fun () ->
-       fn tmp_dir >>= fun r ->
-       !delay_store >>= fun () ->
+           let src = unix_path (t.dir / base) in
+           let dst = unix_path tmp_dir in
+           let cp = Unix.create_process "cp" [| "cp"; "-r"; src; dst |] Unix.stdin Unix.stdout Unix.stderr in
+           begin match waitpid_non_intr cp with
+             | _, Unix.WEXITED 0 -> ()
+             | _ -> failwith "cp failed!"
+           end
+       end;
+       let r = fn tmp_dir in
+       Eio.Promise.await !delay_store;
        match r with
        | Ok () ->
          Unix.rename tmp_dir dir;
-         Lwt_result.return ()
+         Ok ()
        | Error _ as e ->
-         unix_path tmp_dir >>= fun tmp_dir ->
+         let tmp_dir = unix_path tmp_dir in
          rm_r tmp_dir;
-         Lwt.return e
+         e
     )
-    (fun () ->
+    ~finally:(fun () ->
        t.builds <- t.builds - 1;
-       Lwt_condition.broadcast t.cond ();
-       Lwt.return_unit
+       Eio.Condition.broadcast t.cond
     )
 
 let state_dir t = t.dir / "state"
@@ -69,41 +75,44 @@ let path t id = t.dir / id
 let result t id =
   let dir = path t id in
   match Os.check_dir dir with
-  | `Present -> Lwt.return_some dir
-  | `Missing -> Lwt.return_none
+  | `Present -> Some dir
+  | `Missing -> None
 
 let log_file t id =
-  Lwt.return (t.dir / "logs" / (id  ^ ".log"))
+  t.dir / "logs" / (id  ^ ".log")
 
 let rec finish t =
   if t.builds > 0 then (
     Logs.info (fun f -> f "Waiting for %d builds to finish" t.builds);
-    Lwt_condition.wait t.cond >>= fun () ->
+    Eio.Mutex.lock t.mutex;
+    if t.builds > 0 then
+      Eio.Condition.await t.cond t.mutex;
+    Eio.Mutex.unlock t.mutex;
     finish t
-  ) else Lwt.return_unit
+  ) else ()
 
 let with_store fn =
-  Lwt_io.with_temp_dir ~prefix:"mock-store-" @@ fun dir ->
-  let t = { dir; cond = Lwt_condition.create (); builds = 0 } in
+  let dir = Filename.temp_dir "mock-store-" "" in
+  let t = { dir; cond = Eio.Condition.create (); mutex = Eio.Mutex.create (); builds = 0 } in
   Obuilder.Os.ensure_dir (state_dir t);
   Obuilder.Os.ensure_dir (t.dir / "logs");
-  Lwt.finalize
+  Fun.protect
     (fun () -> fn t)
-    (fun () -> finish t)
+    ~finally:(fun () -> finish t)
 
 let delete t id =
-  result t id >>= function
-  | Some path -> rm_r path; Lwt.return_unit
-  | None -> Lwt.return_unit
+  match result t id with
+  | Some path -> rm_r path
+  | None -> ()
 
 let find ~output t =
   let rec aux = function
-    | [] -> Lwt.return_none
+    | [] -> None
     | x :: xs ->
       let output_path = t.dir / x / "rootfs" / "output" in
       if Sys.file_exists output_path then (
-        Lwt_io.(with_file ~mode:input) output_path Lwt_io.read >>= fun data ->
-        if data = output then Lwt.return_some x
+        let data = In_channel.with_open_bin output_path In_channel.input_all in
+        if data = output then Some x
         else aux xs
       ) else aux xs
   in
@@ -114,8 +123,8 @@ let cache ~user:_ _t _ = assert false
 
 let delete_cache _t _ = assert false
 
-let complete_deletes _t = Lwt.return_unit
+let complete_deletes _t = ()
 
 let root t = t.dir
 
-let df _ = Lwt.return 100.
+let df _ = 100.

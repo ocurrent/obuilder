@@ -2,28 +2,28 @@
 
 include S.SANDBOX
 
-val teardown : log:Build_log.t -> commit:bool -> S.id -> unit Lwt.t
+val teardown : log:Build_log.t -> commit:bool -> S.id -> unit
 
 val manifest_from_build :
   t ->
   base:S.id ->
   exclude:string list -> string list -> string -> Obuilder_spec.user ->
-  (Manifest.t list, [> `Msg of string ]) Lwt_result.t
+  (Manifest.t list, [> `Msg of string ]) result
 
 val copy_from_context :
   t ->
-  cancelled:unit Lwt.t ->
+  cancelled:unit Eio.Promise.t ->
   log:Build_log.t ->
   [< `Copy_item of Manifest.t * string
   | `Copy_items of Manifest.t list * string ] ->
   user:Obuilder_spec.user ->
   src_dir:string ->
   ?dst_dir:string ->
-  string -> (unit, [ `Cancelled | `Msg of string ]) result Lwt.t
+  string -> (unit, [ `Cancelled | `Msg of string ]) result
 
 val copy_from_build :
   t ->
-  cancelled:'a Lwt.t ->
+  cancelled:unit Eio.Promise.t ->
   log:Build_log.t ->
   [< `Copy_item of Manifest.t * string
   | `Copy_items of Manifest.t list * string ] ->
@@ -32,9 +32,9 @@ val copy_from_build :
   ?dst_dir:string ->
   from_id:S.id ->
   S.id ->
-  (unit, [ `Cancelled | `Msg of string ]) result Lwt.t
+  (unit, [ `Cancelled | `Msg of string ]) result
 
-val servercore : unit -> ([ `Docker_image of string ]) Lwt.t
+val servercore : unit -> [ `Docker_image of string ]
 (** Get the Windows ServerCore image based on the same version as the
     host. *)
 
@@ -56,6 +56,6 @@ val cmdliner : config Cmdliner.Term.t
     necessary flags and parameters to setup a specific sandbox's
     configuration. *)
 
-val create : config -> t Lwt.t
+val create : config -> t
 (** [create config] is a Docker sandboxing system that is configured
     using [config]. *)

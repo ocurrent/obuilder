@@ -1,4 +1,3 @@
-open Lwt.Infix
 open Sexplib.Conv
 
 include S.Sandbox_default
@@ -279,51 +278,36 @@ end
 let next_id = ref 0
 
 let run ~cancelled ?stdin:stdin ~log t config results_dir =
-  Lwt_io.with_temp_dir ~perm:0o700 ~prefix:"obuilder-runc-" @@ fun tmp ->
+  let tmp = Filename.temp_dir "obuilder-runc-" "" in
+  Unix.chmod tmp 0o700;
+  Fun.protect ~finally:(fun () ->
+    try ignore (Sys.command ("rm -rf " ^ Filename.quote tmp)) with _ -> ()
+  ) @@ fun () ->
   let json_config = Json_config.make config ~config_dir:tmp ~results_dir t in
-  Os.write_file ~path:(tmp / "config.json") (Yojson.Safe.pretty_to_string json_config ^ "\n") >>= fun () ->
-  Os.write_file ~path:(tmp / "hosts") "127.0.0.1 localhost builder" >>= fun () ->
-  Lwt_list.fold_left_s
+  Os.write_file ~path:(tmp / "config.json") (Yojson.Safe.pretty_to_string json_config ^ "\n");
+  Os.write_file ~path:(tmp / "hosts") "127.0.0.1 localhost builder";
+  ignore (List.fold_left
     (fun id Config.Secret.{value; _} ->
-      Os.write_file ~path:(tmp / secret_file id) value >|= fun () ->
+      Os.write_file ~path:(tmp / secret_file id) value;
       id + 1
-    ) 0 config.mount_secrets
-  >>= fun _ ->
+    ) 0 config.mount_secrets);
   let id = string_of_int !next_id in
   incr next_id;
   Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
   let cmd = ["runc"; "--root"; t.runc_state_dir; "run"; id] in
   let stdout = `FD_move_safely out_w in
   let stderr = stdout in
-  let copy_log = Build_log.copy ~src:out_r ~dst:log in
-  let proc =
-    let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
-    let pp f = Os.pp_cmd f ("", config.argv) in
-    Os.sudo_result ~cwd:tmp ?stdin ~stdout ~stderr ~pp cmd
-  in
-  Lwt.on_termination cancelled (fun () ->
-      let rec aux () =
-        if Lwt.is_sleeping proc then (
-          let pp f = Fmt.pf f "runc kill %S" id in
-          Os.sudo_result ~cwd:tmp ["runc"; "--root"; t.runc_state_dir; "kill"; id; "KILL"] ~pp >>= function
-          | Ok () -> Lwt.return_unit
-          | Error (`Msg m) ->
-            (* This might be because it hasn't been created yet, so retry. *)
-            Log.warn (fun f -> f "kill failed: %s (will retry in 10s)" m);
-            Lwt_unix.sleep 10.0 >>= aux
-        ) else Lwt.return_unit  (* Process has already finished *)
-      in
-      Lwt.async aux
-    );
-  proc >>= fun r ->
-  copy_log >>= fun () ->
-  if Lwt.is_sleeping cancelled then Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
-  else Lwt_result.fail `Cancelled
+  let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
+  let pp f = Os.pp_cmd f ("", config.argv) in
+  let r = Os.sudo_result ~cwd:tmp ?stdin ~stdout ~stderr ~pp cmd in
+  Build_log.copy ~src:out_r ~dst:log;
+  if Eio.Promise.is_resolved cancelled then Error `Cancelled
+  else (r :> (unit, [`Msg of string | `Cancelled]) result)
 
 let clean_runc dir =
   Sys.readdir dir
   |> Array.to_list
-  |> Lwt_list.iter_s (fun item ->
+  |> List.iter (fun item ->
       Log.warn (fun f -> f "Removing left-over runc container %S" item);
       Os.sudo ["runc"; "--root"; dir; "delete"; "--force"; item]
     )
@@ -332,7 +316,7 @@ let create ~state_dir (c : config) =
   Os.ensure_dir state_dir;
   let arches = get_arches () in
   Log.info (fun f -> f "Architectures for multi-arch system: %a" Fmt.(Dump.list string) arches);
-  clean_runc state_dir >|= fun () ->
+  clean_runc state_dir;
   { runc_state_dir = state_dir; fast_sync = c.fast_sync; arches }
 
 open Cmdliner
