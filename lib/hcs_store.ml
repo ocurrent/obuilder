@@ -273,11 +273,11 @@ let delete_cache t name =
     Lwt_result.return ()
   ) else Lwt_result.return ()
 
-(* After pruning, try to remove all obuilder-base-* containerd snapshots.
-   Snapshots still in use (have children) will fail harmlessly.
-   Orphaned ones (whose obuilder entry was already pruned) get cleaned up,
-   freeing the underlying image layer disk space. *)
-let complete_deletes _ =
+(* After pruning, try to remove obuilder-base-* containerd snapshots that
+   are truly orphaned (no corresponding obuilder result directory).
+   We must not remove base snapshots whose result directory still exists,
+   as that would leave a stale cache entry that causes build failures. *)
+let complete_deletes t =
   Ctr.ctr_pread ["snapshot"; "ls"] >>= function
   | Error _ -> Lwt.return_unit
   | Ok output ->
@@ -289,9 +289,22 @@ let complete_deletes _ =
       | _ -> None
     ) lines in
     Lwt_list.iter_s (fun key ->
-      Ctr.snapshot_rm ~key () >>= function
-      | Ok () ->
-        Log.info (fun f -> f "Removed orphaned base snapshot %s" key);
+      (* Extract the id from the snapshot key (strip "obuilder-base-" prefix
+         and any "-committed" suffix) *)
+      let id_part =
+        let s = Astring.String.drop ~max:14 key in (* drop "obuilder-base-" *)
+        match Astring.String.cut ~sep:"-committed" s with
+        | Some (id, _) -> id
+        | None -> s
+      in
+      let result_dir = Path.result t id_part in
+      if Sys.file_exists result_dir then (
+        Log.info (fun f -> f "Keeping base snapshot %s (result dir exists)" key);
         Lwt.return_unit
-      | Error _ -> Lwt.return_unit
+      ) else
+        Ctr.snapshot_rm ~key () >>= function
+        | Ok () ->
+          Log.info (fun f -> f "Removed orphaned base snapshot %s" key);
+          Lwt.return_unit
+        | Error _ -> Lwt.return_unit
     ) base_keys
