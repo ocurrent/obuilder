@@ -65,51 +65,18 @@ let get_ids = function
   | `Windows _ -> None, None, None, None
 
 let copy_file ~src ~dst ~to_untar ~user =
-  if Sys.win32 then begin
-    (* On Windows, Lwt I/O hangs. Use synchronous stat and file reads. *)
-    let stat = Unix.LargeFile.stat src in
-    let user_id, group_id, uname, gname = get_ids user in
-    let hdr = Tar.Header.make
-        ~file_mode:(if stat.Unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
-        ~mod_time:(Int64.of_float stat.Unix.LargeFile.st_mtime)
-        ?user_id ?group_id ?uname ?gname
-        dst stat.Unix.LargeFile.st_size
-    in
-    Tar_lwt_unix.write_block ~level hdr (fun ofd ->
-        let unix_fd = Lwt_unix.unix_file_descr ofd in
-        let ic = open_in_bin src in
-        Fun.protect ~finally:(fun () -> close_in ic) @@ fun () ->
-        let buf = Bytes.create 4096 in
-        let rec loop () =
-          let n = input ic buf 0 4096 in
-          if n = 0 then ()
-          else begin
-            let rec write_all ofs len =
-              if len > 0 then
-                let w = Unix.write unix_fd buf ofs len in
-                write_all (ofs + w) (len - w)
-            in
-            write_all 0 n;
-            loop ()
-          end
-        in
-        loop ();
-        Lwt.return_unit
-      ) to_untar
-  end else begin
-    Lwt_unix.LargeFile.lstat src >>= fun stat ->
-    let user_id, group_id, uname, gname = get_ids user in
-    let hdr = Tar.Header.make
-        ~file_mode:(if stat.Lwt_unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
-        ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
-        ?user_id ?group_id ?uname ?gname
-        dst stat.Lwt_unix.LargeFile.st_size
-    in
-    Tar_lwt_unix.write_block ~level hdr (fun ofd ->
-        let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
-        Lwt_io.(with_file ~mode:input ~flags) src (copy_to ~dst:ofd)
-      ) to_untar
-  end
+  Lwt_unix.LargeFile.lstat src >>= fun stat ->
+  let user_id, group_id, uname, gname = get_ids user in
+  let hdr = Tar.Header.make
+      ~file_mode:(if stat.Lwt_unix.LargeFile.st_perm land 0o111 <> 0 then 0o755 else 0o644)
+      ~mod_time:(Int64.of_float stat.Lwt_unix.LargeFile.st_mtime)
+      ?user_id ?group_id ?uname ?gname
+      dst stat.Lwt_unix.LargeFile.st_size
+  in
+  Tar_lwt_unix.write_block ~level hdr (fun ofd ->
+      let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
+      Lwt_io.(with_file ~mode:input ~flags) src (copy_to ~dst:ofd)
+    ) to_untar
 
 let copy_symlink ~src ~target ~dst ~to_untar ~user =
   Lwt_unix.LargeFile.lstat src >>= fun stat ->

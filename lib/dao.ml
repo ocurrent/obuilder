@@ -32,7 +32,7 @@ let create db =
   let begin_transaction = Sqlite3.prepare db "BEGIN TRANSACTION" in
   let commit = Sqlite3.prepare db "COMMIT" in
   let rollback = Sqlite3.prepare db {| ROLLBACK |} in
-  let add = Sqlite3.prepare db {| INSERT INTO builds
+  let add = Sqlite3.prepare db {| INSERT OR REPLACE INTO builds
                                     (id, created, used, rc, parent)
                                     VALUES (?, ?, ?, 0, ?) |} in
   let update_rc = Sqlite3.prepare db {| UPDATE builds SET rc = rc + ? WHERE id = ? |} in
