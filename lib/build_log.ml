@@ -10,6 +10,7 @@ type t = {
     | `Finished
   ];
   mutable len : int;
+  path : string option;
 }
 
 let with_dup fd fn =
@@ -74,13 +75,19 @@ let create path =
   {
     state = `Open (fd, cond);
     len = 0;
+    path = Some path;
   }
 
 let finish t =
   match t.state with
   | `Finished -> Lwt.return_unit
   | `Open (fd, cond) ->
-    t.state <- `Finished;
+    (* Close the fd (needed on Windows before the directory can be renamed)
+       but transition to Readonly so late-joining tailers can still read
+       the log file by path. *)
+    (match t.path with
+     | Some path -> t.state <- `Readonly path
+     | None -> t.state <- `Finished);
     Lwt_unix.close fd >|= fun () ->
     Lwt_condition.broadcast cond ()
   | `Readonly _ ->
@@ -105,6 +112,7 @@ let of_saved path =
   {
     state = `Readonly path;
     len = stat.st_size;
+    path = Some path;
   }
 
 let printf t fmt =
@@ -113,6 +121,7 @@ let printf t fmt =
 let empty = {
   state = `Empty;
   len = 0;
+  path = None;
 }
 
 let copy ~src ~dst =
