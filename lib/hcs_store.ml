@@ -180,8 +180,7 @@ let build t ?base ~id fn =
            (Ctr.snapshot_commit ~key:snap_key ~committed_key () >>= function
             | Ok () -> Lwt.return_unit
             | Error (`Msg m) ->
-              Log.warn (fun f -> f "Failed to commit snapshot %s: %s" snap_key m);
-              Lwt.return_unit) >>= fun () ->
+              Fmt.failwith "Failed to commit snapshot %s: %s" snap_key m) >>= fun () ->
            (* On Windows, Sys.rename cannot replace an existing directory.
               Remove the target first if it exists (idempotency for retried builds). *)
            (if Sys.win32 && Sys.file_exists result then
