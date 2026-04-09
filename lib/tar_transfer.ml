@@ -116,7 +116,8 @@ and send_dir ~src_dir ~dst ~to_untar ~user items =
         let dst = dst / Filename.basename src in
         copy_symlink ~src ~target ~dst ~to_untar ~user
       | `Dir (src, items) ->
-        let dst = dst / Filename.basename src in
+        let base = Filename.basename src in
+        let dst = if base = "." then dst else dst / base in
         copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
     )
 
@@ -206,7 +207,8 @@ let rec map_transform ~dst transformations = function
     let dst = dst / Filename.basename src in
     Hashtbl.add transformations src dst
   | `Dir (src, items) ->
-    let dst = dst / Filename.basename src in
+    let base = Filename.basename src in
+    let dst = if base = "." then dst else dst / base in
     Hashtbl.add transformations src dst;
     Log.debug(fun f -> f "Copy dir %S -> %S" src dst);
     List.iter (map_transform ~dst transformations) items
