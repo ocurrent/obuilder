@@ -29,7 +29,8 @@ module Tar_lwt_unix = struct
   module Writer = struct
     type out_channel = Lwt_unix.file_descr
     type 'a t = 'a Lwt.t
-    let really_write fd = Lwt_cstruct.(complete (write fd))
+    let really_write fd cs =
+      Os.write_all fd (Cstruct.to_bytes cs) 0 (Cstruct.length cs)
   end
 
   module HW = Tar.HeaderWriter(Lwt)(Writer)
@@ -119,10 +120,37 @@ and send_dir ~src_dir ~dst ~to_untar ~user items =
         copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
     )
 
-let remove_leading_slashes = Astring.String.drop ~sat:((=) '/')
+let remove_leading_slashes s =
+  (* Strip Windows drive letter prefix (e.g. "C:/") *)
+  let s =
+    if String.length s >= 2 && Char.uppercase_ascii s.[0] >= 'A' &&
+       Char.uppercase_ascii s.[0] <= 'Z' && s.[1] = ':' then
+      String.sub s 2 (String.length s - 2)
+    else s
+  in
+  Astring.String.drop ~sat:((=) '/') s
+
+let ensure_dir_entries ~to_untar ~user path =
+  (* Emit tar directory entries for each component of path so that
+     extractors that don't auto-create intermediate directories work. *)
+  let user_id, group_id, uname, gname = get_ids user in
+  let parts = String.split_on_char '/' path in
+  let rec loop acc = function
+    | [] -> Lwt.return_unit
+    | "" :: rest | "." :: rest -> loop acc rest
+    | p :: rest ->
+      let dir = match acc with "" -> p | _ -> acc ^ "/" ^ p in
+      let hdr = Tar.Header.make ~file_mode:0o755
+          ?user_id ?group_id ?uname ?gname
+          (dir ^ "/") 0L in
+      Tar_lwt_unix.write_block ~level hdr (fun _ -> Lwt.return_unit) to_untar >>= fun () ->
+      loop dir rest
+  in
+  loop "" parts
 
 let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
   let dst = remove_leading_slashes dst_dir in
+  ensure_dir_entries ~to_untar ~user dst >>= fun () ->
   send_dir ~src_dir ~dst ~to_untar ~user src_manifest >>= fun () ->
   Tar_lwt_unix.write_end to_untar
 

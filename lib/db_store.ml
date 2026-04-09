@@ -32,7 +32,10 @@ module Make (Raw : S.STORE) = struct
     | Lwt.Fail _ ->
       Lwt.return_unit
     | Lwt.Sleep ->
-      Lwt.wakeup_exn set_log (Failure "Build ended without setting a log!");
+      (* Build ended before the log was set up. This can happen when
+         snapshot preparation fails before the build function is called.
+         Resolve with an empty log so that tail_log completes cleanly. *)
+      Lwt.wakeup set_log Build_log.empty;
       Lwt.return_unit
 
   let dec_ref build =
@@ -67,7 +70,8 @@ module Make (Raw : S.STORE) = struct
           if Sys.file_exists log_file then Unix.unlink log_file;
           Build_log.create log_file >>= fun log ->
           Lwt.wakeup set_log log;
-          fn ~cancelled ~log dir
+          fn ~cancelled ~log dir >>= fun r ->
+          Build_log.finish log >|= fun () -> r
         )
       >>!= fun () ->
       let now = Unix.(gmtime (gettimeofday () )) in
@@ -120,7 +124,7 @@ module Make (Raw : S.STORE) = struct
              (fun ex ->
                 Log.info (fun f -> f "Build %S error: %a" id Fmt.exn ex);
                 t.in_progress <- Builds.remove id t.in_progress;
-                Lwt.wakeup_later_exn set_result ex;
+                Lwt.wakeup_later set_result (Error (`Msg (Printexc.to_string ex)));
                 finish_log ~set_log log
              )
         );

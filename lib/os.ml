@@ -195,6 +195,11 @@ let pread_result ?cwd ?stdin ?stderr ~pp ?is_success ?cmd argv =
     (fun () -> Lwt_io.close r)
   >>= fun data -> child >|= fun r -> Result.map (fun () -> data) r
 
+(* Simple command output capture used by HCS components on Windows. *)
+let win32_pread argv =
+  let pp f = pp_cmd f ("", argv) in
+  pread_result ~pp argv
+
 let pread_all ?stdin ~pp ?(cmd="") argv =
   with_pipe_from_child @@ fun ~r:r1 ~w:w1 ->
   with_pipe_from_child @@ fun ~r:r2 ~w:w2 ->
@@ -231,30 +236,61 @@ let read_link x =
 
 let rm ~directory =
   let pp _ ppf = Fmt.pf ppf "[ RM ]" in
-  sudo_result ~pp:(pp "RM") ["rm"; "-r"; directory ] >>= fun t ->
-  match t with
-  | Ok () -> Lwt.return_unit
-  | Error (`Msg m) ->
-    Log.warn (fun f -> f "Failed to remove %s because %s" directory m);
-    Lwt.return_unit
+  if Sys.win32 then begin
+    (* rmdir is a cmd.exe built-in; use \000 prefix to suppress Lwt_process quoting *)
+    exec_result ~pp:(pp "RM") ["cmd.exe"; "/c"; "\000rmdir /s /q " ^ Filename.quote directory ] >>= fun t ->
+    match t with
+    | Ok () -> Lwt.return_unit
+    | Error (`Msg m) ->
+      Log.warn (fun f -> f "Failed to remove %s because %s" directory m);
+      Lwt.return_unit
+  end else begin
+    sudo_result ~pp:(pp "RM") ["rm"; "-r"; directory ] >>= fun t ->
+    match t with
+    | Ok () -> Lwt.return_unit
+    | Error (`Msg m) ->
+      Log.warn (fun f -> f "Failed to remove %s because %s" directory m);
+      Lwt.return_unit
+  end
 
 let mv ~src dst =
   let pp _ ppf = Fmt.pf ppf "[ MV ]" in
-  sudo_result ~pp:(pp "MV") ["mv"; src; dst ] >>= fun t ->
-  match t with
-  | Ok () -> Lwt.return_unit
-  | Error (`Msg m) ->
-    Log.warn (fun f -> f "Failed to move %s to %s because %s" src dst m);
-    Lwt.return_unit
+  if Sys.win32 then begin
+    (* Use synchronous rename on Windows *)
+    Lwt.catch (fun () ->
+      Sys.rename src dst;
+      Lwt.return_unit
+    ) (fun exn ->
+      Log.warn (fun f -> f "Failed to move %s to %s because %s" src dst (Printexc.to_string exn));
+      Lwt.return_unit
+    )
+  end else begin
+    sudo_result ~pp:(pp "MV") ["mv"; src; dst ] >>= fun t ->
+    match t with
+    | Ok () -> Lwt.return_unit
+    | Error (`Msg m) ->
+      Log.warn (fun f -> f "Failed to move %s to %s because %s" src dst m);
+      Lwt.return_unit
+  end
 
 let cp ~src dst =
   let pp _ ppf = Fmt.pf ppf "[ CP ]" in
-  sudo_result ~pp:(pp "CP") ["cp"; "-pRduT"; "--reflink=auto"; src; dst ] >>= fun t ->
-  match t with
-  | Ok () -> Lwt.return_unit
-  | Error (`Msg m) ->
-    Log.warn (fun f -> f "Failed to copy from %s to %s because %s" src dst m);
-    Lwt.return_unit
+  if Sys.win32 then
+    exec_result ~pp:(pp "CP") ["robocopy"; src; dst; "/E"; "/NFL"; "/NDL"; "/NJH"; "/NJS"]
+      ~is_success:(fun n -> n < 8)  (* robocopy exit codes < 8 are success *)
+    >>= fun t ->
+    match t with
+    | Ok () -> Lwt.return_unit
+    | Error (`Msg m) ->
+      Log.warn (fun f -> f "Failed to copy from %s to %s because %s" src dst m);
+      Lwt.return_unit
+  else
+    sudo_result ~pp:(pp "CP") ["cp"; "-pRduT"; "--reflink=auto"; src; dst ] >>= fun t ->
+    match t with
+    | Ok () -> Lwt.return_unit
+    | Error (`Msg m) ->
+      Log.warn (fun f -> f "Failed to copy from %s to %s because %s" src dst m);
+      Lwt.return_unit
 
 let normalise_path root_dir =
   if Sys.win32 then

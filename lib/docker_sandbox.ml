@@ -355,7 +355,8 @@ let servercore =
       | 18363 -> "1909"
       | 19041 -> "2004"
       | 19042 -> "20H2"
-      | _ -> "ltsc2022"
+      | 20348 -> "ltsc2022"
+      | _ -> "ltsc2025"
     in
     let img' = "mcr.microsoft.com/windows/servercore:" ^ version' in
     Log.info (fun f -> f "Windows host is build %i, will use tag %s." version img');
