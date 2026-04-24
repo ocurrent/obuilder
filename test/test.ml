@@ -456,6 +456,19 @@ let test_tar_long_filename _switch () =
   (* Maximum path length on Windows is 260 characters. *)
   do_test (260 - 1 (* NUL *) - String.length {|C:\cygwin64\tmp\build_123456_dune\test-copy-src-123456\|})
 
+let test_tar_normalize_path () =
+  let check = Alcotest.(check string) in
+  check "passthrough"              "home/opam/repo"  (Tar_transfer.normalize_path "home/opam/repo");
+  check "leading slash"             "home/opam/repo"  (Tar_transfer.normalize_path "/home/opam/repo");
+  check "trailing slash"            "home/opam/repo"  (Tar_transfer.normalize_path "/home/opam/repo/");
+  check "dot segment in middle"     "src/base.opam"   (Tar_transfer.normalize_path "/src/./base.opam");
+  check "dot-slash at end"          "src"             (Tar_transfer.normalize_path "/src/./");
+  check "dot-slash at start"        "foo/bar"         (Tar_transfer.normalize_path "./foo/bar");
+  check "only dot"                  ""                (Tar_transfer.normalize_path ".");
+  check "only dot-slash"            ""                (Tar_transfer.normalize_path "./");
+  check "windows drive"             "foo/bar"         (Tar_transfer.normalize_path "C:/foo/bar");
+  check "windows drive with dot"    "foo/bar"         (Tar_transfer.normalize_path "C:/./foo/bar")
+
 let sexp = Alcotest.of_pp Sexplib.Sexp.pp_hum
 
 let remove_line_indents = function
@@ -857,6 +870,7 @@ let () =
       ];
       "tar_transfer", [
         test_case "Long filename"  `Quick test_tar_long_filename;
+        test_case_sync "Normalize path" `Quick test_tar_normalize_path;
       ];
       "manifest", [
         test_case "Copy using manifest.bash" `Quick test_copy_bash;
