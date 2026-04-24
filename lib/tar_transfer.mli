@@ -1,3 +1,9 @@
+val normalize_path : string -> string
+(** [normalize_path p] strips any Windows drive-letter prefix, leading slashes,
+    and "." or empty path components. Used to clean destination paths before
+    they are written into tar headers, so that "./" segments do not break
+    openSUSE's backport of CVE-2025-45582 into tar 1.34. *)
+
 val send_files :
   src_dir:string ->
   src_manifest:Manifest.t list ->

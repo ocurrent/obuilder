@@ -121,7 +121,7 @@ and send_dir ~src_dir ~dst ~to_untar ~user items =
         copy_dir ~src_dir ~src ~dst ~items ~to_untar ~user
     )
 
-let remove_leading_slashes s =
+let normalize_path s =
   (* Strip Windows drive letter prefix (e.g. "C:/") *)
   let s =
     if String.length s >= 2 && Char.uppercase_ascii s.[0] >= 'A' &&
@@ -129,7 +129,12 @@ let remove_leading_slashes s =
       String.sub s 2 (String.length s - 2)
     else s
   in
-  Astring.String.drop ~sat:((=) '/') s
+  (* Drop leading slashes and any "." or empty path components. openSUSE's
+     backport of CVE-2025-45582 to tar 1.34 walks paths with openat() and
+     fails on "./" segments in the header path. *)
+  String.split_on_char '/' s
+  |> List.filter (fun p -> p <> "" && p <> ".")
+  |> String.concat "/"
 
 let ensure_dir_entries ~to_untar ~user path =
   (* Emit tar directory entries for each component of path so that
@@ -150,13 +155,13 @@ let ensure_dir_entries ~to_untar ~user path =
   loop "" parts
 
 let send_files ~src_dir ~src_manifest ~dst_dir ~user ~to_untar =
-  let dst = remove_leading_slashes dst_dir in
+  let dst = normalize_path dst_dir in
   ensure_dir_entries ~to_untar ~user dst >>= fun () ->
   send_dir ~src_dir ~dst ~to_untar ~user src_manifest >>= fun () ->
   Tar_lwt_unix.write_end to_untar
 
 let send_file ~src_dir ~src_manifest ~dst ~user ~to_untar =
-  let dst = remove_leading_slashes dst in
+  let dst = normalize_path dst in
   begin
     match src_manifest with
     | `File (path, _) ->
@@ -214,7 +219,7 @@ let rec map_transform ~dst transformations = function
     List.iter (map_transform ~dst transformations) items
 
 and transform_files ~from_tar ~src_manifest ~dst_dir ~user ~to_untar =
-  let dst = remove_leading_slashes dst_dir in
+  let dst = normalize_path dst_dir in
   let transformations = Hashtbl.create ~random:true 64 in
   List.iter (map_transform ~dst transformations) src_manifest;
   let fname file_name =
@@ -225,7 +230,7 @@ and transform_files ~from_tar ~src_manifest ~dst_dir ~user ~to_untar =
   Tar_lwt_unix.Archive.transform ~level (transform ~user fname) from_tar to_untar
 
 let transform_file ~from_tar ~src_manifest ~dst ~user ~to_untar =
-  let dst = remove_leading_slashes dst in
+  let dst = normalize_path dst in
   let transformations = Hashtbl.create ~random:true 1 in
   let map_transform = function
     | `File (src, _) -> Hashtbl.add transformations src dst
