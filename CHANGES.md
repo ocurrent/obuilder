@@ -1,4 +1,46 @@
-### unreleased
+### v0.7.0 2026-05-12
+
+New backends:
+
+- Add an Overlayfs store backend (@mtelvers #180)
+- Add a QEMU sandbox backend, enabling Windows, OpenBSD and RISC-V builds
+  (@mtelvers #195, reviewed by @MisterDA, @samoht, and @shonfeder)
+- Add an HCS (Host Compute Service) backend for native Windows containers
+  via containerd (@mtelvers #204)
+
+Build, store and runtime fixes:
+
+- Failed builds now correctly return a failure exit status (@mtelvers)
+- Fix stale base image cache causing worker crash after pruning (@mtelvers)
+- Re-raise exceptions to preserve backtraces and prefer `failwith` over
+  `Lwt.fail_with` (@MisterDA)
+- Remove unused `Os.copy`, `delete_recursively` and `win32_unlink`
+  (@MisterDA, @shonfeder)
+
+Copy step fixes:
+
+- Fix copy step failure with tar 1.34 and the CVE-2025-45582 patch
+  (@mtelvers #205)
+- Also strip `./` segments from destination tar paths (@mtelvers #206)
+- Remove synchronous Windows workaround in `copy_file` (@mtelvers)
+
+Windows fixes:
+
+- Display Windows `NTSTATUS` exit codes in hex
+  (@MisterDA #197, reviewed by @mtelvers)
+- Fix opam pin on Windows (@mtelvers #196, reviewed by @shonfeder)
+
+Base images, CI and toolchain:
+
+- Update base images and workers to opam 2.5, opam 2.4.1, opam 2.3,
+  OCaml 5.4 and OCaml 5.3; add OpenBSD 7.7 support
+  (@mtelvers #198 #201 #202)
+- Update GHA scripts: use the latest OCaml 5, switch to `setup-ocaml@v3`,
+  update runc to 1.1.14 (@MisterDA)
+- Update opam image hashes and dependency lower bounds for bug fixes;
+  add an upper bound on `tar-unix` 3 (@MisterDA, @shonfeder)
+
+### v0.6.0 2024-01-31
 
 - Add a Docker backend for Windows and Linux jobs.
   (@MisterDA #127 #75, reviewed by @talex5 and @tmcgilchrist)
