@@ -46,6 +46,45 @@ let zfs_volume_from path =
   |> List.tl
   |> String.concat "/"
 
+let secrets_env_var = "OBUILDER_SECRETS_DIR"
+
+(* Stage secrets in a private /tmp directory, one file per secret named
+   by the basename of [secret.target]. The build locates them via the
+   [OBUILDER_SECRETS_DIR] environment variable (e.g.
+   "$OBUILDER_SECRETS_DIR/github_token"). Returns the staging directory
+   (or [None] if there were no secrets) and the list of file paths
+   created so that [cleanup_secrets] can undo everything. *)
+let setup_secrets ~uid ~gid mount_secrets =
+  match mount_secrets with
+  | [] -> Lwt.return (None, [])
+  | _ ->
+    let tmp = Filename.temp_dir ~temp_dir:"/tmp" "obuilder-macos-secrets-" "" in
+    Unix.chmod tmp 0o755;
+    let owner = Printf.sprintf "%d:%d" uid gid in
+    let names = List.map (fun { Config.Secret.target; _ } -> Filename.basename target) mount_secrets in
+    let unique = List.sort_uniq String.compare names in
+    if List.length unique <> List.length names then
+      Fmt.failwith "Two secrets resolve to the same filename in %s; \
+                    give each secret a distinct target basename." secrets_env_var;
+    Lwt_list.fold_left_s
+      (fun paths { Config.Secret.value; target } ->
+         let src = Filename.concat tmp (Filename.basename target) in
+         Os.write_file ~path:src value >>= fun () ->
+         Os.sudo [ "chown"; owner; src ] >>= fun () ->
+         Os.sudo [ "chmod"; "0400"; src ] >>= fun () ->
+         Lwt.return (src :: paths))
+      [] mount_secrets
+    >>= fun paths ->
+    Lwt.return (Some tmp, List.rev paths)
+
+let cleanup_secrets ~tmp ~paths =
+  match tmp with
+  | None -> Lwt.return_unit
+  | Some tmp ->
+    Lwt_list.iter_s (fun src -> Os.sudo [ "rm"; "-f"; src ]) paths
+    >>= fun () ->
+    Os.sudo [ "rmdir"; tmp ]
+
 let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
   Lwt_mutex.with_lock t.lock (fun () ->
   Log.info (fun f -> f "result_tmp = %s" result_tmp);
@@ -65,6 +104,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
   let uid = string_of_int t.uid in
   let gid = string_of_int t.gid in
   Macos.create_new_user ~username:user ~home_dir ~uid ~gid >>= fun _ ->
+  setup_secrets ~uid:t.uid ~gid:t.gid config.Config.mount_secrets >>= fun (secrets_tmp, secrets_paths) ->
   let osenv = config.Config.env in
   let stdout = `FD_move_safely out_w in
   let stderr = stdout in
@@ -75,7 +115,12 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
     let pp f = Os.pp_cmd f ("", config.Config.argv) in
     Os.pread @@ Macos.get_tmpdir ~user >>= fun tmpdir ->
     let tmpdir = List.hd (String.split_on_char '\n' tmpdir) in
-    let env = ("TMPDIR", tmpdir) :: osenv in
+    let env =
+      let base = ("TMPDIR", tmpdir) :: osenv in
+      match secrets_tmp with
+      | None -> base
+      | Some d -> (secrets_env_var, d) :: base
+    in
     let cmd = run_as ~env ~user ~cmd:config.Config.argv in
     Os.ensure_dir config.Config.cwd;
     let pid, proc = Os.open_process ?stdin ~stdout ~stderr ~pp ~cwd:config.Config.cwd cmd in
@@ -95,6 +140,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
   );
   proc >>= fun r ->
   copy_log >>= fun () ->
+    cleanup_secrets ~tmp:secrets_tmp ~paths:secrets_paths >>= fun () ->
     Lwt_list.iter_s (fun { Config.Mount.src; dst = _; readonly = _; ty = _ } ->
       Os.sudo [ "zfs"; "inherit"; "mountpoint"; zfs_volume_from src ]) config.Config.mounts >>= fun () ->
     Macos.sudo_fallback [ "zfs"; "set"; "mountpoint=none"; zfs_home_dir ] [ "zfs"; "unmount"; "-f"; zfs_home_dir ] ~uid:t.uid >>= fun () ->
