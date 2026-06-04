@@ -46,6 +46,34 @@ let zfs_volume_from path =
   |> List.tl
   |> String.concat "/"
 
+let secrets_env_var = "OBUILDER_SECRETS_DIR"
+
+(* Stage secrets in a private dir under /tmp, one file per secret named
+   by [Filename.basename target]. The build locates them via the
+   [OBUILDER_SECRETS_DIR] environment variable (e.g.
+   "$OBUILDER_SECRETS_DIR/github_token"). [fn] is invoked with [Some
+   dir] when there are secrets and [None] otherwise; the staging
+   directory is removed when [fn] resolves or raises. *)
+let with_secrets ~uid ~gid mount_secrets fn =
+  match mount_secrets with
+  | [] -> fn None
+  | _ ->
+    let names = List.map (fun { Config.Secret.target; _ } -> Filename.basename target) mount_secrets in
+    if List.compare_lengths (List.sort_uniq String.compare names) names <> 0 then
+      Fmt.failwith "Two secrets share a target basename; \
+                    give each secret a distinct target basename.";
+    Lwt_io.with_temp_dir ~perm:0o711 ~prefix:"obuilder-macos-secrets-" @@ fun tmp ->
+    let owner = Printf.sprintf "%d:%d" uid gid in
+    Lwt_list.iter_s
+      (fun { Config.Secret.value; target } ->
+         let src = Filename.concat tmp (Filename.basename target) in
+         Os.write_file ~path:src value >>= fun () ->
+         Os.sudo [ "chown"; owner; src ] >>= fun () ->
+         Os.sudo [ "chmod"; "0400"; src ])
+      mount_secrets
+    >>= fun () ->
+    fn (Some tmp)
+
 let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
   Lwt_mutex.with_lock t.lock (fun () ->
   Log.info (fun f -> f "result_tmp = %s" result_tmp);
@@ -65,6 +93,7 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
   let uid = string_of_int t.uid in
   let gid = string_of_int t.gid in
   Macos.create_new_user ~username:user ~home_dir ~uid ~gid >>= fun _ ->
+  with_secrets ~uid:t.uid ~gid:t.gid config.Config.mount_secrets @@ fun secrets_tmp ->
   let osenv = config.Config.env in
   let stdout = `FD_move_safely out_w in
   let stderr = stdout in
@@ -75,7 +104,12 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
     let pp f = Os.pp_cmd f ("", config.Config.argv) in
     Os.pread @@ Macos.get_tmpdir ~user >>= fun tmpdir ->
     let tmpdir = List.hd (String.split_on_char '\n' tmpdir) in
-    let env = ("TMPDIR", tmpdir) :: osenv in
+    let env =
+      let base = ("TMPDIR", tmpdir) :: osenv in
+      match secrets_tmp with
+      | None -> base
+      | Some d -> (secrets_env_var, d) :: base
+    in
     let cmd = run_as ~env ~user ~cmd:config.Config.argv in
     Os.ensure_dir config.Config.cwd;
     let pid, proc = Os.open_process ?stdin ~stdout ~stderr ~pp ~cwd:config.Config.cwd cmd in
