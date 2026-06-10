@@ -106,6 +106,45 @@ let root t = t.root
 
 let df t = Lwt.return (Os.free_space_percent t.root)
 
+(* Recover from builds left running by a crash/reboot. containerd keeps the
+   [obuilder-run-*] containers alive across a worker restart, and they pin the
+   rootfs snapshot of each interrupted build. So, in order:
+   1. remove the left-over containers — this unpins the snapshots;
+   2. for each in-progress (result-tmp) build, remove the specific snapshot
+      named in its layerinfo and drop the entry. As the containers are already
+      gone the removal succeeds in a single pass.
+   Normal cancellations don't reach here: the sandbox tears the container down
+   per-run and the build error handler removes the snapshot on the spot. *)
+let clean_containers () =
+  Ctr.ctr_pread ["container"; "ls"; "-q"] >>= function
+  | Error _ -> Lwt.return_unit
+  | Ok output ->
+    String.split_on_char '\n' output
+    |> List.map String.trim
+    |> List.filter (Astring.String.is_prefix ~affix:"obuilder-run-")
+    |> Lwt_list.iter_s (fun id ->
+        Log.warn (fun f -> f "Removing left-over container %s" id);
+        (Ctr.ctr ["task"; "delete"; "--force"; id] >>= fun _ -> Lwt.return_unit) >>= fun () ->
+        Ctr.ctr ["container"; "rm"; id] >>= fun _ -> Lwt.return_unit)
+
+let clean_result_tmp root =
+  let dir = root / "result-tmp" in
+  Sys.readdir dir |> Array.to_list |> Lwt_list.iter_s (fun id ->
+      let path = dir / id in
+      let key =
+        let rootfs = path / "rootfs" in
+        if Sys.file_exists (Hcs.layerinfo_path rootfs) then Some (Hcs.read_layerinfo rootfs).snapshot_key
+        else if Sys.file_exists (Hcs.layerinfo_path path) then Some (Hcs.read_layerinfo path).snapshot_key
+        else None
+      in
+      (match key with
+       | Some key ->
+         Log.warn (fun f -> f "Removing snapshot %s of interrupted build %s" key id);
+         (Ctr.snapshot_rm ~key () >>= fun _ -> Lwt.return_unit) >>= fun () ->
+         (Ctr.snapshot_rm ~key:(key ^ "-committed") () >>= fun _ -> Lwt.return_unit)
+       | None -> Lwt.return_unit) >>= fun () ->
+      Os.rm ~directory:path)
+
 let create ~root =
   Os.ensure_dir root;
   Os.ensure_dir (root / "result");
@@ -113,7 +152,8 @@ let create ~root =
   Os.ensure_dir (root / "state");
   Os.ensure_dir (root / "cache");
   Os.ensure_dir (root / "cache-tmp");
-  purge (root / "result-tmp") >>= fun () ->
+  clean_containers () >>= fun () ->
+  clean_result_tmp root >>= fun () ->
   purge (root / "cache-tmp") >>= fun () ->
   Lwt.return { root; caches = Hashtbl.create 10; next = 0 }
 

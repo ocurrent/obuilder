@@ -143,6 +143,16 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config results_dir =
   if Lwt.is_sleeping cancelled then Lwt.return (r :> (unit, [`Msg of string | `Cancelled]) result)
   else Lwt_result.fail `Cancelled
   ) (fun () ->
+    (* [ctr run --rm] only removes the container when the run client observes a
+       clean task exit. On cancellation/timeout the task is killed and the
+       container is left behind, pinning its rootfs snapshot (which then leaks
+       and eventually blocks pruning). Remove it explicitly here so the snapshot
+       can be freed. Both commands are idempotent; a "not found" is expected on
+       the success path (where --rm already cleaned up) and is ignored. *)
+    (let pp f = Fmt.pf f "ctr task delete %S" container_id in
+     Os.exec_result [t.ctr_path; "task"; "delete"; "--force"; container_id] ~pp >>= fun _ -> Lwt.return_unit) >>= fun () ->
+    (let pp f = Fmt.pf f "ctr container rm %S" container_id in
+     Os.exec_result [t.ctr_path; "container"; "rm"; container_id] ~pp >>= fun _ -> Lwt.return_unit) >>= fun () ->
     (* Clean up HCN namespace if we created one *)
     match network_namespace with
     | Some ns ->
