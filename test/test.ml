@@ -821,6 +821,43 @@ let test_pread_nul _switch () =
   Os.pread ~stderr:`Dev_null args >|= fun actual ->
   Alcotest.(check string) "stdout" actual expected
 
+(* Regression test for a stale-path race in [Build_log].
+   The snapshot stores create the log under an [in-progress] directory and,
+   once the step succeeds, rename that directory to its [result] location.
+   A log left in the [`Readonly] state must therefore not be tied to the
+   original [in-progress] path: a late-joining tailer (e.g. a sibling build
+   sharing a deduplicated step) reads the log only after [finish], by which
+   point the directory may already have been renamed. Reopening by the old
+   path raised [ENOENT, "open", ".../in-progress/<id>/log"]; the log must
+   instead be read via a descriptor that follows the file through the
+   rename. (Not applicable on Windows, where the fd must be closed before
+   the rename and the path is used.) *)
+let test_log_survives_rename _switch () =
+  if Sys.win32 then Alcotest.skip ();
+  let tmp = Filename.get_temp_dir_name () / sprintf "obuilder-logtest-%d" (Unix.getpid ()) in
+  let in_progress = tmp / "in-progress" in
+  let result = tmp / "result" in
+  Os.ensure_dir tmp;
+  Os.ensure_dir in_progress;
+  let contents = "line one\nline two\n" in
+  Build_log.create (in_progress / "log") >>= fun log ->
+  Build_log.write log contents >>= fun () ->
+  (* Mimic the store: finish the log, then rename the build directory into
+     place so the original [in-progress] path no longer exists. *)
+  Build_log.finish log >>= fun () ->
+  Unix.rename in_progress result;
+  let buf = Buffer.create 64 in
+  Build_log.tail log (Buffer.add_string buf) >>= fun tail_result ->
+  Build_log.finish log >>= fun () ->     (* release the held descriptor *)
+  (try Sys.remove (result / "log") with _ -> ());
+  (try Unix.rmdir result with _ -> ());
+  (try Unix.rmdir tmp with _ -> ());
+  (match tail_result with
+   | Ok () -> ()
+   | Error `Cancelled -> Alcotest.fail "tail was cancelled");
+  Alcotest.(check string) "log readable after rename" contents (Buffer.contents buf);
+  Lwt.return_unit
+
 let () =
   let open Alcotest_lwt in
   let test_case name speed f =
@@ -879,6 +916,9 @@ let () =
       "process", [
         test_case "Execute a process" `Quick test_exec_nul;
         test_case "Read stdout of a process" `Quick test_pread_nul;
+      ];
+      "build_log", [
+        test_case "Readable after rename" `Quick test_log_survives_rename;
       ];
     ] @ needs_docker)
   end
