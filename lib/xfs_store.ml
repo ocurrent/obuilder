@@ -108,39 +108,56 @@ let get_cache t name =
     Hashtbl.add t.caches name c;
     c
 
-let cache ~user t name =
+let cache ?(shared=false) ~user t name =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
-  let tmp = Path.cache_tmp t t.next name in
-  t.next <- t.next + 1;
   let snapshot = Path.cache t name in
-  (* Create cache if it doesn't already exist. *)
-  begin match Os.check_dir snapshot with
-    | `Missing -> Xfs.create snapshot >>= fun () ->
-      let { Obuilder_spec.uid; gid } = match user with
-        | `Unix user -> user
-        | `Windows _ -> assert false (* xfs not supported on Windows *)
-      in
-      Os.sudo [ "chown"; Printf.sprintf "%d:%d" uid gid; snapshot ]
-    | `Present -> Lwt.return_unit
-  end >>= fun () ->
-  (* Create writeable clone. *)
-  let gen = cache.gen in
-  Xfs.cp ~src:snapshot ~dst:tmp >>= fun () ->
-  let release () =
+  if shared then
+    (* Shared mode: return the actual cache directory, no copy-on-write *)
     Lwt_mutex.with_lock cache.lock @@ fun () ->
-    begin
-      if cache.gen = gen then (
-        (* The cache hasn't changed since we cloned it. Update it. *)
-        (* todo: check if it has actually changed. *)
-        cache.gen <- cache.gen + 1;
-        Xfs.delete snapshot >>= fun () ->
-        Xfs.rename ~src:tmp ~dst:snapshot
-      ) else
-        Xfs.delete tmp
-    end
-  in
-  Lwt.return (tmp, release)
+    (* Create cache if it doesn't already exist. *)
+    begin match Os.check_dir snapshot with
+      | `Missing -> Xfs.create snapshot >>= fun () ->
+        let { Obuilder_spec.uid; gid } = match user with
+          | `Unix user -> user
+          | `Windows _ -> assert false (* xfs not supported on Windows *)
+        in
+        Os.sudo [ "chown"; Printf.sprintf "%d:%d" uid gid; snapshot ]
+      | `Present -> Lwt.return_unit
+    end >>= fun () ->
+    let release () = Lwt.return_unit in  (* No-op for shared caches *)
+    Lwt.return (snapshot, release)
+  else
+    (* Non-shared mode: existing reflink behavior *)
+    Lwt_mutex.with_lock cache.lock @@ fun () ->
+    let tmp = Path.cache_tmp t t.next name in
+    t.next <- t.next + 1;
+    (* Create cache if it doesn't already exist. *)
+    begin match Os.check_dir snapshot with
+      | `Missing -> Xfs.create snapshot >>= fun () ->
+        let { Obuilder_spec.uid; gid } = match user with
+          | `Unix user -> user
+          | `Windows _ -> assert false (* xfs not supported on Windows *)
+        in
+        Os.sudo [ "chown"; Printf.sprintf "%d:%d" uid gid; snapshot ]
+      | `Present -> Lwt.return_unit
+    end >>= fun () ->
+    (* Create writeable clone. *)
+    let gen = cache.gen in
+    Xfs.cp ~src:snapshot ~dst:tmp >>= fun () ->
+    let release () =
+      Lwt_mutex.with_lock cache.lock @@ fun () ->
+      begin
+        if cache.gen = gen then (
+          (* The cache hasn't changed since we cloned it. Update it. *)
+          (* todo: check if it has actually changed. *)
+          cache.gen <- cache.gen + 1;
+          Xfs.delete snapshot >>= fun () ->
+          Xfs.rename ~src:tmp ~dst:snapshot
+        ) else
+          Xfs.delete tmp
+      end
+    in
+    Lwt.return (tmp, release)
 
 let delete_cache t name =
   let cache = get_cache t name in

@@ -49,18 +49,22 @@ module type STORE = sig
       state related to this store (e.g. an sqlite3 database). *)
 
   val cache :
+    ?shared:bool ->
     user:Obuilder_spec.user ->
     t ->
     string ->
     (string * (unit -> unit Lwt.t)) Lwt.t
-  (** [cache ~user t name] creates a writeable copy of the latest snapshot of the
+  (** [cache ?shared ~user t name] creates a writeable copy of the latest snapshot of the
       cache [name]. It returns the path of this fresh copy and a function which
       must be called to free it when done.
       If the cache [name] does not exist, it is first created (as an empty directory,
       and owned by [user]).
       When the copy is released, it is snapshotted to become the new latest
       version of the cache, unless the cache has already been updated since
-      it was snapshotted, in which case this writeable copy is simply discarded. *)
+      it was snapshotted, in which case this writeable copy is simply discarded.
+      @param shared If [true], returns the actual cache directory for concurrent access.
+                    Jobs must implement their own locking. The release function becomes a no-op.
+                    Defaults to [false] for backward compatibility. *)
 
   val delete_cache : t -> string -> (unit, [> `Busy]) Lwt_result.t
   (** [delete_cache t name] removes the cache [name], if present.

@@ -162,41 +162,60 @@ let get_cache t name =
     Hashtbl.add t.caches name c;
     c
 
-let cache ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
+let cache ?(shared=false) ~user t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
-  let tmp = Cache.cache_tmp t.next name in
-  t.next <- t.next + 1;
   let snapshot = Cache.cache name in
-  (* Create cache if it doesn't already exist. *)
-  let* () =
-    let* exists = Cache.exists snapshot in
-    if not exists then Cache.create snapshot
-    else Lwt.return_unit
-  in
-  (* Create writeable clone. *)
-  let gen = cache.gen in
-  let* () = Cache.snapshot ~src:snapshot tmp in
-  let+ () = match user with
-    | `Unix { Obuilder_spec.uid; gid } ->
-      let* tmp = Docker.Cmd.mount_point tmp in
-      Os.sudo ["chown"; strf "%d:%d" uid gid; tmp]
-    | `Windows _ -> Lwt.return_unit (* FIXME: does Windows need special treatment? *)
-  in
-  let release () =
+  if shared then
+    (* Shared mode: return the actual cache volume, no copy-on-write *)
     Lwt_mutex.with_lock cache.lock @@ fun () ->
+    (* Create cache if it doesn't already exist. *)
     let* () =
-      if cache.gen = gen then (
-        (* The cache hasn't changed since we cloned it. Update it. *)
-        (* todo: check if it has actually changed. *)
-        cache.gen <- cache.gen + 1;
-        let* () = Cache.delete snapshot in
-        Cache.snapshot ~src:tmp snapshot
-      ) else Lwt.return_unit
+      let* exists = Cache.exists snapshot in
+      if not exists then Cache.create snapshot
+      else Lwt.return_unit
     in
-    Cache.delete tmp
-  in
-  Cache.name tmp, release
+    let+ () = match user with
+      | `Unix { Obuilder_spec.uid; gid } ->
+        let* mp = Docker.Cmd.mount_point snapshot in
+        Os.sudo ["chown"; strf "%d:%d" uid gid; mp]
+      | `Windows _ -> Lwt.return_unit (* FIXME: does Windows need special treatment? *)
+    in
+    let release () = Lwt.return_unit in  (* No-op for shared caches *)
+    Cache.name snapshot, release
+  else
+    (* Non-shared mode: existing snapshot behavior *)
+    Lwt_mutex.with_lock cache.lock @@ fun () ->
+    let tmp = Cache.cache_tmp t.next name in
+    t.next <- t.next + 1;
+    (* Create cache if it doesn't already exist. *)
+    let* () =
+      let* exists = Cache.exists snapshot in
+      if not exists then Cache.create snapshot
+      else Lwt.return_unit
+    in
+    (* Create writeable clone. *)
+    let gen = cache.gen in
+    let* () = Cache.snapshot ~src:snapshot tmp in
+    let+ () = match user with
+      | `Unix { Obuilder_spec.uid; gid } ->
+        let* tmp = Docker.Cmd.mount_point tmp in
+        Os.sudo ["chown"; strf "%d:%d" uid gid; tmp]
+      | `Windows _ -> Lwt.return_unit (* FIXME: does Windows need special treatment? *)
+    in
+    let release () =
+      Lwt_mutex.with_lock cache.lock @@ fun () ->
+      let* () =
+        if cache.gen = gen then (
+          (* The cache hasn't changed since we cloned it. Update it. *)
+          (* todo: check if it has actually changed. *)
+          cache.gen <- cache.gen + 1;
+          let* () = Cache.delete snapshot in
+          Cache.snapshot ~src:tmp snapshot
+        ) else Lwt.return_unit
+      in
+      Cache.delete tmp
+    in
+    Cache.name tmp, release
 
 let delete_cache t name =
   let cache = get_cache t name in
