@@ -1,0 +1,21 @@
+build: [
+  ["dune" "subst"] {dev}
+  [
+    "dune"
+    "build"
+    "-p"
+    name
+    "-j"
+    jobs
+    "@install"
+    "@runtest" {with-test}
+    "@doc" {with-doc}
+  ]
+  [
+    "cmdliner" "install" "tool-support"
+               "--update-opam-install=%{_:name}%.install"
+               "_build/install/default/bin/obuilder" {os-family != "windows"}
+               "_build/install/default/bin/obuilder.exe" {os-family = "windows"}
+               "_build/cmdliner-install"
+  ]
+]
