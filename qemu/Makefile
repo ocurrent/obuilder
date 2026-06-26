@@ -103,21 +103,15 @@ busybox.qcow2: noble-server-cloudimg-amd64.qcow2 seed.iso
 
 # OpenBSD
 
-openbsd: openbsd-77-amd64-ocaml-4.14.qcow2 openbsd-77-amd64-ocaml-5.2.qcow2 openbsd-77-amd64-ocaml-5.3.qcow2 openbsd-77-amd64-ocaml-5.4.qcow2
+openbsd: openbsd-78-amd64-ocaml-4.14.qcow2 openbsd-78-amd64-ocaml-5.5.qcow2
 
-openbsd-77-amd64-ocaml-5.4.qcow2: openbsd-77-amd64-ocaml-5.4.0.qcow2
+openbsd-78-amd64-ocaml-5.5.qcow2: openbsd-78-amd64-ocaml-5.5.0.qcow2
 	ln -sf $< $@
 
-openbsd-77-amd64-ocaml-5.3.qcow2: openbsd-77-amd64-ocaml-5.3.0.qcow2
+openbsd-78-amd64-ocaml-4.14.qcow2: openbsd-78-amd64-ocaml-4.14.4.qcow2
 	ln -sf $< $@
 
-openbsd-77-amd64-ocaml-5.2.qcow2: openbsd-77-amd64-ocaml-5.2.1.qcow2
-	ln -sf $< $@
-
-openbsd-77-amd64-ocaml-4.14.qcow2: openbsd-77-amd64-ocaml-4.14.2.qcow2
-	ln -sf $< $@
-
-openbsd-77-amd64-ocaml-%.qcow2: tftp/auto_install tftp/bsd.rd tftp/etc/boot.conf mirror%
+openbsd-78-amd64-ocaml-%.qcow2: tftp/auto_install tftp/bsd.rd tftp/etc/boot.conf mirror%
 	qemu-img create -f qcow2 $@ 24G
 	qemu-img create -f qcow2 cache-ffs.qcow2 20G
 	python3 -m http.server --directory mirror --bind 0.0.0.0 80 & pid=$$! && \
@@ -129,11 +123,11 @@ openbsd-77-amd64-ocaml-%.qcow2: tftp/auto_install tftp/bsd.rd tftp/etc/boot.conf
 
 tftp/auto_install:
 	mkdir -p tftp
-	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.7/amd64/pxeboot -o tftp/auto_install
+	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.8/amd64/pxeboot -o tftp/auto_install
 
 tftp/bsd.rd:
 	mkdir -p tftp
-	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.7/amd64/bsd.rd -o tftp/bsd.rd
+	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.8/amd64/bsd.rd -o tftp/bsd.rd
 
 tftp/etc/boot.conf:
 	mkdir -p tftp/etc
@@ -142,10 +136,10 @@ tftp/etc/boot.conf:
 mirror%: install.site.m4 install.conf disklabel
 	m4 -D VERSION=$* $< > install.site
 	chmod +x install.site
-	mkdir -p mirror/pub/OpenBSD/7.7/amd64
-	tar -czf mirror/pub/OpenBSD/7.7/amd64/site77.tgz install.site
-	for f in BUILDINFO SHA256.sig base77.tgz bsd bsd.mp bsd.rd comp77.tgz game77.tgz man77.tgz pxeboot xbase77.tgz xfont77.tgz xserv77.tgz xshare77.tgz ; do curl -C - -L https://cdn.openbsd.org/pub/OpenBSD/7.7/amd64/$$f -o mirror/pub/OpenBSD/7.7/amd64/$$f ; done
-	cd mirror/pub/OpenBSD/7.7/amd64 && ls -l > index.txt
+	mkdir -p mirror/pub/OpenBSD/7.8/amd64
+	tar -czf mirror/pub/OpenBSD/7.8/amd64/site78.tgz install.site
+	for f in BUILDINFO SHA256.sig base78.tgz bsd bsd.mp bsd.rd comp78.tgz game78.tgz man78.tgz pxeboot xbase78.tgz xfont78.tgz xserv78.tgz xshare78.tgz ; do curl -C - -L https://cdn.openbsd.org/pub/OpenBSD/7.8/amd64/$$f -o mirror/pub/OpenBSD/7.8/amd64/$$f ; done
+	cd mirror/pub/OpenBSD/7.8/amd64 && ls -l > index.txt
 	cp install.conf disklabel mirror
 
 deps:
