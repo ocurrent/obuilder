@@ -135,6 +135,16 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
     !Os.lwt_process_exec ~cwd ?stdin ~stdout ~stderr ~pp
       ("", Array.of_list cmd) >>= fun result ->
     teardown () >>= fun () ->
+    (* The jail's mount.fstab (nullfs caches) and mount.devfs are not unmounted
+       by the command-jail's auto-removal on a clean exit, so unmount them
+       explicitly here, on every exit path. Done after teardown so any detached
+       straggler has already been SIGKILLed and the mounts are no longer busy.
+       Errors are ignored (jail removal may already have released them). *)
+    let fstab = tmp_dir / "fstab" in
+    (if Sys.file_exists fstab
+     then Os.exec ~is_success:(fun _ -> true) [ "sudo" ; "/sbin/umount" ; "-a" ; "-F" ; fstab ]
+     else Lwt.return_unit) >>= fun () ->
+    Os.exec ~is_success:(fun _ -> true) [ "sudo" ; "/sbin/umount" ; rootdir / "dev" ] >>= fun () ->
     match result with
     | Ok 0 -> Lwt_result.ok Lwt.return_unit
     | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
