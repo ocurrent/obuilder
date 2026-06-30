@@ -136,6 +136,16 @@ let run ~cancelled ?stdin ~log t config result_tmp =
       Os.exec (ssh @ ["cmd"; "/c"; "rmdir '" ^ dst ^ "'"])
   ) config.Config.mounts >>= fun () ->
 
+  (* Flush the guest filesystem before powering off, so a hard [quit] (if the
+     guest does not power off within [qemu_boot_time]) cannot lose unsynced
+     data. Best-effort; Windows has no [sync]. *)
+  (match t.qemu_guest_os with
+    | Linux | OpenBSD ->
+      (Os.exec_result ~pp (ssh @ ["sync"]) >>= function
+        | Ok () -> Lwt.return_unit
+        | Error (`Msg m) -> Log.warn (fun f -> f "Pre-shutdown sync failed: %s" m); Lwt.return_unit)
+    | Windows -> Lwt.return_unit) >>= fun () ->
+
   (match t.qemu_guest_arch with
     | Amd64 ->
       Log.info (fun f -> f "Sending QEMU an ACPI shutdown event");
