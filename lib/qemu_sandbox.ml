@@ -169,7 +169,14 @@ let shell _ = []
 let tar t =
   match t.qemu_guest_os with
   | Linux -> tar t
-  | OpenBSD -> ["gtar"; "-xf"; "-"]
+  (* Extract as root via doas. obuilder's copy is designed to run as root
+     (Build sets the copy step's user to root), but the qemu backend always
+     connects as the unprivileged "opam" user. As opam, gtar exits with
+     failure (status 2) when it tries to restore the mtime/mode of a
+     pre-existing ancestor directory such as the root-owned /home. Running
+     under doas matches what the other backends do; the tar headers still
+     carry the target uid/gid, so the extracted files remain opam-owned. *)
+  | OpenBSD -> ["doas"; "gtar"; "-xf"; "-"]
   | Windows -> ["/cygdrive/c/Windows/System32/tar.exe"; "-xf"; "-"; "-C"; "/"]
 
 open Cmdliner
