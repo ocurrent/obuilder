@@ -103,15 +103,15 @@ busybox.qcow2: noble-server-cloudimg-amd64.qcow2 seed.iso
 
 # OpenBSD
 
-openbsd: openbsd-78-amd64-ocaml-4.14.qcow2 openbsd-78-amd64-ocaml-5.5.qcow2
+openbsd: openbsd-79-amd64-ocaml-4.14.qcow2 openbsd-79-amd64-ocaml-5.5.qcow2
 
-openbsd-78-amd64-ocaml-5.5.qcow2: openbsd-78-amd64-ocaml-5.5.0.qcow2
+openbsd-79-amd64-ocaml-5.5.qcow2: openbsd-79-amd64-ocaml-5.5.0.qcow2
 	ln -sf $< $@
 
-openbsd-78-amd64-ocaml-4.14.qcow2: openbsd-78-amd64-ocaml-4.14.4.qcow2
+openbsd-79-amd64-ocaml-4.14.qcow2: openbsd-79-amd64-ocaml-4.14.4.qcow2
 	ln -sf $< $@
 
-openbsd-78-amd64-ocaml-%.qcow2: tftp/auto_install tftp/bsd.rd tftp/etc/boot.conf mirror%
+openbsd-79-amd64-ocaml-%.qcow2: tftp/auto_install tftp/bsd.rd tftp/etc/boot.conf mirror%
 	qemu-img create -f qcow2 $@ 24G
 	qemu-img create -f qcow2 cache-ffs.qcow2 20G
 	python3 -m http.server --directory mirror --bind 0.0.0.0 80 & pid=$$! && \
@@ -123,11 +123,11 @@ openbsd-78-amd64-ocaml-%.qcow2: tftp/auto_install tftp/bsd.rd tftp/etc/boot.conf
 
 tftp/auto_install:
 	mkdir -p tftp
-	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.8/amd64/pxeboot -o tftp/auto_install
+	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.9/amd64/pxeboot -o tftp/auto_install
 
 tftp/bsd.rd:
 	mkdir -p tftp
-	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.8/amd64/bsd.rd -o tftp/bsd.rd
+	curl -L https://cdn.openbsd.org/pub/OpenBSD/7.9/amd64/bsd.rd -o tftp/bsd.rd
 
 tftp/etc/boot.conf:
 	mkdir -p tftp/etc
@@ -136,10 +136,10 @@ tftp/etc/boot.conf:
 mirror%: install.site.m4 install.conf disklabel
 	m4 -D VERSION=$* $< > install.site
 	chmod +x install.site
-	mkdir -p mirror/pub/OpenBSD/7.8/amd64
-	tar -czf mirror/pub/OpenBSD/7.8/amd64/site78.tgz install.site
-	for f in BUILDINFO SHA256.sig base78.tgz bsd bsd.mp bsd.rd comp78.tgz game78.tgz man78.tgz pxeboot xbase78.tgz xfont78.tgz xserv78.tgz xshare78.tgz ; do curl -C - -L https://cdn.openbsd.org/pub/OpenBSD/7.8/amd64/$$f -o mirror/pub/OpenBSD/7.8/amd64/$$f ; done
-	cd mirror/pub/OpenBSD/7.8/amd64 && ls -l > index.txt
+	mkdir -p mirror/pub/OpenBSD/7.9/amd64
+	tar -czf mirror/pub/OpenBSD/7.9/amd64/site79.tgz install.site
+	for f in BUILDINFO SHA256.sig base79.tgz bsd bsd.mp bsd.rd comp79.tgz game79.tgz man79.tgz pxeboot xbase79.tgz xfont79.tgz xserv79.tgz xshare79.tgz ; do curl -C - -L https://cdn.openbsd.org/pub/OpenBSD/7.9/amd64/$$f -o mirror/pub/OpenBSD/7.9/amd64/$$f ; done
+	cd mirror/pub/OpenBSD/7.9/amd64 && ls -l > index.txt
 	cp install.conf disklabel mirror
 
 deps:
