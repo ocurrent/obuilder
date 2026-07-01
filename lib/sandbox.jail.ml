@@ -101,6 +101,18 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
   incr jail_id;
   Os.with_pipe_from_child @@ fun ~r:out_r ~w:out_w ->
   let rootdir = rootdir / "rootfs" in
+  (* On a clean exit the non-persistent jail auto-removes, unmounting its devfs
+     and cache mounts. But a build step that detached a process (e.g. "git
+     daemon --detach", reparented to PID 1) leaves a straggler that keeps the
+     jail - and its devfs mount and ZFS snapshot - alive indefinitely, with the
+     in-jail mounts held busy. "jail -r" force-removes the jail, SIGKILLing any
+     straggler so the release actions can run; on a clean exit it is already
+     gone, so this is a harmless no-op. Errors are ignored. *)
+  let teardown () =
+    let cmd = [ "jail" ; "-r" ; jail_name ] in
+    let cmd = if Os.running_as_root then cmd else "sudo" :: "--" :: cmd in
+    Os.exec ~is_success:(fun _ -> true) cmd
+  in
   let workdir = rootdir / config.Config.cwd in
   (* Make sure the work directory exists prior to starting the jail. *)
   begin
@@ -118,27 +130,23 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config rootdir =
     in
     let stdin = Option.map (fun x -> `FD_move_safely x) stdin in
     let pp f = Os.pp_cmd f ("", cmd) in
-    (* This is similar to
-       Os.sudo_result ~cwd ?stdin ~stdout ~stderr ~pp cmd
-       but also unmounting the in-jail devfs if necessary, see below. *)
     let cmd = if Os.running_as_root then cmd else "sudo" :: "--" :: cmd in
     Logs.info (fun f -> f "Exec %a" Os.pp_cmd ("", cmd));
     !Os.lwt_process_exec ~cwd ?stdin ~stdout ~stderr ~pp
-      ("", Array.of_list cmd) >>= function
-    | Ok 0 ->
-      let fstab = tmp_dir / "fstab" in
-      (if Sys.file_exists fstab
-      then
-        let cmd = [ "sudo" ; "/sbin/umount" ; "-a" ; "-F" ; fstab ] in
-        Os.exec ~is_success:(fun _ -> true) cmd
-      else Lwt.return_unit) >>= fun () ->
-      (* If the command within the jail completes, the jail is automatically
-         removed, but without performing any of the stop and release actions,
-         thus we can not use "exec.stop" to unmount the in-jail devfs
-         filesystem. Do this here, ignoring the exit code of umount(8). *)
-      let cmd = [ "sudo" ; "/sbin/umount" ; rootdir / "dev" ] in
-      Os.exec ~is_success:(fun _ -> true) cmd >>= fun () ->
-      Lwt_result.ok Lwt.return_unit
+      ("", Array.of_list cmd) >>= fun result ->
+    teardown () >>= fun () ->
+    (* The jail's mount.fstab (nullfs caches) and mount.devfs are not unmounted
+       by the command-jail's auto-removal on a clean exit, so unmount them
+       explicitly here, on every exit path. Done after teardown so any detached
+       straggler has already been SIGKILLed and the mounts are no longer busy.
+       Errors are ignored (jail removal may already have released them). *)
+    let fstab = tmp_dir / "fstab" in
+    (if Sys.file_exists fstab
+     then Os.exec ~is_success:(fun _ -> true) [ "sudo" ; "/sbin/umount" ; "-a" ; "-F" ; fstab ]
+     else Lwt.return_unit) >>= fun () ->
+    Os.exec ~is_success:(fun _ -> true) [ "sudo" ; "/sbin/umount" ; rootdir / "dev" ] >>= fun () ->
+    match result with
+    | Ok 0 -> Lwt_result.ok Lwt.return_unit
     | Ok n -> Lwt.return @@ Fmt.error_msg "%t failed with exit status %d" pp n
     | Error e -> Lwt_result.fail e
   in
