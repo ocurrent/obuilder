@@ -1,3 +1,12 @@
+### Unreleased
+
+Build, store and runtime fixes:
+
+- Fix intermittent `ENOENT` build failures on shared steps: a finished build
+  log is now read via a retained file descriptor rather than reopening it at
+  its pre-rename path, which a late-joining log tailer could no longer find
+  once the store had renamed the build directory into place (@mtelvers)
+
 ### v0.7.0 2026-05-12
 
 New backends:

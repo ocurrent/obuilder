@@ -5,7 +5,10 @@ let max_chunk_size = 4096
 type t = {
   mutable state : [
     | `Open of Lwt_unix.file_descr * unit Lwt_condition.t  (* Fires after writing more data. *)
-    | `Readonly of string
+    | `Readonly of [ `Path of string | `Fd of Lwt_unix.file_descr ]
+      (* A finished log: read via a held fd, which survives the store
+         renaming the build directory, or by reopening [path] (logs loaded
+         from disk, and Windows where the fd must close before the rename). *)
     | `Empty
     | `Finished
   ];
@@ -57,7 +60,12 @@ let tail ?switch t dst =
 
   match t.state with
   | `Finished -> invalid_arg "tail: log is finished!"
-  | `Readonly path ->
+  | `Readonly (`Fd fd) ->
+    with_dup fd @@ fun fd ->
+    let buf = Bytes.create max_chunk_size in
+    let cond = Lwt_condition.create () in
+    interrupt (open_tail fd cond buf 0)
+  | `Readonly (`Path path) ->
     let flags = [Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC] in
     Lwt_io.(with_file ~mode:input ~flags) path @@ fun ch ->
     let buf = Bytes.create max_chunk_size in
@@ -82,15 +90,21 @@ let finish t =
   match t.state with
   | `Finished -> Lwt.return_unit
   | `Open (fd, cond) ->
-    (* Close the fd (needed on Windows before the directory can be renamed)
-       but transition to Readonly so late-joining tailers can still read
-       the log file by path. *)
+    (* Close the write fd (required on Windows before the rename). Off
+       Windows, keep a read-only dup so late-joining tailers read via the fd
+       rather than the soon-to-be-renamed [path]; the second [finish] closes
+       it. *)
     (match t.path with
-     | Some path -> t.state <- `Readonly path
+     | Some _ when not Sys.win32 ->
+       t.state <- `Readonly (`Fd (Lwt_unix.dup ~cloexec:true fd))
+     | Some path -> t.state <- `Readonly (`Path path)
      | None -> t.state <- `Finished);
     Lwt_unix.close fd >|= fun () ->
     Lwt_condition.broadcast cond ()
-  | `Readonly _ ->
+  | `Readonly (`Fd fd) ->
+    t.state <- `Finished;
+    Lwt_unix.close fd
+  | `Readonly (`Path _) ->
     t.state <- `Finished;
     Lwt.return_unit
   | `Empty ->
@@ -110,7 +124,7 @@ let write t data =
 let of_saved path =
   Lwt_unix.lstat path >|= fun stat ->
   {
-    state = `Readonly path;
+    state = `Readonly (`Path path);
     len = stat.st_size;
     path = Some path;
   }
