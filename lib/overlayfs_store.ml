@@ -202,6 +202,10 @@ let build t ?base ~id fn =
       >>= fun () -> Lwt.return r)
     (fun ex ->
       Log.warn (fun f -> f "Uncaught exception from %S build function: %a" id Fmt.exn ex);
+      (match base with
+      | None -> Lwt.return_unit
+      | Some _ -> Overlayfs.umount ~merged)
+      >>= fun () ->
       Overlayfs.delete [ merged; work; in_progress ] >>= fun () ->
       Lwt.reraise ex)
 
