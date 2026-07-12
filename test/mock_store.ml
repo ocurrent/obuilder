@@ -45,16 +45,24 @@ let build t ?base ~id fn =
            | Unix.WEXITED 0 -> Lwt.return_unit
            | _ -> failwith "cp failed!"
        end >>= fun () ->
-       fn tmp_dir >>= fun r ->
-       !delay_store >>= fun () ->
-       match r with
-       | Ok () ->
-         Unix.rename tmp_dir dir;
-         Lwt_result.return ()
-       | Error _ as e ->
-         unix_path tmp_dir >>= fun tmp_dir ->
-         rm_r tmp_dir;
-         Lwt.return e
+       Lwt.try_bind
+         (fun () -> fn tmp_dir)
+         (fun r ->
+            !delay_store >>= fun () ->
+            match r with
+            | Ok () ->
+              Unix.rename tmp_dir dir;
+              Lwt_result.return ()
+            | Error _ as e ->
+              unix_path tmp_dir >>= fun tmp_dir ->
+              rm_r tmp_dir;
+              Lwt.return e)
+         (fun ex ->
+            (* Real stores discard the in-progress directory when the build
+               function raises; model that so a retry starts from a clean slate. *)
+            unix_path tmp_dir >>= fun tmp_dir ->
+            if Sys.file_exists tmp_dir then rm_r tmp_dir;
+            Lwt.reraise ex)
     )
     (fun () ->
        t.builds <- t.builds - 1;
