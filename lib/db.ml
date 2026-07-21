@@ -62,5 +62,10 @@ let dump_item = Fmt.of_to_string Sqlite3.Data.to_string_debug
 let dump_row = Fmt.(Dump.list dump_item)
 
 let close db =
+  (* Drop the WAL sidecar files (-wal/-shm) deterministically before closing, so
+     that tearing down the enclosing directory can't race SQLite's own removal of
+     them (which otherwise shows up as a spurious ENOENT on unlink). *)
+  (try exec_literal db "PRAGMA wal_checkpoint(TRUNCATE)" with _ -> ());
+  (try exec_literal db "PRAGMA journal_mode=DELETE" with _ -> ());
   if not (Sqlite3.db_close db) then
     Fmt.failwith "Could not close database! It is busy."
