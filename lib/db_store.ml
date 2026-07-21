@@ -7,6 +7,7 @@ module Make (Raw : S.STORE) = struct
   type build = {
     mutable users : int;
     set_cancelled : unit Lwt.u;         (* Resolve this to cancel (when [users = 0]). *)
+    mutable owner_cancelled : bool;           (* The caller providing [fn] (and its source context) has been cancelled. *)
     log : Build_log.t Lwt.t;
     result : (([`Loaded | `Saved] * S.id), [`Cancelled | `Msg of string]) Lwt_result.t;
     base : string option;
@@ -101,16 +102,27 @@ module Make (Raw : S.STORE) = struct
       existing.log >>= fun log ->
       Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref existing; Lwt.return_unit) >>= fun () ->
       Build_log.tail ?switch log (client_log `Output) >>!= fun () ->
-      existing.result >>!= fun (ty, r) ->
-      log_ty client_log ~id ty;
-      Lwt_result.return r
+      existing.result >>= (function
+      | Ok (ty, r) -> log_ty client_log ~id ty; Lwt_result.return r
+      | Error _ when existing.owner_cancelled && (match switch with None -> true | Some s -> Lwt_switch.is_on s) ->
+        (* The build's context owner was cancelled, tearing down the source this
+           shared build was reading. We were not cancelled, so rebuild from our
+           own context. The failed build has already been removed from
+           [in_progress], so this starts a fresh build. *)
+        client_log `Note "Build context owner cancelled; rebuilding from our own context";
+        build ?switch t ?base ~id ~log:client_log fn
+      | Error _ as e -> Lwt.return e)
     | None ->
       let result, set_result = Lwt.wait () in
       let log, set_log = Lwt.wait () in
       let tail_log = log >>= fun log -> Build_log.tail ?switch log (client_log `Output) in
       let cancelled, set_cancelled = Lwt.wait () in
-      let build = { users = 1; set_cancelled; log; result; base } in
-      Lwt_switch.add_hook_or_exec switch (fun () -> dec_ref build; Lwt.return_unit) >>= fun () ->
+      let build = { users = 1; set_cancelled; owner_cancelled = false; log; result; base } in
+      (* This caller supplies [fn] (and hence the source context) the shared build
+         runs from. If it is cancelled while other users remain, the build can fail
+         reading a source that has been torn down; flag it so survivors retry from
+         their own context. *)
+      Lwt_switch.add_hook_or_exec switch (fun () -> build.owner_cancelled <- true; dec_ref build; Lwt.return_unit) >>= fun () ->
       t.in_progress <- Builds.add id build t.in_progress;
       Lwt.async
         (fun () ->

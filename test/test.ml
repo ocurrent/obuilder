@@ -43,6 +43,19 @@ let with_file path flags perms fn =
   Lwt_unix.openfile path flags perms >>= fun fd ->
   Lwt.finalize (fun () -> fn fd) (fun () -> Lwt_unix.close fd)
 
+(* Drain a child's stdin pipe (a copy step's tar) so [send_files] can progress. *)
+let drain_stdin = function
+  | None -> Lwt.return_unit
+  | Some fd ->
+    let raw = Unix.dup fd.Os.raw in
+    let lfd = Lwt_unix.of_unix_file_descr ~blocking:false raw in
+    let buf = Bytes.create 65536 in
+    let rec loop () =
+      Lwt.catch (fun () -> Lwt_unix.read lfd buf 0 65536) (fun _ -> Lwt.return 0)
+      >>= function 0 -> Lwt.return_unit | _ -> loop ()
+    in
+    Lwt.finalize loop (fun () -> Lwt_unix.close lfd)
+
 let mock_op ?(result=Lwt_result.return ()) ?(delay_store=Lwt.return_unit) ?cancel ?output () =
   fun ~cancelled ?stdin:_ ~log (config:Obuilder.Config.t) dir ->
   Mock_store.delay_store := delay_store;
@@ -296,6 +309,190 @@ let test_cancel_2 _switch () =
       Wait
       ;---> saved as .*
      |} root) log2;
+  Lwt.return_unit
+
+(* Two users share a de-duplicated COPY step. The COPY reads the *owning*
+   job's build context. The owner is cancelled and its context deleted (as the
+   worker's [with_build_context]/[with_temp_dir] does on cancellation) while the
+   second job is still sharing the build. The shared copy then fails reading the
+   now-deleted source. The surviving job was never cancelled, so it must still
+   succeed — it rebuilds from its own context. Regression test for the opam2web
+   / opam-repository "windows.yml" failure. *)
+let test_cancel_copy_context _switch () =
+  if Sys.win32 then Alcotest.skip ();
+  with_config @@ fun ~src_dir:_ ~store ~sandbox ~builder ->
+  (* Two independent contexts with identical content -> same copy id -> dedup.
+     File "a" is larger than the pipe buffer so [send_files] blocks mid-copy,
+     before it reaches (and lstats) "z". *)
+  let make_ctx name switch log =
+    let dir = Mock_store.state_dir store / name in
+    Os.ensure_dir dir;
+    Lwt_io.(with_file ~mode:output) (dir / "a")
+      (fun ch -> Lwt_io.write ch (String.make (4 * 1024 * 1024) 'x')) >>= fun () ->
+    Lwt_io.(with_file ~mode:output) (dir / "z")
+      (fun ch -> Lwt_io.write ch "z-data") >|= fun () ->
+    (dir, Context.v ~switch ~shell:(Mock_sandbox.shell sandbox) ~src_dir:dir ~log:(Log.add log) ())
+  in
+  let log1 = Log.create "b1" and log2 = Log.create "b2" in
+  let switch1 = Lwt_switch.create () and switch2 = Lwt_switch.create () in
+  make_ctx "ctx1" switch1 log1 >>= fun (dir1, context1) ->
+  make_ctx "ctx2" switch2 log2 >>= fun (_dir2, context2) ->
+  let spec = Spec.(stage ~from:"base" [ copy ["."] ~dst:"/dst/" ]) in
+  (* First (shared) copy: announce itself, block until [r], then drain — so the
+     copy is mid-stream when we cancel the owner and delete its context. *)
+  let r, set_r = Lwt.wait () in
+  Mock_sandbox.expect sandbox (fun ~cancelled:_ ?stdin ~log _config _dir ->
+      Build_log.printf log "TAR@." >>= fun () ->
+      r >>= fun () -> drain_stdin stdin >>= fun () -> Lwt_result.return ());
+  (* Second copy: the surviving job's retry from its own (live) context succeeds. *)
+  Mock_sandbox.expect sandbox (fun ~cancelled:_ ?stdin ~log:_ _config _dir ->
+      drain_stdin stdin >>= fun () -> Lwt_result.return ());
+  let expect_log = sprintf "(from base)\n%s: (copy (src .) (dst /dst/))\nTAR\n" root in
+  let b1 = B.build builder context1 spec in
+  Log.await log1 expect_log >>= fun () ->        (* job 1's copy is running and blocked *)
+  let b2 = B.build builder context2 spec in
+  Log.await log2 expect_log >>= fun () ->        (* job 2 has joined the shared copy *)
+  (* Cancel the context owner (job 1) and delete its context. *)
+  Lwt_switch.turn_off switch1 >>= fun () ->
+  Lwt_process.exec ("", [| "rm"; "-rf"; dir1 |]) >>= fun _ ->
+  Lwt.wakeup set_r ();                            (* unblock -> copy hits the deleted source *)
+  b1 >>= fun r1 ->
+  Alcotest.(check build_result) "Owner is cancelled" (Error `Cancelled) r1;
+  b2 >>= fun r2 ->
+  (* Desired behaviour: job 2 was never cancelled, so it must still complete.
+     The shared copy must not depend on job 1's (cancellable) build context
+     surviving. This assertion currently FAILS — job 2 gets a copy ENOENT
+     referencing the deleted ctx1 — and will pass once the copy source's
+     lifetime is decoupled from the individual job that owns the shared build. *)
+  (match r2 with
+   | Ok _ -> ()
+   | Error (`Msg msg) ->
+     Alcotest.failf
+       "Regression: the non-cancelled job's shared copy failed because the \
+        cancelled owner's context was removed: %s" msg
+   | Error `Cancelled -> Alcotest.fail "The non-cancelled job must not be cancelled");
+  Lwt.return_unit
+
+(* Both users of a shared COPY step are cancelled, but staggered — the real
+   opam-repository case where a new commit supersedes the live build, the
+   staging build starts rebuilding from its own context, and is then superseded
+   too. The survivor gets to react (its retry is in flight) before its own
+   cancel lands; it must still cancel cleanly, and no third copy is attempted. *)
+let test_cancel_copy_context_both _switch () =
+  if Sys.win32 then Alcotest.skip ();
+  with_config @@ fun ~src_dir:_ ~store ~sandbox ~builder ->
+  let make_ctx name switch log =
+    let dir = Mock_store.state_dir store / name in
+    Os.ensure_dir dir;
+    Lwt_io.(with_file ~mode:output) (dir / "a")
+      (fun ch -> Lwt_io.write ch (String.make (4 * 1024 * 1024) 'x')) >>= fun () ->
+    Lwt_io.(with_file ~mode:output) (dir / "z")
+      (fun ch -> Lwt_io.write ch "z-data") >|= fun () ->
+    (dir, Context.v ~switch ~shell:(Mock_sandbox.shell sandbox) ~src_dir:dir ~log:(Log.add log) ())
+  in
+  let log1 = Log.create "b1" and log2 = Log.create "b2" in
+  let switch1 = Lwt_switch.create () and switch2 = Lwt_switch.create () in
+  make_ctx "ctx1" switch1 log1 >>= fun (dir1, context1) ->
+  make_ctx "ctx2" switch2 log2 >>= fun (dir2, context2) ->
+  let spec = Spec.(stage ~from:"base" [ copy ["."] ~dst:"/dst/" ]) in
+  (* Exactly two copies should run: the shared one (owned by job 1) and job 2's
+     retry from its own context. Both block so we can cancel at each stage; a
+     third (unexpected) copy would fail the mock. *)
+  let r1, set_r1 = Lwt.wait () in
+  let r2, set_r2 = Lwt.wait () in
+  let retry_started, set_retry_started = Lwt.wait () in
+  Mock_sandbox.expect sandbox (fun ~cancelled:_ ?stdin ~log _config _dir ->
+      Build_log.printf log "TAR@." >>= fun () ->
+      r1 >>= fun () -> drain_stdin stdin >>= fun () -> Lwt_result.return ());
+  Mock_sandbox.expect sandbox (fun ~cancelled:_ ?stdin ~log _config _dir ->
+      Build_log.printf log "TAR@." >>= fun () ->
+      if Lwt.is_sleeping retry_started then Lwt.wakeup set_retry_started ();
+      r2 >>= fun () -> drain_stdin stdin >>= fun () -> Lwt_result.return ());
+  let expect_log = sprintf "(from base)\n%s: (copy (src .) (dst /dst/))\nTAR\n" root in
+  let b1 = B.build builder context1 spec in
+  Log.await log1 expect_log >>= fun () ->
+  let b2 = B.build builder context2 spec in
+  Log.await log2 expect_log >>= fun () ->
+  (* Job 1 (the context owner) is superseded first. *)
+  Lwt_switch.turn_off switch1 >>= fun () ->
+  Lwt_process.exec ("", [| "rm"; "-rf"; dir1 |]) >>= fun _ ->
+  Lwt.wakeup set_r1 ();
+  (* The survivor reacts: it starts rebuilding from its own context... *)
+  retry_started >>= fun () ->
+  (* ...and only then is it superseded too. *)
+  Lwt_switch.turn_off switch2 >>= fun () ->
+  Lwt_process.exec ("", [| "rm"; "-rf"; dir2 |]) >>= fun _ ->
+  Lwt.wakeup set_r2 ();
+  b1 >>= fun r1v ->
+  Alcotest.(check build_result) "Job 1 cancelled" (Error `Cancelled) r1v;
+  b2 >>= fun r2v ->
+  Alcotest.(check build_result) "Job 2 cancelled" (Error `Cancelled) r2v;
+  Lwt.return_unit
+
+(* Three jobs share the copy. The owner is cancelled, a survivor becomes the new
+   owner and is then cancelled too. The remaining job must not die — ownership
+   cascades to each surviving context in turn. A becomes owner of the shared
+   build; B joins. A is cancelled, so B takes over and becomes the new owner;
+   C then joins B's build. B is cancelled too, so C takes over and, never having
+   been cancelled, completes. *)
+let test_cancel_copy_context_cascade _switch () =
+  if Sys.win32 then Alcotest.skip ();
+  with_config @@ fun ~src_dir:_ ~store ~sandbox ~builder ->
+  let make_ctx name switch log =
+    let dir = Mock_store.state_dir store / name in
+    Os.ensure_dir dir;
+    Lwt_io.(with_file ~mode:output) (dir / "a")
+      (fun ch -> Lwt_io.write ch (String.make (4 * 1024 * 1024) 'x')) >>= fun () ->
+    Lwt_io.(with_file ~mode:output) (dir / "z")
+      (fun ch -> Lwt_io.write ch "z-data") >|= fun () ->
+    (dir, Context.v ~switch ~shell:(Mock_sandbox.shell sandbox) ~src_dir:dir ~log:(Log.add log) ())
+  in
+  let logA = Log.create "a" and logB = Log.create "b" and logC = Log.create "c" in
+  let swA = Lwt_switch.create () and swB = Lwt_switch.create () and swC = Lwt_switch.create () in
+  make_ctx "ctxA" swA logA >>= fun (dirA, contextA) ->
+  make_ctx "ctxB" swB logB >>= fun (dirB, contextB) ->
+  make_ctx "ctxC" swC logC >>= fun (_dirC, contextC) ->
+  let spec = Spec.(stage ~from:"base" [ copy ["."] ~dst:"/dst/" ]) in
+  (* Three copies run in turn: A's (shared), B's retry, then C's retry (wins). *)
+  let r1, set_r1 = Lwt.wait () in
+  let r2, set_r2 = Lwt.wait () in
+  let started2, set_started2 = Lwt.wait () in
+  Mock_sandbox.expect sandbox (fun ~cancelled:_ ?stdin ~log _config _dir ->
+      Build_log.printf log "TAR@." >>= fun () ->
+      r1 >>= fun () -> drain_stdin stdin >>= fun () -> Lwt_result.return ());
+  Mock_sandbox.expect sandbox (fun ~cancelled:_ ?stdin ~log _config _dir ->
+      Build_log.printf log "TAR@." >>= fun () ->
+      if Lwt.is_sleeping started2 then Lwt.wakeup set_started2 ();
+      r2 >>= fun () -> drain_stdin stdin >>= fun () -> Lwt_result.return ());
+  Mock_sandbox.expect sandbox (fun ~cancelled:_ ?stdin ~log _config _dir ->
+      Build_log.printf log "TAR@." >>= fun () ->
+      drain_stdin stdin >>= fun () -> Lwt_result.return ());
+  let expect_log = sprintf "(from base)\n%s: (copy (src .) (dst /dst/))\nTAR\n" root in
+  let bA = B.build builder contextA spec in
+  Log.await logA expect_log >>= fun () ->
+  let bB = B.build builder contextB spec in
+  Log.await logB expect_log >>= fun () ->
+  (* Owner A superseded -> B takes over as the new owner. *)
+  Lwt_switch.turn_off swA >>= fun () ->
+  Lwt_process.exec ("", [| "rm"; "-rf"; dirA |]) >>= fun _ ->
+  Lwt.wakeup set_r1 ();
+  started2 >>= fun () ->
+  (* C joins B's rebuild. *)
+  let bC = B.build builder contextC spec in
+  Log.await logC expect_log >>= fun () ->
+  (* New owner B superseded too -> C must take over, not die. *)
+  Lwt_switch.turn_off swB >>= fun () ->
+  Lwt_process.exec ("", [| "rm"; "-rf"; dirB |]) >>= fun _ ->
+  Lwt.wakeup set_r2 ();
+  bA >>= fun rA ->
+  Alcotest.(check build_result) "A cancelled" (Error `Cancelled) rA;
+  bB >>= fun rB ->
+  Alcotest.(check build_result) "B cancelled" (Error `Cancelled) rB;
+  bC >>= fun rC ->
+  (match rC with
+   | Ok _ -> ()
+   | Error (`Msg m) -> Alcotest.failf "C should survive as the new owner, got: %s" m
+   | Error `Cancelled -> Alcotest.fail "C was never cancelled but reported Cancelled");
   Lwt.return_unit
 
 (* Two users are sharing a build. Both cancel. *)
@@ -887,6 +1084,9 @@ let () =
         test_case "Concurrent failure 2" `Quick test_concurrent_failure_2;
         test_case "Cancel"     `Quick test_cancel;
         test_case "Cancel 2"   `Quick test_cancel_2;
+        test_case "Cancel context copy" `Quick test_cancel_copy_context;
+        test_case "Cancel context copy (both)" `Quick test_cancel_copy_context_both;
+        test_case "Cancel context copy (cascade)" `Quick test_cancel_copy_context_cascade;
         test_case "Cancel 3"   `Quick test_cancel_3;
         test_case "Cancel 4"   `Quick test_cancel_4;
         test_case "Cancel 5"   `Quick test_cancel_5;
