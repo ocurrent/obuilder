@@ -110,12 +110,12 @@ let of_t store rsync_mode =
   | Some (`Qemu path), None -> (`Qemu path)
   | Some (`Hcs path), None -> (`Hcs path)
   | Some _, Some _ -> failwith "An rsync-mode can only be given for an rsync:/path store"
-  | None, _ -> failwith "Store type required must be one of btrfs:/path, rsync:/path, xfs:/path, overlayfs:/path, zfs:pool, qemu:/path, hcs:path or docker:path for the OBuilder cache."
+  | None, _ -> failwith "Store type required (must be one of btrfs:/path, rsync:/path, xfs:/path, overlayfs:/path, zfs:pool, qemu:/path, hcs:path or docker:path for the OBuilder cache)."
 
 (** Parse cli arguments for t *)
 let v =
-  Term.(const of_t
-        $ Arg.value @@ store ["store"]
+  Term.(const (fun s rsync_mode -> of_t (Some s) rsync_mode)
+        $ Arg.required @@ store ["store"]
         $ Arg.value @@ rsync_mode_opt)
 
 (** Parse cli arguments for t and initialise a [store]. *)
