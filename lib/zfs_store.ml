@@ -142,6 +142,21 @@ module Zfs = struct
           Lwt.return ()
     else Lwt.return ()
 
+  (* Unmount a finalized result (and its child datasets, e.g. rootfs) so that it
+     stops holding vnodes while idle. It is remounted on demand by [mount], or
+     cloned straight from its snapshot (which needs no mount). Deepest dataset
+     first; tolerate "not mounted". *)
+  let unmount t ~ds =
+    let vol = Dataset.full_name t ds in
+    Lwt_process.pread ("", [| "zfs"; "list"; "-H"; "-r"; "-o"; "name"; vol |]) >>= fun output ->
+    String.split_on_char '\n' output
+    |> List.filter (fun s -> String.length s > 0)
+    |> List.sort (fun a b -> compare (String.length b) (String.length a))
+    |> Lwt_list.iter_s (fun name ->
+         let pp _ ppf = Fmt.pf ppf "zfs unmount" in
+         Os.sudo_result ~pp:(pp "zfs unmount") ~is_success:(fun _ -> true)
+           ["zfs"; "unmount"; "--"; name] >>= fun _ -> Lwt.return_unit)
+
   let clone_with_children t ~src ~snapshot dst =
     Os.sudo ["zfs"; "clone"; "-o"; "canmount=noauto"; "--"; Dataset.full_name t src ~snapshot; Dataset.full_name t dst] >>= fun () ->
     Os.sudo ["zfs"; "mount"; Dataset.full_name t dst] >>= fun () ->
@@ -236,8 +251,12 @@ let build t ?base ~id fn =
       | Ok () ->
         Log.debug (fun f -> f "zfs: build %S succeeded" id);
         Zfs.snapshot t ds ~snapshot:default_snapshot >>= fun () ->
-        (* ZFS can't delete the clone while the snapshot still exists. So I guess we'll just
-           keep it around? *)
+        (* ZFS can't delete the clone while the snapshot still exists, so it stays
+           on disk as cache. Unmount it though: an idle result that keeps its mount
+           holds tens of thousands of vnodes resident, and with many cached results
+           that drives global vnode-list lock contention. It is remounted on demand
+           when next used. *)
+        Zfs.unmount t ~ds >>= fun () ->
         Lwt_result.return ()
       | Error _ as e ->
         Log.debug (fun f -> f "zfs: build %S failed" id);

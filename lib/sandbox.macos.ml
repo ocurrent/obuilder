@@ -145,10 +145,10 @@ let create ~state_dir:_ c =
     lock = Lwt_mutex.create ();
   }
 
-let finished () =
-  Os.sudo [ "zfs"; "unmount"; "obuilder/result" ] >>= fun () ->
-  Os.sudo [ "zfs"; "mount"; "obuilder/result" ] >>= fun () ->
-  Lwt.return ()
+(* Results are now unmounted individually as each build finalizes (see
+   Zfs_store.build), so there is no accumulated set of mounts to clear at the
+   end of a run. This also drops a sandbox->store reach-around. Falls back to
+   the no-op in S.Sandbox_default. *)
 
 let uid =
   Arg.required @@
