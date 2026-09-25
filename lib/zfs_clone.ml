@@ -11,6 +11,8 @@ let ( / ) = Filename.concat
     with base = "busybox", or base = "macos-homebrew-ocaml-4.14" -> clone home and brew subvolumes *)
 
 let fetch ~log:_ ~root:_ ~rootfs base =
+  if base = "" || base = "." || base = ".." || String.contains base '/' then
+    Fmt.failwith "Invalid ZFS base image name %S" base;
   let path =
     let remove_on_match s lst = if List.hd lst = s then List.tl lst else lst in
     String.split_on_char '/' rootfs
