@@ -72,9 +72,9 @@ module Path = struct
       [ state_dirname; cache_dirname; cache_tmp_dirname; result_dirname; result_tmp_dirname ]
 
   let result t id = t.path / result_dirname / id
-  let cache t id = t.path / cache_dirname / id
+  let cache t id = t.path / cache_dirname / Escape.cache id
 
-  let cache_tmp t n id = t.path / cache_tmp_dirname / Printf.sprintf "%i-%s" n id
+  let cache_tmp t n id = t.path / cache_tmp_dirname / Printf.sprintf "%i-%s" n (Escape.cache id)
 
   let result_tmp t id = t.path / result_tmp_dirname / id
 end

@@ -105,8 +105,9 @@ module Path = struct
   let merged t id = t.path / merged_dirname / id
   let work t id = t.path / work_dirname / id
 
-  let cache t name = t.path / cache_dirname / name
+  let cache t name = t.path / cache_dirname / Escape.cache name
   let cache_result t n name =
+    let name = Escape.cache name in
     ( t.path / cache_result_dirname / name ^ "-" ^ Int.to_string n,
       t.path / cache_work_dirname / name ^ "-" ^ Int.to_string n,
       t.path / cache_merged_dirname / name ^ "-" ^ Int.to_string n)
