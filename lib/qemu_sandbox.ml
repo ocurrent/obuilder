@@ -67,6 +67,7 @@ let run ~cancelled ?stdin ~log t config result_tmp =
     | Riscv64 -> [ "qemu-system-riscv64"; "-machine"; "type=virt"; "-nographic";
                    "-bios"; "/usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.bin";
                    "-kernel"; "/usr/lib/u-boot/qemu-riscv64_smode/uboot.elf";
+                   "-cpu"; "max";
                    "-device"; "virtio-net-device,netdev=net0";
                    "-serial"; "none"] in
   let network = match config.network with
