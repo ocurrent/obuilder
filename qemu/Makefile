@@ -105,7 +105,7 @@ busybox.qcow2: noble-server-cloudimg-amd64.qcow2 seed.iso
 
 openbsd: openbsd-79-amd64-ocaml-4.14.qcow2 openbsd-79-amd64-ocaml-5.5.qcow2
 
-openbsd-79-amd64-ocaml-5.5.qcow2: openbsd-79-amd64-ocaml-5.5.0.qcow2
+openbsd-79-amd64-ocaml-5.5.qcow2: openbsd-79-amd64-ocaml-5.5.2.qcow2
 	ln -sf $< $@
 
 openbsd-79-amd64-ocaml-4.14.qcow2: openbsd-79-amd64-ocaml-4.14.4.qcow2
