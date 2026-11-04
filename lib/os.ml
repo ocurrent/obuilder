@@ -195,11 +195,6 @@ let pread_result ?cwd ?stdin ?stderr ~pp ?is_success ?cmd argv =
     (fun () -> Lwt_io.close r)
   >>= fun data -> child >|= fun r -> Result.map (fun () -> data) r
 
-(* Simple command output capture used by HCS components on Windows. *)
-let win32_pread argv =
-  let pp f = pp_cmd f ("", argv) in
-  pread_result ~pp argv
-
 let pread_all ?stdin ~pp ?(cmd="") argv =
   with_pipe_from_child @@ fun ~r:r1 ~w:w1 ->
   with_pipe_from_child @@ fun ~r:r2 ~w:w2 ->
@@ -217,6 +212,22 @@ let pread_all ?stdin ~pp ?(cmd="") argv =
   child >>= function
   | Ok i -> Lwt.return (i, stdin, stdout)
   | Error (`Msg m) -> failwith m
+
+(* Command output capture used by the HCS components on Windows.
+
+   Captures stderr as well as stdout so a failing command reports *why* it
+   failed; [pread_result] pipes only stdout and leaves stderr inherited, so
+   failures surface as "<cmd> failed with exit status N" with the reason lost. *)
+let win32_pread argv =
+  let pp f = pp_cmd f ("", argv) in
+  pread_all ~pp argv >>= fun (exit_code, stdout, stderr) ->
+  if exit_code = 0 then Lwt_result.return stdout
+  else begin
+    Log.warn (fun f -> f "%t failed (exit %d): stdout=%s stderr=%s"
+                 pp exit_code (String.trim stdout) (String.trim stderr));
+    Lwt.return (Fmt.error_msg "%t failed with exit status %d: %s"
+                  pp exit_code (String.trim stderr))
+  end
 
 let check_dir x =
   match Unix.lstat x with
