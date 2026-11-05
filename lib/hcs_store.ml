@@ -24,7 +24,29 @@ module Path = struct
 end
 
 module Ctr = struct
-  let ctr_with_output args =
+  (* [ctr] fails transiently on a busy host, most often
+       "cannot access socket \\\\.\\pipe\\containerd-containerd:
+        All pipe instances are busy"
+     Discarding such a failure is what turns a recoverable blip into permanent
+     divergence between the store and containerd: the caller updates its
+     bookkeeping as though the operation succeeded, the object survives
+     untracked, and it then pins its parent so every later removal fails with
+     "cannot remove snapshot with child" and every re-import with
+     "already exists". So retry these.
+
+     The test is inverted deliberately: we fail fast only on the failures we
+     know retrying cannot fix, and retry everything else. Enumerating the
+     transients instead would fail silently - a transient we forgot to list
+     becomes permanent divergence - whereas an unrecognised deterministic
+     failure merely costs a bounded number of pointless retries. *)
+  let is_deterministic msg =
+    let has affix = Astring.String.is_infix ~affix msg in
+    has "does not exist"                      (* nothing to remove *)
+    || has "cannot remove snapshot with child"
+    || has "already exists"
+    || has "not active or view"
+
+  let raw_ctr_with_output args =
     if Sys.win32 then
       Os.win32_pread ("ctr" :: args)
     else begin
@@ -39,6 +61,22 @@ module Ctr = struct
           (String.concat " " args) exit_code stderr)
       end
     end
+
+  (* Bounded retry with jittered backoff, as used for the same problem in
+     day10's [Os.retry_exec]. *)
+  let ctr_with_output ?(tries = 10) args =
+    let rec loop n =
+      raw_ctr_with_output args >>= function
+      | Ok _ as ok -> Lwt.return ok
+      | Error (`Msg m) when n > 1 && not (is_deterministic m) ->
+        Log.warn (fun f ->
+            f "ctr %s failed, retrying (%d/%d): %s"
+              (String.concat " " args) (tries - n + 1) (tries - 1) m);
+        Lwt_unix.sleep (Random.float 2.0) >>= fun () ->
+        loop (n - 1)
+      | Error _ as e -> Lwt.return e
+    in
+    loop tries
 
   let ctr args =
     ctr_with_output args >|= Result.map (fun _ -> ())
@@ -58,8 +96,14 @@ module Ctr = struct
   let snapshot_commit ~key ~committed_key () =
     ctr (["snapshot"; "commit"; committed_key; key])
 
+  (* "does not exist" is the desired end state, not a failure. Reporting it as
+     one buries the removals that genuinely did not happen. *)
   let snapshot_rm ~key () =
-    ctr (["snapshot"; "rm"; key])
+    ctr (["snapshot"; "rm"; key]) >>= function
+    | Ok () -> Lwt_result.return ()
+    | Error (`Msg m) when Astring.String.is_infix ~affix:"does not exist" m ->
+      Lwt_result.return ()
+    | Error _ as e -> Lwt.return e
 
   let image_pull image =
     ctr (["image"; "pull"; image])
@@ -202,15 +246,36 @@ let build t ?base ~id fn =
        begin match r with
          | Ok () ->
            let rootfs = result_tmp / "rootfs" in
-           let snap_key =
+           let info =
              if Sys.file_exists (Hcs.layerinfo_path rootfs) then
-               (Hcs.read_layerinfo rootfs).snapshot_key
+               Some (Hcs.read_layerinfo rootfs)
              else if Sys.file_exists (Hcs.layerinfo_path result_tmp) then
-               (Hcs.read_layerinfo result_tmp).snapshot_key
+               Some (Hcs.read_layerinfo result_tmp)
              else
-               key
+               None
+           in
+           let snap_key =
+             match info with
+             | Some li -> li.Hcs.snapshot_key
+             | None -> key
            in
            Log.info (fun f -> f "Snapshot key is %s" snap_key);
+           (* Windows Update's download cache can contain sparse files, and the
+              HCS layer export that [ctr snapshot commit] performs cannot
+              represent sparse blocks: it fails with
+                "failed to reimport snapshot: ... unknown stream ID 9"
+              (stream ID 9 is BACKUP_SPARSE_BLOCK), losing the whole build.
+              Nothing in a build layer needs this cache, so drop it first. *)
+           (match info with
+            | Some li ->
+              let dl =
+                li.Hcs.source / "Files" / "Windows" / "SoftwareDistribution" / "Download"
+              in
+              if Sys.file_exists dl then (
+                Log.info (fun f -> f "Removing %s before commit" dl);
+                Os.rm ~directory:dl)
+              else Lwt.return_unit
+            | None -> Lwt.return_unit) >>= fun () ->
            let committed_key = snap_key ^ "-committed" in
            Log.info (fun f -> f "Committing snapshot %s -> %s" snap_key committed_key);
            (* Remove any existing committed snapshot first (idempotency) *)
@@ -220,6 +285,19 @@ let build t ?base ~id fn =
            (Ctr.snapshot_commit ~key:snap_key ~committed_key () >>= function
             | Ok () -> Lwt.return_unit
             | Error (`Msg m) ->
+              (* This runs in the success continuation of the [try_bind] below.
+                 [Lwt.try_bind f g h] only routes exceptions from [f] to [h], so
+                 raising here escapes BOTH cleanup paths (the [Error] branch and
+                 [h]) and leaks the prepared snapshot plus its result-tmp dir.
+                 Clean up explicitly before propagating. *)
+              Log.warn (fun f ->
+                  f "Commit of %s failed; removing snapshot and result-tmp" snap_key);
+              (Ctr.snapshot_rm ~key:snap_key () >>= function
+               | Ok () -> Lwt.return_unit
+               | Error (`Msg m') ->
+                 Log.warn (fun f -> f "Failed to remove snapshot %s: %s" snap_key m');
+                 Lwt.return_unit) >>= fun () ->
+              Os.rm ~directory:result_tmp >>= fun () ->
               Fmt.failwith "Failed to commit snapshot %s: %s" snap_key m) >>= fun () ->
            (* On Windows, Sys.rename cannot replace an existing directory.
               Remove the target first if it exists (idempotency for retried builds). *)
