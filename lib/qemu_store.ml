@@ -128,31 +128,42 @@ let get_cache t name =
     Hashtbl.add t.caches name c;
     c
 
-let cache ~user:_ t name : (string * (unit -> unit Lwt.t)) Lwt.t =
+let cache ?(shared=false) ~user:_ t name : (string * (unit -> unit Lwt.t)) Lwt.t =
   let cache = get_cache t name in
-  Lwt_mutex.with_lock cache.lock @@ fun () ->
-  let tmp = Path.cache_tmp t t.next name in
-  t.next <- t.next + 1;
   let master = Path.cache t name in
-  (* Create cache if it doesn't already exist. *)
-  (match Os.check_dir master with
-    | `Missing -> Qemu_img.create master
-    | `Present -> Lwt.return ()) >>= fun () ->
-  cache.children <- cache.children + 1;
-  let () = Os.ensure_dir tmp in
-  Os.cp ~src:master tmp >>= fun () ->
-  let release () =
+  if shared then
+    (* Shared mode: return the actual cache directory, no copy-on-write *)
     Lwt_mutex.with_lock cache.lock @@ fun () ->
-    cache.children <- cache.children - 1;
-    let cache_stat = Unix.stat (Path.image master) in
-    let tmp_stat = Unix.stat (Path.image tmp) in
-    (if tmp_stat.st_size > cache_stat.st_size then
-      Os.cp ~src:tmp master
-    else
-      Lwt.return ()) >>= fun () ->
-    Os.rm ~directory:tmp
-  in
-  Lwt.return (tmp, release)
+    (* Create cache if it doesn't already exist. *)
+    (match Os.check_dir master with
+      | `Missing -> Qemu_img.create master
+      | `Present -> Lwt.return ()) >>= fun () ->
+    let release () = Lwt.return_unit in  (* No-op for shared caches *)
+    Lwt.return (master, release)
+  else
+    (* Non-shared mode: existing copy behavior *)
+    Lwt_mutex.with_lock cache.lock @@ fun () ->
+    let tmp = Path.cache_tmp t t.next name in
+    t.next <- t.next + 1;
+    (* Create cache if it doesn't already exist. *)
+    (match Os.check_dir master with
+      | `Missing -> Qemu_img.create master
+      | `Present -> Lwt.return ()) >>= fun () ->
+    cache.children <- cache.children + 1;
+    let () = Os.ensure_dir tmp in
+    Os.cp ~src:master tmp >>= fun () ->
+    let release () =
+      Lwt_mutex.with_lock cache.lock @@ fun () ->
+      cache.children <- cache.children - 1;
+      let cache_stat = Unix.stat (Path.image master) in
+      let tmp_stat = Unix.stat (Path.image tmp) in
+      (if tmp_stat.st_size > cache_stat.st_size then
+        Os.cp ~src:tmp master
+      else
+        Lwt.return ()) >>= fun () ->
+      Os.rm ~directory:tmp
+    in
+    Lwt.return (tmp, release)
 
 let delete_cache t name =
   let cache = get_cache t name in
