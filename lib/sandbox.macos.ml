@@ -13,9 +13,12 @@ type t = {
 
 open Sexplib.Conv
 
+(* Optional on the command line, so that a worker on macOS with no use for this
+   sandbox -- one running only day10 jobs -- need not name a builder user or a
+   Homebrew prefix.  A sandbox cannot be made without them. *)
 type config = {
-  uid: int;
-  brew_path : string;
+  uid: int option;
+  brew_path : string option;
 }[@@deriving sexp]
 
 let run_as ~env ~user ~cmd =
@@ -138,12 +141,15 @@ let run ~cancelled ?stdin:stdin ~log (t : t) config result_tmp =
     else Lwt_result.fail `Cancelled)
 
 let create ~state_dir:_ c =
-  Lwt.return {
-    uid = c.uid;
-    gid = 1000;
-    brew_path = c.brew_path;
-    lock = Lwt_mutex.create ();
-  }
+  match c.uid, c.brew_path with
+  | Some uid, Some brew_path ->
+    Lwt.return {
+      uid;
+      gid = 1000;
+      brew_path;
+      lock = Lwt_mutex.create ();
+    }
+  | _ -> Lwt.fail_with "The macOS sandbox needs both --uid and --brew-path"
 
 (* Results are now unmounted individually as each build finalizes (see
    Zfs_store.build), so there is no accumulated set of mounts to clear at the
@@ -151,19 +157,21 @@ let create ~state_dir:_ c =
    the no-op in S.Sandbox_default. *)
 
 let uid =
-  Arg.required @@
+  Arg.value @@
   Arg.opt Arg.(some int) None @@
   Arg.info
-    ~doc:"The uid of the user that will be used as the builder. This should be unique and not in use. \
+    ~doc:"The uid of the user that will be used as the builder, needed by the macOS sandbox. \
+          This should be unique and not in use. \
           You can run `dscl . -list /Users uid` to see all of the currently active users and their uids."
     ~docv:"UID"
     ["uid"]
 
 let brew_path =
-  Arg.required @@
+  Arg.value @@
   Arg.opt Arg.(some file) None @@
   Arg.info
-    ~doc:"Directory where Homebrew is installed. Typically this is either /usr/local or /opt/homebrew."
+    ~doc:"Directory where Homebrew is installed, needed by the macOS sandbox. \
+          Typically this is either /usr/local or /opt/homebrew."
     ~docv:"BREW_PATH"
     ["brew-path"]
 
